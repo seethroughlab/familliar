@@ -67,6 +67,7 @@ A pathway from streaming back to ownership—making local music collections as d
 | **Library Write-back** | User choice (default off) |
 | **Playlist Sharing** | Export/import via .familiar file, identity-based matching |
 | **Music Videos** | yt-dlp download (full video / audio-only / stream-only) |
+| **Listening Sessions** | WebRTC streaming, public guests, host control with handoff |
 | **Priority** | Analysis foundation first |
 
 ---
@@ -208,6 +209,312 @@ A pathway from streaming back to ownership—making local music collections as d
 - Track metadata display (BPM, key, mood/energy)
 - Queue preview
 - Similar tracks suggestions (from embedding similarity)
+
+---
+
+## Listening Sessions (Remote Listening Party)
+
+Invite friends to listen with you in real-time — even if they don't have Familiar.
+
+### Concept
+
+Host streams audio from their Familiar instance via WebRTC. Guests join via a simple link, hear the audio, see what's playing, and can chat. Only Familiar users can host or DJ; anyone with a browser can listen.
+
+### Architecture
+
+```
+                                    Public Internet
+                                          │
+    ┌─────────────────────────────────────┼─────────────────────────────────────┐
+    │                                     │                                     │
+    │   ┌─────────────────┐               │               ┌─────────────────┐   │
+    │   │   Host Browser  │               │               │  Guest Browser  │   │
+    │   │   (Familiar UI) │               │               │  (Lightweight)  │   │
+    │   │                 │◄──────────────┼──────────────►│                 │   │
+    │   │   Full app      │    WebRTC     │    WebRTC     │   Listen-only   │   │
+    │   │   DJ controls   │    Audio +    │    Audio +    │   + chat        │   │
+    │   │                 │    Data       │    Data       │                 │   │
+    │   └────────┬────────┘               │               └────────┬────────┘   │
+    │            │                        │                        │            │
+    │            │ WebSocket              │                        │            │
+    │            │ (auth'd)               │                        │            │
+    │            ▼                        │                        │            │
+    │   ┌──────────────────┐              │                        │            │
+    │   │ Familiar Backend │              │                        │            │
+    │   │ (your network)   │              │                        │            │
+    │   └────────┬─────────┘              │                        │            │
+    │            │                        │                        │            │
+    └────────────┼────────────────────────┼────────────────────────┼────────────┘
+                 │                        │                        │
+                 ▼                        ▼                        ▼
+    ┌──────────────────────────────────────────────────────────────────────────┐
+    │              Public Session Service (lightweight)                         │
+    │   ┌─────────────────────────────────────────────────────────────────┐    │
+    │   │  Signaling Server (WebSocket)                                   │    │
+    │   │  - Session state (current track, participants)                  │    │
+    │   │  - WebRTC handshake (SDP exchange, ICE candidates)              │    │
+    │   │  - Chat relay (fallback when P2P data channel fails)           │    │
+    │   └─────────────────────────────────────────────────────────────────┘    │
+    │   ┌─────────────────────────────────────────────────────────────────┐    │
+    │   │  TURN Server (coturn)                                           │    │
+    │   │  - WebRTC relay when P2P fails (~10-20% of connections)         │    │
+    │   └─────────────────────────────────────────────────────────────────┘    │
+    │   ┌─────────────────────────────────────────────────────────────────┐    │
+    │   │  Guest Web Page (static)                                        │    │
+    │   │  - listen.familiar.app/SESSION_CODE                             │    │
+    │   │  - Minimal JS: WebRTC audio + chat UI                           │    │
+    │   └─────────────────────────────────────────────────────────────────┘    │
+    └──────────────────────────────────────────────────────────────────────────┘
+```
+
+### User Flows
+
+**Host creates session:**
+1. Click "Start Listening Session" in Familiar
+2. Optionally name the session
+3. Get shareable link: `listen.familiar.app/VIBE-7X3K`
+4. Share link however you want (text, Discord, etc.)
+5. Play music — audio streams to all connected guests
+
+**Guest joins session:**
+1. Open link in any browser — no install, no account
+2. Enter display name
+3. WebRTC connects to host
+4. Hear audio, see track info, chat with others
+
+**Host handoff:**
+1. Host clicks "Pass Host to..." → selects participant
+2. Backend verifies new host has Familiar account
+3. Audio source switches to new host's browser
+4. Original host becomes a listener
+
+### Guest UI (Minimal Web Page)
+
+```
+┌─────────────────────────────────────────┐
+│  🎧 jeff's Listening Session            │
+├─────────────────────────────────────────┤
+│                                         │
+│      ┌─────────────────────┐            │
+│      │    Album Art        │            │
+│      │                     │            │
+│      └─────────────────────┘            │
+│                                         │
+│      Windowlicker                       │
+│      Aphex Twin                         │
+│      ━━━━━━●━━━━━━━━ 2:34               │
+│                                         │
+├─────────────────────────────────────────┤
+│  👑 jeff (host) · alex · sam · you      │
+├─────────────────────────────────────────┤
+│  alex: this track is insane             │
+│  jeff: wait for the drop                │
+│                                         │
+│  [your message...          ] [Send]     │
+└─────────────────────────────────────────┘
+```
+
+### Host UI (In Familiar)
+
+```
+┌─────────────────────────────────────────┐
+│  🎧 Listening Session: "Late Night"     │
+│  Host: you                              │
+│  Share: listen.familiar.app/VIBE-7X3K  │
+├─────────────────────────────────────────┤
+│  Now Playing:                           │
+│  Windowlicker - Aphex Twin              │
+│  ━━━━━━●━━━━━━━━ 2:34/6:07              │
+│                                         │
+│  ▶  ▶▶  🔀  🔁   [Queue...]             │
+├─────────────────────────────────────────┤
+│  Listeners (3):                         │
+│  👑 you (host)                          │
+│  ○ alex                                 │
+│  ○ sam                                  │
+├─────────────────────────────────────────┤
+│  Chat:                                  │
+│  alex: this track is insane             │
+│  jeff: wait for the drop                │
+│  sam: 🔥🔥🔥                            │
+│  [message input____________] [Send]     │
+├─────────────────────────────────────────┤
+│  [Pass Host to...▼] [End Session]       │
+└─────────────────────────────────────────┘
+```
+
+### Technical Implementation
+
+**Host-side (Familiar frontend):**
+```typescript
+class ListeningSessionHost {
+  private peerConnections: Map<string, RTCPeerConnection> = new Map();
+  private audioContext: AudioContext;
+  private mediaStreamDestination: MediaStreamAudioDestinationNode;
+
+  async startSession(sessionCode: string) {
+    // Capture audio output from Web Audio API
+    this.mediaStreamDestination = this.audioContext.createMediaStreamDestination();
+    this.audioEngine.connectToDestination(this.mediaStreamDestination);
+
+    // Connect to signaling server
+    this.signaling = new WebSocket(`wss://signal.familiar.app/host/${sessionCode}`);
+    this.signaling.onmessage = this.handleSignaling.bind(this);
+  }
+
+  async addGuest(guestId: string, offer: RTCSessionDescriptionInit) {
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'turn:turn.familiar.app:3478', username: '...', credential: '...' }
+      ]
+    });
+
+    // Add audio track
+    const stream = this.mediaStreamDestination.stream;
+    stream.getAudioTracks().forEach(track => pc.addTrack(track, stream));
+
+    // Create data channel for chat + sync
+    const dataChannel = pc.createDataChannel('control');
+    dataChannel.onmessage = (e) => this.handleDataMessage(guestId, e.data);
+
+    await pc.setRemoteDescription(offer);
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    this.peerConnections.set(guestId, pc);
+    this.signaling.send(JSON.stringify({ type: 'answer', guestId, answer }));
+  }
+
+  broadcastTrackChange(track: Track) {
+    const message = JSON.stringify({
+      type: 'track',
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      artworkUrl: track.artworkUrl
+    });
+
+    for (const [guestId, pc] of this.peerConnections) {
+      pc.dataChannel?.send(message);
+    }
+  }
+}
+```
+
+**Guest-side (minimal standalone page):**
+```typescript
+class ListeningSessionGuest {
+  private pc: RTCPeerConnection;
+  private audioElement: HTMLAudioElement;
+
+  async join(sessionCode: string, displayName: string) {
+    this.signaling = new WebSocket(`wss://signal.familiar.app/guest/${sessionCode}`);
+
+    this.pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'turn:turn.familiar.app:3478', username: '...', credential: '...' }
+      ]
+    });
+
+    // Receive audio
+    this.pc.ontrack = (event) => {
+      this.audioElement.srcObject = event.streams[0];
+      this.audioElement.play();
+    };
+
+    // Receive data channel
+    this.pc.ondatachannel = (event) => {
+      event.channel.onmessage = (e) => this.handleMessage(JSON.parse(e.data));
+    };
+
+    // Create and send offer
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    this.signaling.send(JSON.stringify({ type: 'offer', displayName, offer }));
+  }
+
+  handleMessage(msg: any) {
+    if (msg.type === 'track') {
+      this.updateNowPlaying(msg);
+    } else if (msg.type === 'chat') {
+      this.addChatMessage(msg);
+    }
+  }
+}
+```
+
+**Signaling server (Cloudflare Worker or similar):**
+```typescript
+// Minimal signaling server - just relays WebRTC handshake messages
+// Sessions are ephemeral - stored in memory / Durable Objects
+
+interface Session {
+  code: string;
+  hostConnection: WebSocket;
+  guests: Map<string, { ws: WebSocket; displayName: string }>;
+  currentTrack?: { title: string; artist: string; artworkUrl: string };
+}
+
+// Relay offer from guest to host
+// Relay answer from host to guest
+// Relay ICE candidates both directions
+// Broadcast participant list changes
+```
+
+### Infrastructure Requirements
+
+| Component | Hosting | Cost |
+|-----------|---------|------|
+| Signaling server | Cloudflare Workers / Deno Deploy | Free tier |
+| TURN server | Small VPS running coturn | ~$5/mo |
+| Guest page | Cloudflare Pages / Vercel | Free |
+| Domain | `listen.familiar.app` or similar | ~$12/yr |
+
+### Session Data Model
+
+Sessions are ephemeral (not persisted to Familiar's database). The signaling server holds session state in memory:
+
+```typescript
+interface SessionState {
+  code: string;              // "VIBE-7X3K"
+  hostUserId: string;        // Familiar user ID
+  hostDisplayName: string;
+
+  participants: Array<{
+    id: string;              // Connection ID
+    displayName: string;
+    isHost: boolean;
+    isFamiliarUser: boolean; // Can become host
+  }>;
+
+  currentTrack?: {
+    title: string;
+    artist: string;
+    album: string;
+    artworkUrl: string;      // Proxied through Familiar backend
+  };
+
+  createdAt: Date;
+}
+```
+
+### Security Considerations
+
+- **Audio is ephemeral** — streamed live, not stored on signaling server
+- **No authentication for guests** — just display name, intentionally frictionless
+- **Host verified** — only authenticated Familiar users can create/host sessions
+- **Artwork proxied** — album art served through Familiar backend, not exposing local paths
+- **Rate limiting** — signaling server limits sessions per IP, participants per session
+- **Session expiry** — auto-end after 8 hours or when host disconnects
+
+### Phase Placement
+
+This feature fits best in **Phase 5 (Polish)** since it:
+- Requires the audio engine from Phase 2
+- Is a "nice to have" social feature, not core functionality
+- Needs external infrastructure (signaling server, TURN)
 
 ---
 
@@ -2022,6 +2329,14 @@ class LibraryOrganizer:
 - [ ] Music video download (yt-dlp) with user options
 - [ ] Video storage management (cache size, auto-prune)
 - [ ] Full player video/visualizer/lyrics toggle
+- [ ] **Listening Sessions:**
+  - [ ] Public signaling server (Cloudflare Workers)
+  - [ ] TURN server for WebRTC relay (coturn)
+  - [ ] Guest listener page (static, no auth required)
+  - [ ] Host UI in Familiar (create session, share link, DJ controls)
+  - [ ] WebRTC audio streaming from host to guests
+  - [ ] Text chat via data channel
+  - [ ] Host handoff (pass DJ to another Familiar user)
 - [ ] Performance optimizations
 - [ ] Mobile-friendly PWA
 - [ ] Documentation
@@ -2064,6 +2379,7 @@ class LibraryOrganizer:
 | **Playlist sharing** | Export .familiar file with multi-identifier matching |
 | **Music videos** | yt-dlp with user choice: full video / audio-only / stream-only |
 | **Video storage** | User-configurable cache size, auto-prune options |
+| **Listening sessions** | WebRTC streaming, guests need no account, host-only control with handoff |
 
 ---
 
