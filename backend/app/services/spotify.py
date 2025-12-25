@@ -1,0 +1,426 @@
+"""Spotify integration service for OAuth and sync."""
+
+import hashlib
+import secrets
+from datetime import datetime, timedelta
+from typing import Any
+from uuid import UUID
+
+import spotipy
+from spotipy.oauth2 import SpotifyOAuth
+from sqlalchemy import func, select, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.config import settings
+from app.db.models import SpotifyFavorite, SpotifyProfile, Track, User
+
+
+class SpotifyService:
+    """Handles Spotify OAuth and API interactions."""
+
+    # OAuth scopes needed for sync
+    SCOPES = [
+        "user-library-read",       # Saved tracks
+        "user-top-read",           # Top tracks/artists
+        "user-read-recently-played",  # Recently played
+        "playlist-read-private",   # User playlists
+    ]
+
+    def __init__(self):
+        self.client_id = settings.spotify_client_id
+        self.client_secret = settings.spotify_client_secret
+        self.redirect_uri = "http://localhost:3000/spotify/callback"
+
+    def is_configured(self) -> bool:
+        """Check if Spotify credentials are configured."""
+        return bool(self.client_id and self.client_secret)
+
+    def get_auth_url(self, user_id: UUID) -> tuple[str, str]:
+        """Generate OAuth authorization URL.
+
+        Returns:
+            Tuple of (auth_url, state_token)
+        """
+        # Create state token that encodes user_id
+        state = f"{user_id}:{secrets.token_urlsafe(16)}"
+
+        oauth = SpotifyOAuth(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+            scope=" ".join(self.SCOPES),
+            state=state,
+        )
+
+        auth_url = oauth.get_authorize_url()
+        return auth_url, state
+
+    async def handle_callback(
+        self,
+        db: AsyncSession,
+        code: str,
+        state: str,
+    ) -> SpotifyProfile:
+        """Handle OAuth callback and store tokens.
+
+        Args:
+            db: Database session
+            code: Authorization code from Spotify
+            state: State token to verify user
+
+        Returns:
+            SpotifyProfile with tokens stored
+        """
+        # Extract user_id from state
+        try:
+            user_id_str, _ = state.split(":", 1)
+            user_id = UUID(user_id_str)
+        except (ValueError, AttributeError):
+            raise ValueError("Invalid OAuth state")
+
+        # Exchange code for tokens
+        oauth = SpotifyOAuth(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+            scope=" ".join(self.SCOPES),
+        )
+
+        token_info = oauth.get_access_token(code, as_dict=True)
+
+        # Get Spotify user profile
+        sp = spotipy.Spotify(auth=token_info["access_token"])
+        spotify_user = sp.current_user()
+
+        # Calculate token expiry
+        expires_at = datetime.utcnow() + timedelta(seconds=token_info.get("expires_in", 3600))
+
+        # Upsert SpotifyProfile
+        result = await db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
+
+        if profile:
+            profile.spotify_user_id = spotify_user["id"]
+            profile.access_token = token_info["access_token"]
+            profile.refresh_token = token_info.get("refresh_token")
+            profile.token_expires_at = expires_at
+        else:
+            profile = SpotifyProfile(
+                user_id=user_id,
+                spotify_user_id=spotify_user["id"],
+                access_token=token_info["access_token"],
+                refresh_token=token_info.get("refresh_token"),
+                token_expires_at=expires_at,
+                sync_mode="periodic",
+            )
+            db.add(profile)
+
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+
+    async def get_client(self, db: AsyncSession, user_id: UUID) -> spotipy.Spotify | None:
+        """Get authenticated Spotify client for a user.
+
+        Handles token refresh automatically.
+        """
+        result = await db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+        )
+        profile = result.scalar_one_or_none()
+
+        if not profile or not profile.access_token:
+            return None
+
+        # Check if token needs refresh
+        if profile.token_expires_at and profile.token_expires_at < datetime.utcnow():
+            if profile.refresh_token:
+                profile = await self._refresh_token(db, profile)
+            else:
+                return None
+
+        return spotipy.Spotify(auth=profile.access_token)
+
+    async def _refresh_token(
+        self,
+        db: AsyncSession,
+        profile: SpotifyProfile,
+    ) -> SpotifyProfile:
+        """Refresh expired access token."""
+        oauth = SpotifyOAuth(
+            client_id=self.client_id,
+            client_secret=self.client_secret,
+            redirect_uri=self.redirect_uri,
+        )
+
+        token_info = oauth.refresh_access_token(profile.refresh_token)
+
+        profile.access_token = token_info["access_token"]
+        if "refresh_token" in token_info:
+            profile.refresh_token = token_info["refresh_token"]
+        profile.token_expires_at = datetime.utcnow() + timedelta(
+            seconds=token_info.get("expires_in", 3600)
+        )
+
+        await db.commit()
+        await db.refresh(profile)
+        return profile
+
+
+class SpotifySyncService:
+    """Syncs Spotify favorites and matches to local library."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self.spotify_service = SpotifyService()
+
+    async def sync_favorites(self, user_id: UUID) -> dict:
+        """Sync user's Spotify saved tracks to local database.
+
+        Returns:
+            Dict with sync statistics
+        """
+        client = await self.spotify_service.get_client(self.db, user_id)
+        if not client:
+            raise ValueError("Spotify not connected")
+
+        stats = {"fetched": 0, "new": 0, "matched": 0, "unmatched": 0}
+
+        # Fetch saved tracks (paginated)
+        offset = 0
+        limit = 50
+
+        while True:
+            results = client.current_user_saved_tracks(limit=limit, offset=offset)
+            tracks = results.get("items", [])
+
+            if not tracks:
+                break
+
+            for item in tracks:
+                spotify_track = item["track"]
+                if not spotify_track:
+                    continue
+
+                stats["fetched"] += 1
+                added_at = item.get("added_at")
+
+                # Check if already synced
+                existing = await self.db.execute(
+                    select(SpotifyFavorite).where(
+                        SpotifyFavorite.user_id == user_id,
+                        SpotifyFavorite.spotify_track_id == spotify_track["id"],
+                    )
+                )
+                favorite = existing.scalar_one_or_none()
+
+                # Try to match to local library
+                local_match = await self._match_to_local(spotify_track)
+
+                if favorite:
+                    # Update match if found
+                    if local_match and not favorite.matched_track_id:
+                        favorite.matched_track_id = local_match.id
+                        stats["matched"] += 1
+                else:
+                    # Create new favorite
+                    favorite = SpotifyFavorite(
+                        user_id=user_id,
+                        spotify_track_id=spotify_track["id"],
+                        matched_track_id=local_match.id if local_match else None,
+                        track_data=self._extract_track_data(spotify_track),
+                        added_at=datetime.fromisoformat(added_at.replace("Z", "+00:00")) if added_at else None,
+                    )
+                    self.db.add(favorite)
+                    stats["new"] += 1
+
+                    if local_match:
+                        stats["matched"] += 1
+                    else:
+                        stats["unmatched"] += 1
+
+            offset += limit
+
+            # Safety limit
+            if offset > 2000:
+                break
+
+        # Update last sync time
+        profile_result = await self.db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+        )
+        profile = profile_result.scalar_one_or_none()
+        if profile:
+            profile.last_sync_at = datetime.utcnow()
+
+        await self.db.commit()
+        return stats
+
+    async def sync_top_tracks(self, user_id: UUID, time_range: str = "medium_term") -> dict:
+        """Sync user's top tracks.
+
+        Args:
+            time_range: short_term (4 weeks), medium_term (6 months), long_term (years)
+        """
+        client = await self.spotify_service.get_client(self.db, user_id)
+        if not client:
+            raise ValueError("Spotify not connected")
+
+        stats = {"fetched": 0, "new": 0, "matched": 0}
+
+        results = client.current_user_top_tracks(limit=50, time_range=time_range)
+
+        for spotify_track in results.get("items", []):
+            stats["fetched"] += 1
+
+            # Check if already exists
+            existing = await self.db.execute(
+                select(SpotifyFavorite).where(
+                    SpotifyFavorite.user_id == user_id,
+                    SpotifyFavorite.spotify_track_id == spotify_track["id"],
+                )
+            )
+
+            if existing.scalar_one_or_none():
+                continue
+
+            local_match = await self._match_to_local(spotify_track)
+
+            favorite = SpotifyFavorite(
+                user_id=user_id,
+                spotify_track_id=spotify_track["id"],
+                matched_track_id=local_match.id if local_match else None,
+                track_data=self._extract_track_data(spotify_track),
+            )
+            self.db.add(favorite)
+            stats["new"] += 1
+
+            if local_match:
+                stats["matched"] += 1
+
+        await self.db.commit()
+        return stats
+
+    async def get_unmatched_favorites(self, user_id: UUID, limit: int = 50) -> list[dict]:
+        """Get Spotify favorites that don't have local matches."""
+        result = await self.db.execute(
+            select(SpotifyFavorite)
+            .where(
+                SpotifyFavorite.user_id == user_id,
+                SpotifyFavorite.matched_track_id.is_(None),
+            )
+            .order_by(SpotifyFavorite.added_at.desc())
+            .limit(limit)
+        )
+        favorites = result.scalars().all()
+
+        return [
+            {
+                "spotify_id": f.spotify_track_id,
+                "name": f.track_data.get("name"),
+                "artist": f.track_data.get("artist"),
+                "album": f.track_data.get("album"),
+                "added_at": f.added_at.isoformat() if f.added_at else None,
+            }
+            for f in favorites
+        ]
+
+    async def get_sync_stats(self, user_id: UUID) -> dict:
+        """Get sync statistics for a user."""
+        # Total favorites
+        total = await self.db.scalar(
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.user_id == user_id
+            )
+        ) or 0
+
+        # Matched favorites
+        matched = await self.db.scalar(
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.user_id == user_id,
+                SpotifyFavorite.matched_track_id.isnot(None),
+            )
+        ) or 0
+
+        # Get profile info
+        profile_result = await self.db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+        )
+        profile = profile_result.scalar_one_or_none()
+
+        return {
+            "total_favorites": total,
+            "matched": matched,
+            "unmatched": total - matched,
+            "match_rate": round(matched / total * 100, 1) if total > 0 else 0,
+            "last_sync": profile.last_sync_at.isoformat() if profile and profile.last_sync_at else None,
+            "spotify_user_id": profile.spotify_user_id if profile else None,
+        }
+
+    async def _match_to_local(self, spotify_track: dict) -> Track | None:
+        """Try to match a Spotify track to local library.
+
+        Matching priority:
+        1. ISRC (International Standard Recording Code) - most reliable
+        2. Exact artist + title match
+        3. Fuzzy matching (future enhancement)
+        """
+        # Extract info from Spotify track
+        isrc = spotify_track.get("external_ids", {}).get("isrc")
+        track_name = spotify_track.get("name", "").lower()
+        artists = spotify_track.get("artists", [])
+        artist_name = artists[0]["name"].lower() if artists else ""
+
+        # 1. Try ISRC match
+        if isrc:
+            result = await self.db.execute(
+                select(Track).where(Track.isrc == isrc)
+            )
+            match = result.scalar_one_or_none()
+            if match:
+                return match
+
+        # 2. Try exact artist + title match
+        if track_name and artist_name:
+            result = await self.db.execute(
+                select(Track).where(
+                    func.lower(Track.title) == track_name,
+                    func.lower(Track.artist) == artist_name,
+                )
+            )
+            match = result.scalar_one_or_none()
+            if match:
+                return match
+
+            # 3. Try partial match (title contains, artist contains)
+            result = await self.db.execute(
+                select(Track).where(
+                    func.lower(Track.title).contains(track_name),
+                    func.lower(Track.artist).contains(artist_name),
+                ).limit(1)
+            )
+            match = result.scalar_one_or_none()
+            if match:
+                return match
+
+        return None
+
+    def _extract_track_data(self, spotify_track: dict) -> dict:
+        """Extract relevant data from Spotify track object."""
+        artists = spotify_track.get("artists", [])
+        album = spotify_track.get("album", {})
+
+        return {
+            "name": spotify_track.get("name"),
+            "artist": artists[0]["name"] if artists else None,
+            "artist_id": artists[0]["id"] if artists else None,
+            "album": album.get("name"),
+            "album_id": album.get("id"),
+            "isrc": spotify_track.get("external_ids", {}).get("isrc"),
+            "duration_ms": spotify_track.get("duration_ms"),
+            "popularity": spotify_track.get("popularity"),
+            "preview_url": spotify_track.get("preview_url"),
+            "external_url": spotify_track.get("external_urls", {}).get("spotify"),
+        }

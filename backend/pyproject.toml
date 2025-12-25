@@ -30,6 +30,9 @@ dependencies = [
     # Utilities
     "python-multipart>=0.0.6",
     "anthropic>=0.75.0",
+    "spotipy>=2.25.2",
+    "bandcamp-api>=0.2.3",
+    "beautifulsoup4>=4.14.3",
 ]
 
 [project.optional-dependencies]

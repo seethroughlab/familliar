@@ -91,8 +91,12 @@ class LibraryScanner:
                 else:
                     results["unchanged"] += 1
 
-        # Handle deleted files
-        deleted_paths = set(existing_paths.keys()) - found_paths
+        # Handle deleted files - only delete files that were under this library_path
+        library_prefix = str(library_path)
+        deleted_paths = set(
+            p for p in existing_paths.keys()
+            if p.startswith(library_prefix)
+        ) - found_paths
         for path_str in deleted_paths:
             track = existing_paths[path_str]
             await self.db.delete(track)

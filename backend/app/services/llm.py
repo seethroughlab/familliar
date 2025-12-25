@@ -9,7 +9,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Track, TrackAnalysis
+from app.db.models import Track, TrackAnalysis, SpotifyFavorite, SpotifyProfile
 
 
 # Tool definitions for Claude
@@ -127,12 +127,95 @@ MUSIC_TOOLS = [
             },
             "required": ["track_id"]
         }
+    },
+    {
+        "name": "get_spotify_status",
+        "description": "Check if the user has connected their Spotify account and get connection status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "get_spotify_favorites",
+        "description": "Get user's Spotify favorites that are available in their local library. Use this to find tracks the user has liked on Spotify.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 50)",
+                    "default": 50
+                }
+            }
+        }
+    },
+    {
+        "name": "get_unmatched_spotify_favorites",
+        "description": "Get Spotify favorites that couldn't be matched to the local library. Useful for finding music the user likes on Spotify but doesn't own locally.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 50)",
+                    "default": 50
+                }
+            }
+        }
+    },
+    {
+        "name": "get_spotify_sync_stats",
+        "description": "Get statistics about the Spotify sync: total favorites, matched count, match rate.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "search_bandcamp",
+        "description": "Search Bandcamp for albums or tracks the user might want to purchase. Use this when the user wants to find music to buy, especially for artists they like but don't have locally.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Search query (artist name, album name, or general search)"
+                },
+                "item_type": {
+                    "type": "string",
+                    "enum": ["album", "track", "artist"],
+                    "description": "Type of result to search for",
+                    "default": "album"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 10)",
+                    "default": 10
+                }
+            },
+            "required": ["query"]
+        }
+    },
+    {
+        "name": "recommend_bandcamp_purchases",
+        "description": "Suggest Bandcamp albums to purchase based on Spotify favorites that aren't in the local library. Helps users complete their collection.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max recommendations (default 5)",
+                    "default": 5
+                }
+            }
+        }
     }
 ]
 
 SYSTEM_PROMPT = """You are Familiar, an AI music assistant helping users discover and enjoy their personal music library.
 
-You have access to tools that let you search the library, find similar tracks, filter by audio features, and control playback.
+You have access to tools that let you search the library, find similar tracks, filter by audio features, and control playback. You can also access the user's Spotify favorites if they've connected their account.
 
 Guidelines:
 - When the user asks for music, use tools to search and find matching tracks, then queue them
@@ -142,6 +225,16 @@ Guidelines:
 - Consider context: "something chill" means low energy, "workout music" means high energy/BPM
 - Be conversational but efficient—the user wants to listen to music, not read essays
 - When you queue tracks, confirm what you've queued
+
+Spotify integration:
+- Use get_spotify_favorites to find tracks the user has liked on Spotify that are in their local library
+- Use get_unmatched_spotify_favorites to show them music they like on Spotify but don't own locally
+- Spotify favorites can help personalize recommendations—if they've liked a track on Spotify, it's a good indicator of preference
+
+Bandcamp integration:
+- Use search_bandcamp to help users find albums to purchase on Bandcamp
+- Use recommend_bandcamp_purchases to suggest albums based on their Spotify favorites they don't own locally
+- When showing Bandcamp results, include the URL so users can purchase directly
 
 Audio features guide:
 - energy: 0 = calm/ambient, 1 = intense/energetic
@@ -177,6 +270,18 @@ class ToolExecutor:
             return await self._control_playback(**tool_input)
         elif tool_name == "get_track_details":
             return await self._get_track_details(**tool_input)
+        elif tool_name == "get_spotify_status":
+            return await self._get_spotify_status()
+        elif tool_name == "get_spotify_favorites":
+            return await self._get_spotify_favorites(**tool_input)
+        elif tool_name == "get_unmatched_spotify_favorites":
+            return await self._get_unmatched_spotify_favorites(**tool_input)
+        elif tool_name == "get_spotify_sync_stats":
+            return await self._get_spotify_sync_stats()
+        elif tool_name == "search_bandcamp":
+            return await self._search_bandcamp(**tool_input)
+        elif tool_name == "recommend_bandcamp_purchases":
+            return await self._recommend_bandcamp_purchases(**tool_input)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
@@ -401,6 +506,221 @@ class ToolExecutor:
             track_dict["features"] = analysis.features
 
         return track_dict
+
+    async def _get_spotify_status(self) -> dict:
+        """Check if Spotify is connected."""
+        from app.api.routes.spotify import TEMP_USER_ID
+
+        result = await self.db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == TEMP_USER_ID)
+        )
+        profile = result.scalar_one_or_none()
+
+        if not profile:
+            return {
+                "connected": False,
+                "message": "Spotify not connected. User can connect via Settings."
+            }
+
+        return {
+            "connected": True,
+            "spotify_user_id": profile.spotify_user_id,
+            "last_sync": profile.last_sync_at.isoformat() if profile.last_sync_at else None
+        }
+
+    async def _get_spotify_favorites(self, limit: int = 50) -> dict:
+        """Get Spotify favorites that are matched to local library."""
+        from app.api.routes.spotify import TEMP_USER_ID
+
+        result = await self.db.execute(
+            select(SpotifyFavorite, Track)
+            .join(Track, SpotifyFavorite.matched_track_id == Track.id)
+            .where(
+                SpotifyFavorite.user_id == TEMP_USER_ID,
+                SpotifyFavorite.matched_track_id.isnot(None)
+            )
+            .order_by(SpotifyFavorite.added_at.desc())
+            .limit(limit)
+        )
+        rows = result.all()
+
+        tracks = []
+        for favorite, track in rows:
+            track_dict = self._track_to_dict(track)
+            track_dict["spotify_added_at"] = favorite.added_at.isoformat() if favorite.added_at else None
+            tracks.append(track_dict)
+
+        return {
+            "tracks": tracks,
+            "count": len(tracks),
+            "note": "These are Spotify favorites that match tracks in your local library"
+        }
+
+    async def _get_unmatched_spotify_favorites(self, limit: int = 50) -> dict:
+        """Get Spotify favorites that don't have local matches."""
+        from app.api.routes.spotify import TEMP_USER_ID
+
+        result = await self.db.execute(
+            select(SpotifyFavorite)
+            .where(
+                SpotifyFavorite.user_id == TEMP_USER_ID,
+                SpotifyFavorite.matched_track_id.is_(None)
+            )
+            .order_by(SpotifyFavorite.added_at.desc())
+            .limit(limit)
+        )
+        favorites = result.scalars().all()
+
+        unmatched = []
+        for f in favorites:
+            data = f.track_data or {}
+            unmatched.append({
+                "spotify_id": f.spotify_track_id,
+                "name": data.get("name"),
+                "artist": data.get("artist"),
+                "album": data.get("album"),
+                "added_at": f.added_at.isoformat() if f.added_at else None,
+                "spotify_url": data.get("external_url")
+            })
+
+        return {
+            "tracks": unmatched,
+            "count": len(unmatched),
+            "note": "These are Spotify favorites you don't have in your local library"
+        }
+
+    async def _get_spotify_sync_stats(self) -> dict:
+        """Get Spotify sync statistics."""
+        from app.api.routes.spotify import TEMP_USER_ID
+
+        # Total favorites
+        total = await self.db.scalar(
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.user_id == TEMP_USER_ID
+            )
+        ) or 0
+
+        # Matched favorites
+        matched = await self.db.scalar(
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.user_id == TEMP_USER_ID,
+                SpotifyFavorite.matched_track_id.isnot(None)
+            )
+        ) or 0
+
+        # Get profile info
+        profile_result = await self.db.execute(
+            select(SpotifyProfile).where(SpotifyProfile.user_id == TEMP_USER_ID)
+        )
+        profile = profile_result.scalar_one_or_none()
+
+        return {
+            "total_favorites": total,
+            "matched": matched,
+            "unmatched": total - matched,
+            "match_rate": round(matched / total * 100, 1) if total > 0 else 0,
+            "last_sync": profile.last_sync_at.isoformat() if profile and profile.last_sync_at else None,
+            "connected": profile is not None
+        }
+
+    async def _search_bandcamp(
+        self,
+        query: str,
+        item_type: str = "album",
+        limit: int = 10,
+    ) -> dict:
+        """Search Bandcamp for albums/tracks."""
+        from app.services.bandcamp import BandcampService
+
+        # Map friendly names to API codes
+        type_map = {"album": "a", "track": "t", "artist": "b"}
+        api_type = type_map.get(item_type, "a")
+
+        bc = BandcampService()
+        try:
+            results = await bc.search(query, item_type=api_type, limit=limit)
+
+            return {
+                "results": [
+                    {
+                        "type": r.result_type,
+                        "name": r.name,
+                        "artist": r.artist,
+                        "url": r.url,
+                        "genre": r.genre,
+                        "release_date": r.release_date,
+                    }
+                    for r in results
+                ],
+                "count": len(results),
+                "query": query,
+            }
+        finally:
+            await bc.close()
+
+    async def _recommend_bandcamp_purchases(self, limit: int = 5) -> dict:
+        """Recommend Bandcamp albums based on unmatched Spotify favorites."""
+        from app.api.routes.spotify import TEMP_USER_ID
+        from app.services.bandcamp import BandcampService
+
+        # Get unmatched Spotify favorites
+        result = await self.db.execute(
+            select(SpotifyFavorite)
+            .where(
+                SpotifyFavorite.user_id == TEMP_USER_ID,
+                SpotifyFavorite.matched_track_id.is_(None)
+            )
+            .order_by(SpotifyFavorite.added_at.desc())
+            .limit(limit * 2)  # Get more to have variety
+        )
+        favorites = result.scalars().all()
+
+        if not favorites:
+            return {
+                "recommendations": [],
+                "message": "No unmatched Spotify favorites to base recommendations on"
+            }
+
+        # Search Bandcamp for each artist
+        bc = BandcampService()
+        recommendations = []
+        seen_artists = set()
+
+        try:
+            for f in favorites:
+                data = f.track_data or {}
+                artist = data.get("artist")
+                if not artist or artist.lower() in seen_artists:
+                    continue
+
+                seen_artists.add(artist.lower())
+
+                # Search for this artist's albums on Bandcamp
+                results = await bc.search(artist, item_type="a", limit=2)
+
+                for r in results:
+                    recommendations.append({
+                        "type": r.result_type,
+                        "name": r.name,
+                        "artist": r.artist,
+                        "url": r.url,
+                        "genre": r.genre,
+                        "based_on": {
+                            "spotify_track": data.get("name"),
+                            "spotify_artist": artist,
+                        }
+                    })
+
+                if len(recommendations) >= limit:
+                    break
+        finally:
+            await bc.close()
+
+        return {
+            "recommendations": recommendations[:limit],
+            "count": len(recommendations[:limit]),
+            "note": "Albums recommended based on your Spotify favorites that aren't in your local library"
+        }
 
     def _track_to_dict(self, track: Track) -> dict:
         """Convert track to dictionary."""

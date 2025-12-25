@@ -39,6 +39,54 @@ export const tracksApi = {
   },
 };
 
+export interface SpotifyStatus {
+  configured: boolean;
+  connected: boolean;
+  spotify_user_id: string | null;
+  last_sync: string | null;
+  stats: {
+    total_favorites: number;
+    matched: number;
+    unmatched: number;
+    match_rate: number;
+  } | null;
+}
+
+export interface SpotifySyncResponse {
+  status: string;
+  message: string;
+  stats?: {
+    fetched: number;
+    new: number;
+    matched: number;
+    unmatched: number;
+  };
+}
+
+export const spotifyApi = {
+  getStatus: async (): Promise<SpotifyStatus> => {
+    const { data } = await api.get('/spotify/status');
+    return data;
+  },
+
+  getAuthUrl: async (): Promise<{ auth_url: string; state: string }> => {
+    const { data } = await api.get('/spotify/auth');
+    return data;
+  },
+
+  sync: async (includeTopTracks = true): Promise<SpotifySyncResponse> => {
+    const { data } = await api.post('/spotify/sync', null, {
+      params: { include_top_tracks: includeTopTracks },
+    });
+    return data;
+  },
+
+  disconnect: async (): Promise<{ status: string }> => {
+    const { data } = await api.post('/spotify/disconnect');
+    return data;
+  },
+};
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
