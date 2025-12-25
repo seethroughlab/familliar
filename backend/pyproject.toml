@@ -13,6 +13,7 @@ dependencies = [
     # Database
     "sqlalchemy>=2.0.0",
     "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.0",
     "pgvector>=0.2.0",
 
     # Task queue
@@ -47,12 +48,13 @@ dev = [
     "httpx>=0.26.0",  # For TestClient
 ]
 
-# Phase 1.5: Audio analysis (add when ready)
+# Phase 1.5: Audio analysis
 analysis = [
     "librosa>=0.10.0",
     "numpy>=1.24.0",
-    # "essentia-tensorflow>=2.1b6",  # Complex install, add later
-    # "chromaprint",  # Requires system library
+    "torch>=2.0.0",
+    "transformers>=4.30.0",  # For CLAP model
+    "soundfile>=0.12.0",     # Audio file loading
 ]
 
 [build-system]

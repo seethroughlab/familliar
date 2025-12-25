@@ -28,10 +28,11 @@ celery_app.conf.update(
     result_expires=3600,  # Results expire after 1 hour
 
     # Task routing (for future GPU vs CPU separation)
-    task_routes={
-        "app.workers.tasks.analyze_track": {"queue": "analysis"},
-        "app.workers.tasks.extract_artwork": {"queue": "default"},
-    },
+    # For now, use default queue for everything
+    # task_routes={
+    #     "app.workers.tasks.analyze_track": {"queue": "analysis"},
+    #     "app.workers.tasks.extract_artwork": {"queue": "default"},
+    # },
 
     # Default queue
     task_default_queue="default",
