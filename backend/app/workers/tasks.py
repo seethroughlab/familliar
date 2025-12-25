@@ -1,5 +1,6 @@
 """Celery tasks for audio analysis."""
 
+import logging
 from datetime import datetime
 from pathlib import Path
 from uuid import UUID
@@ -12,6 +13,8 @@ from app.db.session import sync_session_maker
 from app.services.artwork import extract_and_save_artwork
 from app.workers.celery_app import celery_app
 
+logger = logging.getLogger(__name__)
+
 
 @celery_app.task(bind=True, max_retries=3)
 def analyze_track(self, track_id: str) -> dict:
@@ -20,8 +23,8 @@ def analyze_track(self, track_id: str) -> dict:
     This is the main analysis task that orchestrates:
     1. Metadata extraction (already done during scan)
     2. Artwork extraction
-    3. Audio feature extraction (Phase 1.5)
-    4. Embedding generation (Phase 1.5)
+    3. Audio feature extraction with librosa
+    4. CLAP embedding generation for similarity search
 
     Args:
         track_id: UUID of the track to analyze
@@ -44,6 +47,8 @@ def analyze_track(self, track_id: str) -> dict:
             if not file_path.exists():
                 return {"error": f"File not found: {track.file_path}"}
 
+            logger.info(f"Analyzing track: {track.title} by {track.artist}")
+
             # Extract and save artwork
             artwork_hash = extract_and_save_artwork(
                 file_path,
@@ -51,11 +56,14 @@ def analyze_track(self, track_id: str) -> dict:
                 album=track.album,
             )
 
-            # Extract audio features (placeholder for Phase 1.5)
-            features = _extract_features(file_path)
+            # Import analysis functions (lazy import to avoid loading models on worker start)
+            from app.services.analysis import extract_embedding, extract_features
 
-            # Generate embedding (placeholder for Phase 1.5)
-            embedding = _generate_embedding(file_path)
+            # Extract audio features with librosa
+            features = extract_features(file_path)
+
+            # Generate CLAP embedding for similarity search
+            embedding = extract_embedding(file_path)
 
             # Create or update analysis record
             analysis = TrackAnalysis(
@@ -63,7 +71,7 @@ def analyze_track(self, track_id: str) -> dict:
                 version=ANALYSIS_VERSION,
                 features=features,
                 embedding=embedding,
-                acoustid=None,  # TODO: Phase 1.5
+                acoustid=None,
             )
 
             # Check if analysis for this version exists
@@ -88,45 +96,24 @@ def analyze_track(self, track_id: str) -> dict:
 
             db.commit()
 
+            logger.info(
+                f"Analysis complete for {track.title}: "
+                f"BPM={features.get('bpm')}, Key={features.get('key')}, "
+                f"Embedding={'Yes' if embedding else 'No'}"
+            )
+
             return {
                 "track_id": track_id,
                 "status": "success",
                 "artwork_extracted": artwork_hash is not None,
-                "features_extracted": bool(features),
+                "features_extracted": bool(features.get("bpm")),
                 "embedding_generated": embedding is not None,
+                "bpm": features.get("bpm"),
+                "key": features.get("key"),
             }
     except Exception as e:
+        logger.error(f"Error analyzing track {track_id}: {e}")
         self.retry(exc=e, countdown=60)
-
-
-def _extract_features(file_path: Path) -> dict:
-    """Extract audio features from file.
-
-    Phase 1: Returns placeholder features.
-    Phase 1.5: Will use Essentia for real feature extraction.
-    """
-    # Placeholder features - will be replaced with real extraction
-    return {
-        "bpm": None,
-        "key": None,
-        "energy": None,
-        "valence": None,
-        "danceability": None,
-        "acousticness": None,
-        "instrumentalness": None,
-        "speechiness": None,
-        # Add more features in Phase 1.5
-    }
-
-
-def _generate_embedding(file_path: Path) -> list[float] | None:
-    """Generate audio embedding for similarity search.
-
-    Phase 1: Returns None (no embedding).
-    Phase 1.5: Will use CLAP model for real embeddings.
-    """
-    # Placeholder - will be replaced with CLAP embedding
-    return None
 
 
 @celery_app.task
