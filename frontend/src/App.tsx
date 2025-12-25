@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Search, Library, MessageSquare } from 'lucide-react';
+import { Search, Library, MessageSquare, Settings } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
+import { SettingsPanel } from './components/Settings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -14,7 +15,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type RightPanelTab = 'context' | 'library';
+type RightPanelTab = 'context' | 'library' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
@@ -58,6 +59,17 @@ function AppContent() {
                   <Library className="w-4 h-4 inline-block mr-1.5" />
                   Library
                 </button>
+                <button
+                  onClick={() => setRightPanelTab('settings')}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    rightPanelTab === 'settings'
+                      ? 'bg-zinc-800 text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <Settings className="w-4 h-4 inline-block mr-1.5" />
+                  Settings
+                </button>
               </div>
 
               {/* Search (only in library view) */}
@@ -90,6 +102,9 @@ function AppContent() {
                 <p className="mt-12">Context panel shows results from your conversation.</p>
                 <p className="text-sm mt-2">Start a conversation in the chat to see results here.</p>
               </div>
+            )}
+            {rightPanelTab === 'settings' && (
+              <SettingsPanel />
             )}
           </main>
         </div>

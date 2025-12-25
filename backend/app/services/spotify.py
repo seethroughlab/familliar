@@ -29,7 +29,8 @@ class SpotifyService:
     def __init__(self):
         self.client_id = settings.spotify_client_id
         self.client_secret = settings.spotify_client_secret
-        self.redirect_uri = "http://localhost:3000/spotify/callback"
+        # Redirect to backend OAuth callback endpoint
+        self.redirect_uri = "http://localhost:8000/api/v1/spotify/callback"
 
     def is_configured(self) -> bool:
         """Check if Spotify credentials are configured."""

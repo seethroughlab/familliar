@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spotifyApi, SpotifyStatus } from '../../api/client';
+import { spotifyApi } from '../../api/client';
+import type { SpotifyStatus } from '../../api/client';
 import { Music2, RefreshCw, LogOut, ExternalLink, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 export function SpotifySettings() {
