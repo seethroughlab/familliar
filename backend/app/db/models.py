@@ -1,0 +1,287 @@
+import enum
+from datetime import datetime
+from typing import Any
+from uuid import UUID, uuid4
+
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    """Base class for all models."""
+
+    type_annotation_map = {
+        dict[str, Any]: JSONB,
+    }
+
+
+class AlbumType(enum.Enum):
+    """Album classification for proper handling of compilations/soundtracks."""
+
+    ALBUM = "album"
+    EP = "ep"
+    SINGLE = "single"
+    COMPILATION = "compilation"
+    SOUNDTRACK = "soundtrack"
+    LIVE = "live"
+
+
+class User(Base):
+    """User account for multi-user support."""
+
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Relationships
+    playlists: Mapped[list["Playlist"]] = relationship(back_populates="user", cascade="all, delete")
+    listening_history: Mapped[list["ListeningHistory"]] = relationship(
+        back_populates="user", cascade="all, delete"
+    )
+    spotify_profile: Mapped["SpotifyProfile | None"] = relationship(
+        back_populates="user", cascade="all, delete"
+    )
+
+
+class Track(Base):
+    """Core track entity with metadata from file tags."""
+
+    __tablename__ = "tracks"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    file_path: Mapped[str] = mapped_column(String(1000), unique=True, nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    # Basic metadata from tags
+    title: Mapped[str | None] = mapped_column(String(500))
+    artist: Mapped[str | None] = mapped_column(String(500))
+    album: Mapped[str | None] = mapped_column(String(500))
+    album_artist: Mapped[str | None] = mapped_column(String(500))
+    album_type: Mapped[AlbumType] = mapped_column(Enum(AlbumType), default=AlbumType.ALBUM)
+    track_number: Mapped[int | None] = mapped_column(Integer)
+    disc_number: Mapped[int | None] = mapped_column(Integer)
+    year: Mapped[int | None] = mapped_column(Integer)
+    genre: Mapped[str | None] = mapped_column(String(255))
+
+    # Technical metadata
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    sample_rate: Mapped[int | None] = mapped_column(Integer)
+    bit_depth: Mapped[int | None] = mapped_column(Integer)
+    bitrate: Mapped[int | None] = mapped_column(Integer)
+    format: Mapped[str | None] = mapped_column(String(10))
+
+    # External IDs (from MusicBrainz, etc.)
+    musicbrainz_track_id: Mapped[str | None] = mapped_column(String(36))
+    musicbrainz_artist_id: Mapped[str | None] = mapped_column(String(36))
+    musicbrainz_album_id: Mapped[str | None] = mapped_column(String(36))
+    isrc: Mapped[str | None] = mapped_column(String(12))
+
+    # Analysis status
+    analysis_version: Mapped[int] = mapped_column(Integer, default=0)
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Timestamps
+    file_modified_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    analyses: Mapped[list["TrackAnalysis"]] = relationship(
+        back_populates="track", cascade="all, delete"
+    )
+    playlist_entries: Mapped[list["PlaylistTrack"]] = relationship(
+        back_populates="track", cascade="all, delete"
+    )
+
+
+class TrackAnalysis(Base):
+    """Versioned audio analysis with JSONB features and vector embedding."""
+
+    __tablename__ = "track_analysis"
+    __table_args__ = (UniqueConstraint("track_id", "version", name="uq_track_analysis_version"),)
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Flexible features stored as JSONB (no migrations needed when adding new features)
+    # Example: {"bpm": 124.5, "key": "Am", "energy": 0.87, "valence": 0.65, ...}
+    features: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Vector embedding for similarity search (CLAP produces 512-dim embeddings)
+    embedding: Mapped[Any | None] = mapped_column(Vector(512))
+
+    # Audio fingerprint for identification
+    acoustid: Mapped[str | None] = mapped_column(String(100))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    track: Mapped["Track"] = relationship(back_populates="analyses")
+
+
+class Playlist(Base):
+    """User-created or AI-generated playlists."""
+
+    __tablename__ = "playlists"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    is_auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    generation_prompt: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="playlists")
+    tracks: Mapped[list["PlaylistTrack"]] = relationship(
+        back_populates="playlist", cascade="all, delete"
+    )
+
+
+class PlaylistTrack(Base):
+    """Junction table for playlist tracks with ordering."""
+
+    __tablename__ = "playlist_tracks"
+
+    playlist_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    )
+    track_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    playlist: Mapped["Playlist"] = relationship(back_populates="tracks")
+    track: Mapped["Track"] = relationship(back_populates="playlist_entries")
+
+
+class ListeningHistory(Base):
+    """Per-user listening history for recommendations."""
+
+    __tablename__ = "listening_history"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    played_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    play_duration_seconds: Mapped[float | None] = mapped_column(Float)
+    source: Mapped[str | None] = mapped_column(String(50))  # 'local', 'spotify', etc.
+    context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # playlist_id, search query, etc.
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="listening_history")
+    track: Mapped["Track"] = relationship()
+
+
+class SpotifyProfile(Base):
+    """Spotify OAuth tokens and sync settings (Phase 4)."""
+
+    __tablename__ = "spotify_profiles"
+
+    user_id: Mapped[UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    spotify_user_id: Mapped[str | None] = mapped_column(String(255))
+    access_token: Mapped[str | None] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    sync_mode: Mapped[str] = mapped_column(String(20), default="periodic")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="spotify_profile")
+    favorites: Mapped[list["SpotifyFavorite"]] = relationship(
+        back_populates="profile",
+        cascade="all, delete",
+        foreign_keys="SpotifyFavorite.user_id",
+        primaryjoin="SpotifyProfile.user_id == SpotifyFavorite.user_id",
+    )
+
+
+class SpotifyFavorite(Base):
+    """Synced Spotify favorites with local library matching (Phase 4)."""
+
+    __tablename__ = "spotify_favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "spotify_track_id", name="uq_spotify_favorite"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    spotify_track_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    matched_track_id: Mapped[UUID | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"))
+
+    # Spotify track data (JSONB for flexibility)
+    track_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    added_at: Mapped[datetime | None] = mapped_column(DateTime)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    profile: Mapped["SpotifyProfile"] = relationship(
+        back_populates="favorites",
+        foreign_keys=[user_id],
+        primaryjoin="SpotifyFavorite.user_id == SpotifyProfile.user_id",
+    )
+    matched_track: Mapped["Track | None"] = relationship()
+
+
+class TrackVideo(Base):
+    """Music video downloads linked to tracks (Phase 5)."""
+
+    __tablename__ = "track_videos"
+    __table_args__ = (
+        UniqueConstraint("track_id", "source", "source_id", name="uq_track_video"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+
+    source: Mapped[str] = mapped_column(String(50), nullable=False)  # 'youtube', 'vimeo', etc.
+    source_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(500))
+
+    # Local storage
+    file_path: Mapped[str | None] = mapped_column(String(1000))
+    is_audio_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+
+    # Metadata from source
+    video_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+    # User interaction
+    match_confirmed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    downloaded_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_played_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    # Relationships
+    track: Mapped["Track"] = relationship()

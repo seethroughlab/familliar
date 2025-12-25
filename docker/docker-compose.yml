@@ -1,0 +1,75 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: familiar-postgres
+    environment:
+      POSTGRES_USER: familiar
+      POSTGRES_PASSWORD: familiar
+      POSTGRES_DB: familiar
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familiar"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: familiar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # API and Worker are run locally during development for faster iteration
+  # Uncomment these for full Docker deployment:
+
+  # api:
+  #   build:
+  #     context: ../backend
+  #     dockerfile: ../docker/Dockerfile.api
+  #   container_name: familiar-api
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ../backend:/app
+  #     - ../data/art:/data/art
+  #   environment:
+  #     - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+  # worker:
+  #   build:
+  #     context: ../backend
+  #     dockerfile: ../docker/Dockerfile.worker
+  #   container_name: familiar-worker
+  #   volumes:
+  #     - ../backend:/app
+  #     - ../data/music:/data/music:ro
+  #     - ../data/art:/data/art
+  #   environment:
+  #     - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
