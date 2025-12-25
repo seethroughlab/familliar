@@ -6,15 +6,15 @@ from collections.abc import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config import settings
-from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm
+from app.config import settings as app_config
+from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
     # Startup
-    print(f"Starting Familiar API (debug={settings.debug})")
+    print(f"Starting Familiar API (debug={app_config.debug})")
     yield
     # Shutdown
     print("Shutting down Familiar API")
@@ -44,6 +44,7 @@ app.include_router(chat.router, prefix="/api/v1")
 app.include_router(spotify.router, prefix="/api/v1")
 app.include_router(videos.router, prefix="/api/v1")
 app.include_router(lastfm.router, prefix="/api/v1")
+app.include_router(settings_routes.router, prefix="/api/v1")
 
 
 @app.get("/")

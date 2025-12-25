@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import SpotifyFavorite, SpotifyProfile, Track, User
+from app.services.app_settings import get_app_settings_service
 
 
 class SpotifyService:
@@ -27,14 +28,21 @@ class SpotifyService:
     ]
 
     def __init__(self):
-        self.client_id = settings.spotify_client_id
-        self.client_secret = settings.spotify_client_secret
         # Redirect to backend OAuth callback endpoint
-        self.redirect_uri = "http://localhost:8000/api/v1/spotify/callback"
+        # Using 127.0.0.1 instead of localhost for Spotify's security requirements
+        self.redirect_uri = "http://127.0.0.1:8000/api/v1/spotify/callback"
+
+    def _get_credentials(self) -> tuple[str | None, str | None]:
+        """Get Spotify credentials from app settings or env fallback."""
+        app_settings = get_app_settings_service().get()
+        client_id = app_settings.spotify_client_id or settings.spotify_client_id
+        client_secret = app_settings.spotify_client_secret or settings.spotify_client_secret
+        return client_id, client_secret
 
     def is_configured(self) -> bool:
         """Check if Spotify credentials are configured."""
-        return bool(self.client_id and self.client_secret)
+        client_id, client_secret = self._get_credentials()
+        return bool(client_id and client_secret)
 
     def get_auth_url(self, user_id: UUID) -> tuple[str, str]:
         """Generate OAuth authorization URL.
@@ -42,12 +50,14 @@ class SpotifyService:
         Returns:
             Tuple of (auth_url, state_token)
         """
+        client_id, client_secret = self._get_credentials()
+
         # Create state token that encodes user_id
         state = f"{user_id}:{secrets.token_urlsafe(16)}"
 
         oauth = SpotifyOAuth(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
             redirect_uri=self.redirect_uri,
             scope=" ".join(self.SCOPES),
             state=state,
@@ -80,9 +90,10 @@ class SpotifyService:
             raise ValueError("Invalid OAuth state")
 
         # Exchange code for tokens
+        client_id, client_secret = self._get_credentials()
         oauth = SpotifyOAuth(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
             redirect_uri=self.redirect_uri,
             scope=" ".join(self.SCOPES),
         )
@@ -150,9 +161,10 @@ class SpotifyService:
         profile: SpotifyProfile,
     ) -> SpotifyProfile:
         """Refresh expired access token."""
+        client_id, client_secret = self._get_credentials()
         oauth = SpotifyOAuth(
-            client_id=self.client_id,
-            client_secret=self.client_secret,
+            client_id=client_id,
+            client_secret=client_secret,
             redirect_uri=self.redirect_uri,
         )
 

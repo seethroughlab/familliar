@@ -193,6 +193,46 @@ export const lastfmApi = {
   },
 };
 
+export interface AppSettingsResponse {
+  spotify_client_id: string | null;
+  spotify_client_secret: string | null;
+  lastfm_api_key: string | null;
+  lastfm_api_secret: string | null;
+  anthropic_api_key: string | null;
+  spotify_configured: boolean;
+  lastfm_configured: boolean;
+}
+
+export interface AppSettingsUpdate {
+  spotify_client_id?: string;
+  spotify_client_secret?: string;
+  lastfm_api_key?: string;
+  lastfm_api_secret?: string;
+  anthropic_api_key?: string;
+}
+
+export const appSettingsApi = {
+  get: async (): Promise<AppSettingsResponse> => {
+    const { data } = await api.get('/settings');
+    return data;
+  },
+
+  update: async (settings: AppSettingsUpdate): Promise<AppSettingsResponse> => {
+    const { data } = await api.put('/settings', settings);
+    return data;
+  },
+
+  clearSpotify: async (): Promise<{ status: string }> => {
+    const { data } = await api.delete('/settings/spotify');
+    return data;
+  },
+
+  clearLastfm: async (): Promise<{ status: string }> => {
+    const { data } = await api.delete('/settings/lastfm');
+    return data;
+  },
+};
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');

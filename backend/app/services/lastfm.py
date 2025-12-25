@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import settings
+from app.services.app_settings import get_app_settings_service
 
 
 @dataclass
@@ -23,28 +24,36 @@ class LastfmService:
     AUTH_URL = "https://www.last.fm/api/auth/"
 
     def __init__(self):
-        self.api_key = settings.lastfm_api_key
-        self.api_secret = settings.lastfm_api_secret
         self.client = httpx.AsyncClient(timeout=10.0)
         self._sessions: dict[str, LastfmSession] = {}
 
+    def _get_credentials(self) -> tuple[str | None, str | None]:
+        """Get Last.fm credentials from app settings or env fallback."""
+        app_settings = get_app_settings_service().get()
+        api_key = app_settings.lastfm_api_key or settings.lastfm_api_key
+        api_secret = app_settings.lastfm_api_secret or settings.lastfm_api_secret
+        return api_key, api_secret
+
     def is_configured(self) -> bool:
         """Check if Last.fm API is configured."""
-        return bool(self.api_key and self.api_secret)
+        api_key, api_secret = self._get_credentials()
+        return bool(api_key and api_secret)
 
     def get_auth_url(self, callback_url: str) -> str:
         """Get the Last.fm authorization URL."""
         if not self.is_configured():
             raise ValueError("Last.fm API key not configured")
 
-        return f"{self.AUTH_URL}?api_key={self.api_key}&cb={callback_url}"
+        api_key, _ = self._get_credentials()
+        return f"{self.AUTH_URL}?api_key={api_key}&cb={callback_url}"
 
     def _sign_params(self, params: dict) -> str:
         """Generate API signature for authenticated requests."""
+        _, api_secret = self._get_credentials()
         # Sort params alphabetically and concatenate key+value
         sorted_params = sorted(params.items())
         sig_string = "".join(f"{k}{v}" for k, v in sorted_params)
-        sig_string += self.api_secret
+        sig_string += api_secret
 
         return hashlib.md5(sig_string.encode()).hexdigest()
 
@@ -56,9 +65,10 @@ class LastfmService:
         if not self.is_configured():
             raise ValueError("Last.fm API key not configured")
 
+        api_key, _ = self._get_credentials()
         params = {
             "method": "auth.getSession",
-            "api_key": self.api_key,
+            "api_key": api_key,
             "token": token,
         }
         params["api_sig"] = self._sign_params(params)
@@ -104,9 +114,10 @@ class LastfmService:
         if not self.is_configured():
             return False
 
+        api_key, _ = self._get_credentials()
         params = {
             "method": "track.updateNowPlaying",
-            "api_key": self.api_key,
+            "api_key": api_key,
             "sk": session_key,
             "artist": artist,
             "track": track,
@@ -146,9 +157,10 @@ class LastfmService:
         if timestamp is None:
             timestamp = int(time.time())
 
+        api_key, _ = self._get_credentials()
         params = {
             "method": "track.scrobble",
-            "api_key": self.api_key,
+            "api_key": api_key,
             "sk": session_key,
             "artist": artist,
             "track": track,
@@ -175,9 +187,10 @@ class LastfmService:
         if not self.is_configured():
             return None
 
+        api_key, _ = self._get_credentials()
         params = {
             "method": "user.getInfo",
-            "api_key": self.api_key,
+            "api_key": api_key,
             "sk": session_key,
         }
         params["api_sig"] = self._sign_params(params)

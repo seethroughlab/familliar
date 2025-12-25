@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { spotifyApi } from '../../api/client';
+import { spotifyApi, appSettingsApi } from '../../api/client';
 import type { SpotifyStatus } from '../../api/client';
-import { Music2, RefreshCw, LogOut, ExternalLink, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Music2, RefreshCw, LogOut, ExternalLink, CheckCircle, XCircle, Loader2, Settings, Save } from 'lucide-react';
 
 export function SpotifySettings() {
   const queryClient = useQueryClient();
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [clientId, setClientId] = useState('');
+  const [clientSecret, setClientSecret] = useState('');
 
   // Check URL params for OAuth callback status
   useEffect(() => {
@@ -30,6 +33,24 @@ export function SpotifySettings() {
     queryKey: ['spotify-status'],
     queryFn: spotifyApi.getStatus,
     refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  const saveCredentialsMutation = useMutation({
+    mutationFn: () => appSettingsApi.update({
+      spotify_client_id: clientId,
+      spotify_client_secret: clientSecret,
+    }),
+    onSuccess: () => {
+      setSyncMessage('Spotify credentials saved!');
+      setShowSetup(false);
+      setClientId('');
+      setClientSecret('');
+      queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
+      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+    },
+    onError: (error: Error) => {
+      setSyncMessage(`Failed to save credentials: ${error.message}`);
+    },
   });
 
   const connectMutation = useMutation({
@@ -73,20 +94,79 @@ export function SpotifySettings() {
     );
   }
 
-  if (!status?.configured) {
+  if (!status?.configured || showSetup) {
     return (
       <div className="bg-zinc-800/50 rounded-lg p-6">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 mb-4">
           <div className="p-3 bg-zinc-700 rounded-lg">
             <Music2 className="w-6 h-6 text-zinc-400" />
           </div>
           <div>
-            <h3 className="font-medium text-white">Spotify Not Configured</h3>
+            <h3 className="font-medium text-white">Configure Spotify</h3>
             <p className="text-sm text-zinc-400 mt-1">
-              Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to your backend .env file to enable Spotify integration.
+              Enter your Spotify API credentials to enable integration.
+              <a
+                href="https://developer.spotify.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-green-400 hover:text-green-300 ml-1"
+              >
+                Get credentials
+              </a>
             </p>
           </div>
         </div>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">Client ID</label>
+            <input
+              type="text"
+              value={clientId}
+              onChange={(e) => setClientId(e.target.value)}
+              placeholder="Your Spotify Client ID"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">Client Secret</label>
+            <input
+              type="password"
+              value={clientSecret}
+              onChange={(e) => setClientSecret(e.target.value)}
+              placeholder="Your Spotify Client Secret"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => saveCredentialsMutation.mutate()}
+              disabled={!clientId || !clientSecret || saveCredentialsMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saveCredentialsMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              Save
+            </button>
+            {showSetup && (
+              <button
+                onClick={() => setShowSetup(false)}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        {syncMessage && (
+          <div className="mt-4 p-3 bg-zinc-700/50 rounded-md text-sm text-zinc-300">
+            {syncMessage}
+          </div>
+        )}
       </div>
     );
   }
@@ -122,7 +202,7 @@ export function SpotifySettings() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {status.connected ? (
               <>
                 <button
@@ -145,20 +225,36 @@ export function SpotifySettings() {
                   <LogOut className="w-4 h-4" />
                   Disconnect
                 </button>
+                <button
+                  onClick={() => setShowSetup(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-md transition-colors"
+                  title="Change API credentials"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
               </>
             ) : (
-              <button
-                onClick={() => connectMutation.mutate()}
-                disabled={connectMutation.isPending}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-[#1DB954] hover:bg-[#1ed760] text-black font-medium rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {connectMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ExternalLink className="w-4 h-4" />
-                )}
-                Connect Spotify
-              </button>
+              <>
+                <button
+                  onClick={() => connectMutation.mutate()}
+                  disabled={connectMutation.isPending}
+                  className="flex items-center gap-2 px-4 py-2 text-sm bg-[#1DB954] hover:bg-[#1ed760] text-black font-medium rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {connectMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-4 h-4" />
+                  )}
+                  Connect Spotify
+                </button>
+                <button
+                  onClick={() => setShowSetup(true)}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 text-white rounded-md transition-colors"
+                  title="Change API credentials"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+              </>
             )}
           </div>
         </div>

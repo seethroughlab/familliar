@@ -1,16 +1,38 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Radio, Loader2, ExternalLink, User, CheckCircle, XCircle } from 'lucide-react';
-import { lastfmApi } from '../../api/client';
+import { Radio, Loader2, User, CheckCircle, XCircle, Settings, Save } from 'lucide-react';
+import { lastfmApi, appSettingsApi } from '../../api/client';
 import { useSearchParams } from 'react-router-dom';
 
 export function LastfmSettings() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [showSetup, setShowSetup] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+  const [message, setMessage] = useState<string | null>(null);
 
   const { data: status, isLoading } = useQuery({
     queryKey: ['lastfm-status'],
     queryFn: lastfmApi.getStatus,
+  });
+
+  const saveCredentialsMutation = useMutation({
+    mutationFn: () => appSettingsApi.update({
+      lastfm_api_key: apiKey,
+      lastfm_api_secret: apiSecret,
+    }),
+    onSuccess: () => {
+      setMessage('Last.fm credentials saved!');
+      setShowSetup(false);
+      setApiKey('');
+      setApiSecret('');
+      queryClient.invalidateQueries({ queryKey: ['lastfm-status'] });
+      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+    },
+    onError: (error: Error) => {
+      setMessage(`Failed to save credentials: ${error.message}`);
+    },
   });
 
   const connectMutation = useMutation({
@@ -56,28 +78,75 @@ export function LastfmSettings() {
     );
   }
 
-  if (!status?.configured) {
+  if (!status?.configured || showSetup) {
     return (
       <div className="bg-zinc-800 rounded-lg p-4">
         <div className="flex items-center gap-3 mb-3">
           <Radio className="w-6 h-6 text-red-500" />
-          <h3 className="font-medium">Last.fm Scrobbling</h3>
+          <h3 className="font-medium">Configure Last.fm</h3>
         </div>
         <p className="text-sm text-zinc-400 mb-4">
-          Last.fm is not configured. Add your API key and secret to the .env file:
+          Enter your Last.fm API credentials to enable scrobbling.
+          <a
+            href="https://www.last.fm/api/account/create"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-red-400 hover:text-red-300 ml-1"
+          >
+            Get credentials
+          </a>
         </p>
-        <code className="block text-xs bg-zinc-900 p-2 rounded text-zinc-300">
-          LASTFM_API_KEY=your_api_key<br />
-          LASTFM_API_SECRET=your_api_secret
-        </code>
-        <a
-          href="https://www.last.fm/api/account/create"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-sm text-red-400 hover:text-red-300 mt-3"
-        >
-          Get API credentials <ExternalLink className="w-4 h-4" />
-        </a>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">API Key</label>
+            <input
+              type="text"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Your Last.fm API Key"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-zinc-400 mb-1">Shared Secret</label>
+            <input
+              type="password"
+              value={apiSecret}
+              onChange={(e) => setApiSecret(e.target.value)}
+              placeholder="Your Last.fm Shared Secret"
+              className="w-full px-3 py-2 bg-zinc-700 border border-zinc-600 rounded-md text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              onClick={() => saveCredentialsMutation.mutate()}
+              disabled={!apiKey || !apiSecret || saveCredentialsMutation.isPending}
+              className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {saveCredentialsMutation.isPending ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              Save
+            </button>
+            {showSetup && (
+              <button
+                onClick={() => setShowSetup(false)}
+                className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        {message && (
+          <div className="mt-4 p-3 bg-zinc-700/50 rounded-md text-sm text-zinc-300">
+            {message}
+          </div>
+        )}
       </div>
     );
   }
@@ -121,6 +190,13 @@ export function LastfmSettings() {
                 'Disconnect'
               )}
             </button>
+            <button
+              onClick={() => setShowSetup(true)}
+              className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
+              title="Change API credentials"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
           </div>
         </div>
       ) : (
@@ -134,23 +210,32 @@ export function LastfmSettings() {
             Connect your Last.fm account to scrobble your listening history.
           </p>
 
-          <button
-            onClick={() => connectMutation.mutate()}
-            disabled={connectMutation.isPending || callbackMutation.isPending}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium transition-colors"
-          >
-            {connectMutation.isPending || callbackMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Connecting...
-              </>
-            ) : (
-              <>
-                <Radio className="w-4 h-4" />
-                Connect Last.fm
-              </>
-            )}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={() => connectMutation.mutate()}
+              disabled={connectMutation.isPending || callbackMutation.isPending}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 rounded-lg text-sm font-medium transition-colors"
+            >
+              {connectMutation.isPending || callbackMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <Radio className="w-4 h-4" />
+                  Connect Last.fm
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => setShowSetup(true)}
+              className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg text-sm transition-colors"
+              title="Change API credentials"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
     </div>
