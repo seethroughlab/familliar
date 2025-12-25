@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import type { Track, QueueItem } from '../types';
 
+type RepeatMode = 'off' | 'all' | 'one';
+
 interface PlayerState {
   // Current playback
   currentTrack: Track | null;
@@ -8,6 +10,10 @@ interface PlayerState {
   currentTime: number;
   duration: number;
   volume: number;
+
+  // Playback modes
+  shuffle: boolean;
+  repeat: RepeatMode;
 
   // Queue
   queue: QueueItem[];
@@ -20,6 +26,8 @@ interface PlayerState {
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
   setVolume: (volume: number) => void;
+  toggleShuffle: () => void;
+  toggleRepeat: () => void;
 
   // Queue actions
   addToQueue: (track: Track) => void;
@@ -41,6 +49,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTime: 0,
   duration: 0,
   volume: 1,
+  shuffle: false,
+  repeat: 'off',
   queue: [],
   queueIndex: -1,
   history: [],
@@ -51,6 +61,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setCurrentTime: (time) => set({ currentTime: time }),
   setDuration: (duration) => set({ duration: duration }),
   setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
+  toggleShuffle: () => set((state) => ({ shuffle: !state.shuffle })),
+  toggleRepeat: () => set((state) => ({
+    repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off'
+  })),
 
   // Queue actions
   addToQueue: (track) => {

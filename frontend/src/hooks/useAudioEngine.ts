@@ -4,6 +4,20 @@ import { tracksApi } from '../api/client';
 
 const CROSSFADE_DURATION = 3; // seconds
 
+// Singleton audio context and analyser for visualizer access
+let globalAudioContext: AudioContext | null = null;
+let globalAnalyser: AnalyserNode | null = null;
+let globalMediaSource: MediaElementAudioSourceNode | null = null;
+let globalAudioElement: HTMLAudioElement | null = null;
+
+export function getAudioAnalyser(): AnalyserNode | null {
+  return globalAnalyser;
+}
+
+export function getAudioContext(): AudioContext | null {
+  return globalAudioContext;
+}
+
 export function useAudioEngine() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -15,6 +29,7 @@ export function useAudioEngine() {
   const pausedAtRef = useRef<number>(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const isLoadingRef = useRef(false);
+  const analyserRef = useRef<AnalyserNode | null>(null);
 
   // For fallback when Web Audio API has issues, keep a simple audio element
   const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -34,16 +49,43 @@ export function useAudioEngine() {
 
   // Initialize audio context and fallback
   useEffect(() => {
-    // Initialize fallback audio element
+    // Initialize fallback audio element (reuse global if exists)
     if (!fallbackAudioRef.current) {
-      fallbackAudioRef.current = new Audio();
-      fallbackAudioRef.current.preload = 'auto';
+      if (globalAudioElement) {
+        fallbackAudioRef.current = globalAudioElement;
+      } else {
+        fallbackAudioRef.current = new Audio();
+        fallbackAudioRef.current.preload = 'auto';
+        fallbackAudioRef.current.crossOrigin = 'anonymous';
+        globalAudioElement = fallbackAudioRef.current;
+      }
     }
 
-    // Try to initialize Web Audio API
+    // Try to initialize Web Audio API with analyser
     try {
       if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContext();
+        // Reuse global context if exists
+        if (globalAudioContext) {
+          audioContextRef.current = globalAudioContext;
+          analyserRef.current = globalAnalyser;
+        } else {
+          audioContextRef.current = new AudioContext();
+          globalAudioContext = audioContextRef.current;
+
+          // Create analyser for visualizer
+          analyserRef.current = audioContextRef.current.createAnalyser();
+          analyserRef.current.fftSize = 256;
+          analyserRef.current.smoothingTimeConstant = 0.8;
+          globalAnalyser = analyserRef.current;
+
+          // Connect audio element to analyser (only once)
+          if (fallbackAudioRef.current && !globalMediaSource) {
+            globalMediaSource = audioContextRef.current.createMediaElementSource(fallbackAudioRef.current);
+            globalMediaSource.connect(analyserRef.current);
+            analyserRef.current.connect(audioContextRef.current.destination);
+          }
+        }
+
         gainCurrentRef.current = audioContextRef.current.createGain();
         gainNextRef.current = audioContextRef.current.createGain();
         gainCurrentRef.current.connect(audioContextRef.current.destination);

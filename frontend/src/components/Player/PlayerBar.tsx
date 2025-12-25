@@ -1,8 +1,12 @@
 import { useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { tracksApi } from '../../api/client';
+
+interface PlayerBarProps {
+  onExpandClick?: () => void;
+}
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -33,7 +37,7 @@ function AlbumArt({ trackId }: { trackId: string }) {
   );
 }
 
-export function PlayerBar() {
+export function PlayerBar({ onExpandClick }: PlayerBarProps) {
   const {
     currentTrack,
     isPlaying,
@@ -70,14 +74,18 @@ export function PlayerBar() {
   return (
     <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800">
       <div className="h-full max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
-        {/* Track info */}
-        <div className="flex items-center gap-3 w-64 min-w-0">
+        {/* Track info - clickable to expand */}
+        <button
+          onClick={onExpandClick}
+          className="flex items-center gap-3 w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
+        >
           <AlbumArt trackId={currentTrack.id} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="font-medium truncate">{currentTrack.title || 'Unknown'}</div>
             <div className="text-sm text-zinc-400 truncate">{currentTrack.artist || 'Unknown'}</div>
           </div>
-        </div>
+          <Maximize2 className="w-4 h-4 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </button>
 
         {/* Controls */}
         <div className="flex-1 flex flex-col items-center gap-1">

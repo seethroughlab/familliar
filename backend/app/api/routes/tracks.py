@@ -304,3 +304,62 @@ async def get_track_artwork(
             "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
         },
     )
+
+
+class LyricLineResponse(BaseModel):
+    """A single line of lyrics with timing."""
+    time: float
+    text: str
+
+
+class LyricsResponse(BaseModel):
+    """Lyrics response schema."""
+    synced: bool
+    lines: list[LyricLineResponse]
+    plain_text: str
+    source: str
+
+
+@router.get("/{track_id}/lyrics", response_model=LyricsResponse | None)
+async def get_track_lyrics(
+    db: DbSession,
+    track_id: UUID,
+) -> LyricsResponse | None:
+    """
+    Get lyrics for a track.
+    Returns synced lyrics with timestamps if available, otherwise plain lyrics.
+    """
+    from app.services.lyrics import get_lyrics_service
+
+    # Get track from database
+    query = select(Track).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    if not track.title or not track.artist:
+        raise HTTPException(
+            status_code=400,
+            detail="Track must have title and artist to search for lyrics"
+        )
+
+    # Search for lyrics
+    lyrics_service = get_lyrics_service()
+    lyrics = await lyrics_service.search(
+        track_name=track.title,
+        artist_name=track.artist,
+        album_name=track.album,
+        duration=track.duration_seconds
+    )
+
+    if not lyrics:
+        raise HTTPException(status_code=404, detail="No lyrics found")
+
+    return LyricsResponse(
+        synced=lyrics.synced,
+        lines=[LyricLineResponse(time=line.time, text=line.text) for line in lyrics.lines],
+        plain_text=lyrics.plain_text,
+        source=lyrics.source
+    )

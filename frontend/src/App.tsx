@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BrowserRouter } from 'react-router-dom';
 import { Search, Library, MessageSquare, Settings } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
 import { SettingsPanel } from './components/Settings';
+import { FullPlayer } from './components/FullPlayer';
+import { useScrobbling } from './hooks/useScrobbling';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,6 +23,10 @@ type RightPanelTab = 'context' | 'library' | 'settings';
 function AppContent() {
   const [search, setSearch] = useState('');
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('library');
+  const [showFullPlayer, setShowFullPlayer] = useState(false);
+
+  // Initialize Last.fm scrobbling
+  useScrobbling();
 
   return (
     <div className="h-screen flex flex-col bg-black text-white">
@@ -111,16 +118,23 @@ function AppContent() {
       </div>
 
       {/* Player bar - fixed at bottom */}
-      <PlayerBar />
+      <PlayerBar onExpandClick={() => setShowFullPlayer(true)} />
+
+      {/* Full player overlay */}
+      {showFullPlayer && (
+        <FullPlayer onClose={() => setShowFullPlayer(false)} />
+      )}
     </div>
   );
 }
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AppContent />
-    </QueryClientProvider>
+    <BrowserRouter>
+      <QueryClientProvider client={queryClient}>
+        <AppContent />
+      </QueryClientProvider>
+    </BrowserRouter>
   );
 }
 

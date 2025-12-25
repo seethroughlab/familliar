@@ -1,4 +1,5 @@
 import { SpotifySettings } from './SpotifySettings';
+import { LastfmSettings } from './LastfmSettings';
 
 export function SettingsPanel() {
   return (
@@ -13,7 +14,10 @@ export function SettingsPanel() {
           <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">
             Integrations
           </h3>
-          <SpotifySettings />
+          <div className="space-y-4">
+            <SpotifySettings />
+            <LastfmSettings />
+          </div>
         </section>
       </div>
     </div>
@@ -21,3 +25,4 @@ export function SettingsPanel() {
 }
 
 export { SpotifySettings } from './SpotifySettings';
+export { LastfmSettings } from './LastfmSettings';
