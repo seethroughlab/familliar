@@ -9,34 +9,27 @@ dependencies = [
     # Web framework
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
-
     # Database
     "sqlalchemy>=2.0.0",
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.0",
     "pgvector>=0.2.0",
-
     # Task queue
     "celery[redis]>=5.3.0",
-
     # Audio metadata
     "mutagen>=1.47.0",
-
     # Image processing
     "pillow>=10.0.0",
-
     # HTTP client
     "httpx>=0.26.0",
-
     # Configuration
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
-
     # Async support
     "greenlet>=3.0.0",
-
     # Utilities
     "python-multipart>=0.0.6",
+    "anthropic>=0.75.0",
 ]
 
 [project.optional-dependencies]

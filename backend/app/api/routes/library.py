@@ -103,12 +103,21 @@ async def start_scan(
         global _scan_state
         try:
             scanner = LibraryScanner(db)
-            result = await scanner.scan(settings.music_library_path, full_scan=full)
+            total_results = {"total": 0, "new": 0, "updated": 0, "deleted": 0, "queued": 0}
+
+            # Scan all configured library paths
+            for library_path in settings.music_library_paths:
+                if library_path.exists():
+                    _scan_state["message"] = f"Scanning {library_path.name}..."
+                    result = await scanner.scan(library_path, full_scan=full)
+                    for key in total_results:
+                        total_results[key] += result.get(key, 0)
+
             _scan_state = {
                 "status": "completed",
-                "message": f"Scan complete: {result['new']} new, {result['updated']} updated, {result['deleted']} deleted",
-                "files_found": result["total"],
-                "files_queued": result["queued"],
+                "message": f"Scan complete: {total_results['new']} new, {total_results['updated']} updated, {total_results['deleted']} deleted",
+                "files_found": total_results["total"],
+                "files_queued": total_results["queued"],
             }
         except Exception as e:
             _scan_state = {"status": "error", "message": str(e)}

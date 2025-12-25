@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.api.routes import health, tracks, library
+from app.api.routes import health, tracks, library, chat
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(tracks.router, prefix="/api/v1")
 app.include_router(library.router, prefix="/api/v1")
+app.include_router(chat.router, prefix="/api/v1")
 
 
 @app.get("/")

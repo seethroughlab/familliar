@@ -15,8 +15,18 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # Music library
-    music_library_path: Path = Path("/data/music")
+    # Music library (comma-separated paths supported)
+    music_library_path: str = "/data/music"
+
+    @property
+    def music_library_paths(self) -> list[Path]:
+        """Get list of music library paths (supports comma-separated values)."""
+        paths = []
+        for p in self.music_library_path.split(","):
+            p = p.strip()
+            if p:
+                paths.append(Path(p))
+        return paths
 
     # Data paths
     art_path: Path = Path("data/art")
