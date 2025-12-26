@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# IDE
+.idea
+.vscode
+*.swp
+*.swo
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+backend/.venv
+*.egg-info
+
+# Node
+frontend/node_modules
+frontend/.vite
+
+# Build artifacts
+frontend/dist
+backend/dist
+
+# Data directories (runtime only)
+data/
+
+# Environment files (secrets)
+.env
+.env.*
+!.env.example
+
+# Claude/AI
+.claude
+
+# Dev files
+docker/docker-compose.yml
+Makefile
+familiar-dev-plan.md
+TODO.md

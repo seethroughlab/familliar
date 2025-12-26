@@ -40,7 +40,9 @@ WORKDIR /app
 FROM python-base AS python-deps
 
 # Copy only dependency files first for caching
-COPY backend/pyproject.toml backend/uv.lock* ./
+COPY backend/pyproject.toml ./
+COPY backend/uv.lock ./
+COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production)
 RUN --mount=type=cache,target=/root/.cache/uv \

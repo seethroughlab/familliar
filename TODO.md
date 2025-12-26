@@ -3,3 +3,4 @@
 [x] Please make a github actions CI service, and a release action, with badges in the README. And add detailed install instructions for OpenMediaVault installation and upgrades.
 [ ] What's next in familiar-dev-plan.md?
 [ ] Are we ready to do a test install on my personal OpenMediaVault? I have auto-login setup with root@openmediavault (tailscale)
+[ ] Add instructions to README.md to get Anthropic key

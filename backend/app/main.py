@@ -3,9 +3,12 @@
 import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.config import settings as app_config
 
@@ -67,3 +70,38 @@ async def root() -> dict:
         "version": "0.1.0",
         "docs": "/docs",
     }
+
+
+# Serve frontend static files in production
+# The static folder is created during Docker build
+STATIC_DIR = Path(__file__).parent.parent / "static"
+if STATIC_DIR.exists():
+    # Serve static assets
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+    app.mount("/icons", StaticFiles(directory=STATIC_DIR / "icons"), name="icons")
+
+    # Serve PWA files
+    @app.get("/manifest.json")
+    async def manifest():
+        return FileResponse(STATIC_DIR / "manifest.json")
+
+    @app.get("/sw.js")
+    async def service_worker():
+        return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+    @app.get("/registerSW.js")
+    async def register_sw():
+        return FileResponse(STATIC_DIR / "registerSW.js", media_type="application/javascript")
+
+    @app.get("/workbox-{path:path}")
+    async def workbox(path: str):
+        return FileResponse(STATIC_DIR / f"workbox-{path}", media_type="application/javascript")
+
+    # SPA fallback - serve index.html for all non-API routes
+    @app.get("/{full_path:path}")
+    async def spa_fallback(full_path: str):
+        """Serve index.html for SPA routing (catches all non-API routes)."""
+        # Don't catch API or docs routes
+        if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "health")):
+            return {"detail": "Not found"}
+        return FileResponse(STATIC_DIR / "index.html")
