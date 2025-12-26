@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Play,
   Pause,
@@ -10,14 +10,13 @@ import {
   Shuffle,
   Repeat,
   Music,
-  Waves,
   Video,
   Type,
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
-import { tracksApi } from '../../api/client';
-import { AudioVisualizer } from '../Visualizer/AudioVisualizer';
+import { tracksApi, type LyricLine } from '../../api/client';
+import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
 
@@ -37,6 +36,7 @@ interface FullPlayerProps {
 export function FullPlayer({ onClose }: FullPlayerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('visualizer');
   const [imageError, setImageError] = useState(false);
+  const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
 
   const {
     currentTrack,
@@ -54,6 +54,29 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
+
+  // Fetch lyrics for visualizer
+  useEffect(() => {
+    if (!currentTrack) {
+      setLyrics(null);
+      return;
+    }
+
+    tracksApi.getLyrics(currentTrack.id)
+      .then(response => {
+        if (response.synced && response.lines.length > 0) {
+          setLyrics(response.lines);
+        } else {
+          setLyrics(null);
+        }
+      })
+      .catch(() => setLyrics(null));
+  }, [currentTrack?.id]);
+
+  // Reset image error when track changes
+  useEffect(() => {
+    setImageError(false);
+  }, [currentTrack?.id]);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -80,41 +103,47 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <X className="w-6 h-6" />
         </button>
 
-        {/* View mode toggle */}
-        <div className="flex gap-1 bg-white/10 rounded-lg p-1">
-          <button
-            onClick={() => setViewMode('visualizer')}
-            className={`p-2 rounded-md transition-colors ${
-              viewMode === 'visualizer'
-                ? 'bg-white/20 text-white'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Visualizer"
-          >
-            <Waves className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setViewMode('video')}
-            className={`p-2 rounded-md transition-colors ${
-              viewMode === 'video'
-                ? 'bg-white/20 text-white'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Music Video"
-          >
-            <Video className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => setViewMode('lyrics')}
-            className={`p-2 rounded-md transition-colors ${
-              viewMode === 'lyrics'
-                ? 'bg-white/20 text-white'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-            title="Lyrics"
-          >
-            <Type className="w-5 h-5" />
-          </button>
+        {/* Center: View mode toggle + visualizer picker */}
+        <div className="flex items-center gap-3">
+          {/* View mode toggle */}
+          <div className="flex gap-1 bg-white/10 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('visualizer')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'visualizer'
+                  ? 'bg-white/20 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Visualizer"
+            >
+              <Music className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('video')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'video'
+                  ? 'bg-white/20 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Music Video"
+            >
+              <Video className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setViewMode('lyrics')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'lyrics'
+                  ? 'bg-white/20 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Lyrics"
+            >
+              <Type className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Visualizer picker - only show in visualizer mode */}
+          {viewMode === 'visualizer' && <VisualizerPicker />}
         </div>
 
         <div className="w-10" /> {/* Spacer for balance */}
@@ -123,7 +152,13 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
       {/* Main content area */}
       <div className="flex-1 relative overflow-hidden">
         {viewMode === 'visualizer' && (
-          <AudioVisualizer mode="combined" className="absolute inset-0" />
+          <AudioVisualizer
+            track={currentTrack}
+            artworkUrl={artworkUrl}
+            lyrics={lyrics}
+            currentTime={currentTime}
+            className="absolute inset-0"
+          />
         )}
 
         {viewMode === 'video' && (
