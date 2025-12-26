@@ -34,6 +34,8 @@ dependencies = [
     "bandcamp-api>=0.2.3",
     "beautifulsoup4>=4.14.3",
     "rapidfuzz>=3.0.0",
+    "pyacoustid>=1.3.0",
+    "musicbrainzngs>=0.7.1",
 ]
 
 [project.optional-dependencies]

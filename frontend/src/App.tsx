@@ -18,6 +18,7 @@ import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
 import { usePlayerStore } from './stores/playerStore';
+import { useThemeStore } from './stores/themeStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -88,19 +89,22 @@ function AppContent() {
     sendChatMessage,
   } = useListeningSession({ userId, username });
 
+  // Get resolved theme for conditional styling
+  const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
+
   return (
-    <div className="h-screen flex flex-col bg-black text-white">
+    <div className={`h-screen flex flex-col ${resolvedTheme === 'light' ? 'bg-white text-zinc-900' : 'bg-black text-white'}`}>
       {/* Main content area - pb-20 accounts for fixed player bar */}
       <div className="flex-1 flex overflow-hidden pb-20">
         {/* Left panel - Chat */}
-        <div className="w-96 border-r border-zinc-800 flex flex-col">
+        <div className={`w-96 border-r ${resolvedTheme === 'light' ? 'border-zinc-200' : 'border-zinc-800'} flex flex-col`}>
           <ChatPanel />
         </div>
 
         {/* Right panel - Library/Context */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header with tabs */}
-          <header className="bg-zinc-900/80 backdrop-blur-md border-b border-zinc-800">
+          <header className={`backdrop-blur-md border-b ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
             <div className="px-4 py-3 flex items-center gap-4">
               {/* Tabs */}
               <div className="flex gap-1">
@@ -169,7 +173,7 @@ function AppContent() {
           </header>
 
           {/* Content */}
-          <main className="flex-1 overflow-y-auto bg-gradient-to-b from-zinc-900 to-black">
+          <main className={`flex-1 overflow-y-auto ${resolvedTheme === 'light' ? 'bg-gradient-to-b from-zinc-50 to-white' : 'bg-gradient-to-b from-zinc-900 to-black'}`}>
             {rightPanelTab === 'library' && (
               <div className="px-4 py-6">
                 <TrackList search={search || undefined} />

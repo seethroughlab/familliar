@@ -57,7 +57,12 @@ def analyze_track(self, track_id: str) -> dict:
             )
 
             # Import analysis functions (lazy import to avoid loading models on worker start)
-            from app.services.analysis import extract_embedding, extract_features
+            from app.services.analysis import (
+                extract_embedding,
+                extract_features,
+                generate_fingerprint,
+                identify_track,
+            )
 
             # Extract audio features with librosa
             features = extract_features(file_path)
@@ -65,13 +70,30 @@ def analyze_track(self, track_id: str) -> dict:
             # Generate CLAP embedding for similarity search
             embedding = extract_embedding(file_path)
 
+            # Generate AcoustID fingerprint
+            acoustid_fingerprint = None
+            fp_result = generate_fingerprint(file_path)
+            if fp_result:
+                _, acoustid_fingerprint = fp_result
+
+            # Try to identify track via AcoustID (if API key is set)
+            acoustid_metadata = None
+            if acoustid_fingerprint:
+                id_result = identify_track(file_path)
+                if id_result.get("metadata"):
+                    acoustid_metadata = id_result["metadata"]
+                    logger.info(
+                        f"AcoustID match: {acoustid_metadata.get('title')} by {acoustid_metadata.get('artist')} "
+                        f"(score: {acoustid_metadata.get('acoustid_score', 0):.2f})"
+                    )
+
             # Create or update analysis record
             analysis = TrackAnalysis(
                 track_id=track.id,
                 version=ANALYSIS_VERSION,
                 features=features,
                 embedding=embedding,
-                acoustid=None,
+                acoustid=acoustid_fingerprint,
             )
 
             # Check if analysis for this version exists
@@ -86,6 +108,7 @@ def analyze_track(self, track_id: str) -> dict:
                 # Update existing
                 existing_analysis.features = features
                 existing_analysis.embedding = embedding
+                existing_analysis.acoustid = acoustid_fingerprint
             else:
                 # Create new
                 db.add(analysis)
@@ -99,7 +122,8 @@ def analyze_track(self, track_id: str) -> dict:
             logger.info(
                 f"Analysis complete for {track.title}: "
                 f"BPM={features.get('bpm')}, Key={features.get('key')}, "
-                f"Embedding={'Yes' if embedding else 'No'}"
+                f"Embedding={'Yes' if embedding else 'No'}, "
+                f"AcoustID={'Yes' if acoustid_fingerprint else 'No'}"
             )
 
             return {
@@ -108,6 +132,8 @@ def analyze_track(self, track_id: str) -> dict:
                 "artwork_extracted": artwork_hash is not None,
                 "features_extracted": bool(features.get("bpm")),
                 "embedding_generated": embedding is not None,
+                "acoustid_generated": acoustid_fingerprint is not None,
+                "acoustid_matched": acoustid_metadata is not None,
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }

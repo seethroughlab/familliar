@@ -1,14 +1,16 @@
 """Smart playlist API endpoints."""
 
+import json
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.db.models import User
+from app.db.models import Track, User
 from app.services.smart_playlists import SmartPlaylistService
 
 router = APIRouter(prefix="/smart-playlists", tags=["smart-playlists"])
@@ -304,3 +306,133 @@ async def get_available_fields():
             "list": ["in", "not_in"],
         },
     }
+
+
+class PlaylistImportResult(BaseModel):
+    """Result of importing a .familiar playlist file."""
+
+    playlist_id: str
+    playlist_name: str
+    total_tracks: int
+    matched_tracks: int
+    unmatched_tracks: int
+
+
+@router.post("/import", response_model=PlaylistImportResult)
+async def import_playlist(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Import a .familiar playlist file.
+
+    The file should be a JSON file with the format:
+    {
+        "format": "familiar-playlist",
+        "version": 1,
+        "playlist": {
+            "name": "...",
+            "description": "...",
+            "type": "smart" | "static",
+            "rules": [...],  // for smart playlists
+            "match_mode": "all" | "any",
+            "tracks": [...]
+        }
+    }
+
+    Tracks are matched to the local library by title and artist.
+    """
+    # Read and parse the file
+    try:
+        content = await file.read()
+        data = json.loads(content.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid JSON: {e}",
+        )
+
+    # Validate format
+    if data.get("format") != "familiar-playlist":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file format. Expected a .familiar playlist file.",
+        )
+
+    playlist_data = data.get("playlist", {})
+    name = playlist_data.get("name", "Imported Playlist")
+    description = playlist_data.get("description")
+    playlist_type = playlist_data.get("type", "smart")
+    rules = playlist_data.get("rules", [])
+    match_mode = playlist_data.get("match_mode", "all")
+    imported_tracks = playlist_data.get("tracks", [])
+
+    # Match tracks to local library
+    matched_count = 0
+    for track_info in imported_tracks:
+        title = track_info.get("title", "").lower()
+        artist = track_info.get("artist", "").lower()
+
+        if not title or not artist:
+            continue
+
+        # Try to find matching track
+        result = await db.execute(
+            select(Track).where(
+                Track.title.ilike(f"%{title}%"),
+                Track.artist.ilike(f"%{artist}%"),
+            ).limit(1)
+        )
+        track = result.scalar_one_or_none()
+        if track:
+            matched_count += 1
+
+    # Create the smart playlist
+    service = SmartPlaylistService(db)
+
+    # If it's a smart playlist with rules, use those rules
+    # Otherwise, create rules based on the track metadata
+    if playlist_type == "smart" and rules:
+        playlist = await service.create(
+            user_id=user.id,
+            name=name,
+            description=description,
+            rules=rules,
+            match_mode=match_mode,
+        )
+    else:
+        # Create a smart playlist with artist rules from imported tracks
+        unique_artists = list(set(
+            t.get("artist") for t in imported_tracks
+            if t.get("artist")
+        ))[:20]  # Limit to 20 artists
+
+        if unique_artists:
+            artist_rules = [
+                {"field": "artist", "operator": "contains", "value": artist}
+                for artist in unique_artists
+            ]
+            playlist = await service.create(
+                user_id=user.id,
+                name=name,
+                description=description or f"Imported playlist with {len(imported_tracks)} tracks",
+                rules=artist_rules,
+                match_mode="any",  # Match any of the artists
+            )
+        else:
+            # Fallback: create empty playlist
+            playlist = await service.create(
+                user_id=user.id,
+                name=name,
+                description=description,
+                rules=[],
+                match_mode="all",
+            )
+
+    return PlaylistImportResult(
+        playlist_id=str(playlist.id),
+        playlist_name=playlist.name,
+        total_tracks=len(imported_tracks),
+        matched_tracks=matched_count,
+        unmatched_tracks=len(imported_tracks) - matched_count,
+    )

@@ -1,14 +1,32 @@
 """Audio analysis service using CLAP embeddings and librosa features."""
 
 import logging
+import os
 from functools import lru_cache
 from pathlib import Path
 
+import acoustid
 import librosa
 import numpy as np
 import torch
 
 logger = logging.getLogger(__name__)
+
+
+def get_acoustid_api_key() -> str:
+    """Get AcoustID API key from environment or app settings."""
+    # First check environment variable
+    key = os.environ.get("ACOUSTID_API_KEY", "")
+    if key:
+        return key
+
+    # Then check app settings
+    try:
+        from app.services.app_settings import get_app_settings_service
+        settings = get_app_settings_service().get()
+        return settings.acoustid_api_key or ""
+    except Exception:
+        return ""
 
 # Lazy load the CLAP model to avoid loading on import
 _clap_model = None
@@ -195,3 +213,106 @@ def extract_features(file_path: Path) -> dict:
         logger.error(f"Error extracting features from {file_path}: {e}")
 
     return features
+
+
+def generate_fingerprint(file_path: Path) -> tuple[int, str] | None:
+    """Generate AcoustID fingerprint for an audio file.
+
+    Requires chromaprint/fpcalc to be installed on the system.
+    Install via: brew install chromaprint (macOS) or apt install libchromaprint-tools (Linux)
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Tuple of (duration_seconds, fingerprint_string) or None on error
+    """
+    try:
+        duration, fingerprint = acoustid.fingerprint_file(str(file_path))
+        return (duration, fingerprint)
+    except acoustid.FingerprintGenerationError as e:
+        logger.error(f"Error generating fingerprint for {file_path}: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error generating fingerprint for {file_path}: {e}")
+        return None
+
+
+def lookup_acoustid(file_path: Path) -> dict | None:
+    """Look up track metadata from AcoustID database.
+
+    Requires ACOUSTID_API_KEY environment variable or app setting to be set.
+    Get a free key at https://acoustid.org/new-application
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Dict with metadata (title, artist, album, musicbrainz_id) or None
+    """
+    api_key = get_acoustid_api_key()
+    if not api_key:
+        logger.warning("ACOUSTID_API_KEY not set, skipping AcoustID lookup")
+        return None
+
+    try:
+        results = acoustid.match(
+            api_key,
+            str(file_path),
+            meta="recordings releases",
+        )
+
+        for score, recording_id, title, artist in results:
+            if score > 0.8:  # High confidence match
+                return {
+                    "acoustid_score": score,
+                    "musicbrainz_recording_id": recording_id,
+                    "title": title,
+                    "artist": artist,
+                }
+
+        return None
+
+    except acoustid.NoBackendError:
+        logger.error("chromaprint/fpcalc not found. Install chromaprint.")
+        return None
+    except acoustid.FingerprintGenerationError as e:
+        logger.error(f"Error generating fingerprint: {e}")
+        return None
+    except acoustid.WebServiceError as e:
+        logger.error(f"AcoustID API error: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error in AcoustID lookup: {e}")
+        return None
+
+
+def identify_track(file_path: Path) -> dict:
+    """Full track identification using AcoustID.
+
+    Generates fingerprint and looks up metadata.
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Dict with fingerprint and any matched metadata
+    """
+    result = {
+        "fingerprint": None,
+        "duration": None,
+        "metadata": None,
+    }
+
+    # Generate fingerprint
+    fp_result = generate_fingerprint(file_path)
+    if fp_result:
+        result["duration"], result["fingerprint"] = fp_result
+
+    # Look up metadata if we have an API key
+    if get_acoustid_api_key():
+        metadata = lookup_acoustid(file_path)
+        if metadata:
+            result["metadata"] = metadata
+
+    return result

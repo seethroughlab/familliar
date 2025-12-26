@@ -1,0 +1,577 @@
+﻿2025-12-26T22:42:59.3204517Z Current runner version: '2.330.0'
+2025-12-26T22:42:59.3279864Z ##[group]Runner Image Provisioner
+2025-12-26T22:42:59.3281058Z Hosted Compute Agent
+2025-12-26T22:42:59.3281989Z Version: 20251211.462
+2025-12-26T22:42:59.3282977Z Commit: 6cbad8c2bb55d58165063d031ccabf57e2d2db61
+2025-12-26T22:42:59.3284155Z Build Date: 2025-12-11T16:28:49Z
+2025-12-26T22:42:59.3285223Z Worker ID: {bf647451-424c-402f-992e-9cd16962a57b}
+2025-12-26T22:42:59.3286348Z ##[endgroup]
+2025-12-26T22:42:59.3287112Z ##[group]Operating System
+2025-12-26T22:42:59.3308705Z Ubuntu
+2025-12-26T22:42:59.3309488Z 24.04.3
+2025-12-26T22:42:59.3310286Z LTS
+2025-12-26T22:42:59.3311139Z ##[endgroup]
+2025-12-26T22:42:59.3312056Z ##[group]Runner Image
+2025-12-26T22:42:59.3313021Z Image: ubuntu-24.04
+2025-12-26T22:42:59.3314005Z Version: 20251215.174.1
+2025-12-26T22:42:59.3315900Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20251215.174/images/ubuntu/Ubuntu2404-Readme.md
+2025-12-26T22:42:59.3318822Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20251215.174
+2025-12-26T22:42:59.3320728Z ##[endgroup]
+2025-12-26T22:42:59.3322682Z ##[group]GITHUB_TOKEN Permissions
+2025-12-26T22:42:59.3325391Z Contents: read
+2025-12-26T22:42:59.3326242Z Metadata: read
+2025-12-26T22:42:59.3326963Z Packages: read
+2025-12-26T22:42:59.3330665Z ##[endgroup]
+2025-12-26T22:42:59.3333941Z Secret source: Actions
+2025-12-26T22:42:59.3335298Z Prepare workflow directory
+2025-12-26T22:42:59.4308875Z Prepare all required actions
+2025-12-26T22:42:59.4362737Z Getting action download info
+2025-12-26T22:42:59.7960382Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2025-12-26T22:43:00.5391298Z Download action repository 'astral-sh/setup-uv@v4' (SHA:38f3f104447c67c051c4a08e39b64a148898af3a)
+2025-12-26T22:43:01.0614021Z Complete job name: Backend Lint
+2025-12-26T22:43:01.1305944Z ##[group]Run actions/checkout@v4
+2025-12-26T22:43:01.1306846Z with:
+2025-12-26T22:43:01.1307468Z   repository: seethroughlab/familliar
+2025-12-26T22:43:01.1308262Z   token: ***
+2025-12-26T22:43:01.1308673Z   ssh-strict: true
+2025-12-26T22:43:01.1309092Z   ssh-user: git
+2025-12-26T22:43:01.1309529Z   persist-credentials: true
+2025-12-26T22:43:01.1309993Z   clean: true
+2025-12-26T22:43:01.1310437Z   sparse-checkout-cone-mode: true
+2025-12-26T22:43:01.1310943Z   fetch-depth: 1
+2025-12-26T22:43:01.1311353Z   fetch-tags: false
+2025-12-26T22:43:01.1311792Z   show-progress: true
+2025-12-26T22:43:01.1312226Z   lfs: false
+2025-12-26T22:43:01.1312641Z   submodules: false
+2025-12-26T22:43:01.1313111Z   set-safe-directory: true
+2025-12-26T22:43:01.1313858Z ##[endgroup]
+2025-12-26T22:43:01.2464229Z Syncing repository: seethroughlab/familliar
+2025-12-26T22:43:01.2467984Z ##[group]Getting Git version info
+2025-12-26T22:43:01.2469345Z Working directory is '/home/runner/work/familliar/familliar'
+2025-12-26T22:43:01.2474068Z [command]/usr/bin/git version
+2025-12-26T22:43:01.2716966Z git version 2.52.0
+2025-12-26T22:43:01.2721706Z ##[endgroup]
+2025-12-26T22:43:01.2728457Z Temporarily overriding HOME='/home/runner/work/_temp/c6bdbe38-fb73-469c-a891-4d4b0f3556c7' before making global git config changes
+2025-12-26T22:43:01.2731068Z Adding repository directory to the temporary git global config as a safe directory
+2025-12-26T22:43:01.2733142Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/familliar/familliar
+2025-12-26T22:43:01.2736217Z Deleting the contents of '/home/runner/work/familliar/familliar'
+2025-12-26T22:43:01.2737967Z ##[group]Initializing the repository
+2025-12-26T22:43:01.2739264Z [command]/usr/bin/git init /home/runner/work/familliar/familliar
+2025-12-26T22:43:01.2835482Z hint: Using 'master' as the name for the initial branch. This default branch name
+2025-12-26T22:43:01.2839194Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2025-12-26T22:43:01.2840835Z hint: to use in all of your new repositories, which will suppress this warning,
+2025-12-26T22:43:01.2843006Z hint: call:
+2025-12-26T22:43:01.2844219Z hint:
+2025-12-26T22:43:01.2845423Z hint: 	git config --global init.defaultBranch <name>
+2025-12-26T22:43:01.2846581Z hint:
+2025-12-26T22:43:01.2847908Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2025-12-26T22:43:01.2849710Z hint: 'development'. The just-created branch can be renamed via this command:
+2025-12-26T22:43:01.2851033Z hint:
+2025-12-26T22:43:01.2851735Z hint: 	git branch -m <name>
+2025-12-26T22:43:01.2852615Z hint:
+2025-12-26T22:43:01.2853804Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2025-12-26T22:43:01.2856043Z Initialized empty Git repository in /home/runner/work/familliar/familliar/.git/
+2025-12-26T22:43:01.2860780Z [command]/usr/bin/git remote add origin https://github.com/seethroughlab/familliar
+2025-12-26T22:43:01.3730531Z ##[endgroup]
+2025-12-26T22:43:01.3731903Z ##[group]Disabling automatic garbage collection
+2025-12-26T22:43:01.3733105Z [command]/usr/bin/git config --local gc.auto 0
+2025-12-26T22:43:01.3740864Z ##[endgroup]
+2025-12-26T22:43:01.3743462Z ##[group]Setting up auth
+2025-12-26T22:43:01.3744667Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2025-12-26T22:43:01.3748522Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2025-12-26T22:43:01.3752614Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-12-26T22:43:01.3757592Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2025-12-26T22:43:01.3884307Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2025-12-26T22:43:01.3919666Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2025-12-26T22:43:01.4191681Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2025-12-26T22:43:01.4230497Z ##[endgroup]
+2025-12-26T22:43:01.4233177Z ##[group]Fetching the repository
+2025-12-26T22:43:01.4242186Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +c405d875d0da95c0c7d2c62369ff6698ce52c560:refs/remotes/origin/master
+2025-12-26T22:43:01.7818571Z From https://github.com/seethroughlab/familliar
+2025-12-26T22:43:01.7822328Z  * [new ref]         c405d875d0da95c0c7d2c62369ff6698ce52c560 -> origin/master
+2025-12-26T22:43:01.7852292Z ##[endgroup]
+2025-12-26T22:43:01.7853965Z ##[group]Determining the checkout info
+2025-12-26T22:43:01.7855853Z ##[endgroup]
+2025-12-26T22:43:01.7858257Z [command]/usr/bin/git sparse-checkout disable
+2025-12-26T22:43:01.7904850Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2025-12-26T22:43:01.7936870Z ##[group]Checking out the ref
+2025-12-26T22:43:01.7939208Z [command]/usr/bin/git checkout --progress --force -B master refs/remotes/origin/master
+2025-12-26T22:43:01.8111555Z Reset branch 'master'
+2025-12-26T22:43:01.8117192Z branch 'master' set up to track 'origin/master'.
+2025-12-26T22:43:01.8125647Z ##[endgroup]
+2025-12-26T22:43:01.8165374Z [command]/usr/bin/git log -1 --format=%H
+2025-12-26T22:43:01.8190041Z c405d875d0da95c0c7d2c62369ff6698ce52c560
+2025-12-26T22:43:01.8499406Z ##[group]Run astral-sh/setup-uv@v4
+2025-12-26T22:43:01.8500577Z with:
+2025-12-26T22:43:01.8501363Z   version: latest
+2025-12-26T22:43:01.8502641Z   github-token: ***
+2025-12-26T22:43:01.8503549Z   enable-cache: false
+2025-12-26T22:43:01.8504536Z   cache-dependency-glob: **/uv.lock
+2025-12-26T22:43:01.8505669Z   prune-cache: true
+2025-12-26T22:43:01.8506626Z   ignore-nothing-to-cache: false
+2025-12-26T22:43:01.8507842Z ##[endgroup]
+2025-12-26T22:43:02.3603727Z Downloading uv from "https://github.com/astral-sh/uv/releases/download/0.9.18/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+2025-12-26T22:43:02.7759044Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/206cb659-f84d-459c-89db-df7ac4a49ea5 -f /home/runner/work/_temp/ecfecbfa-d7d5-4bbb-a453-bd847b9e3748
+2025-12-26T22:43:03.3952972Z Added /opt/hostedtoolcache/uv/0.9.18/x86_64 to the path
+2025-12-26T22:43:03.3953573Z Added /home/runner/.local/bin to the path
+2025-12-26T22:43:03.3976596Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+2025-12-26T22:43:03.3977194Z Successfully installed uv version 0.9.18
+2025-12-26T22:43:03.4102938Z ##[group]Run uv python install 3.12
+2025-12-26T22:43:03.4103296Z [36;1muv python install 3.12[0m
+2025-12-26T22:43:03.4142476Z shell: /usr/bin/bash -e {0}
+2025-12-26T22:43:03.4142738Z env:
+2025-12-26T22:43:03.4142967Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2025-12-26T22:43:03.4143253Z ##[endgroup]
+2025-12-26T22:43:03.5197756Z Downloading cpython-3.12.12-linux-x86_64-gnu (download) (31.7MiB)
+2025-12-26T22:43:04.4562957Z  Downloaded cpython-3.12.12-linux-x86_64-gnu (download)
+2025-12-26T22:43:04.4615870Z Installed Python 3.12.12 in 1.03s
+2025-12-26T22:43:04.4628249Z  + cpython-3.12.12-linux-x86_64-gnu (python3.12)
+2025-12-26T22:43:04.4679810Z ##[group]Run uv sync --all-extras
+2025-12-26T22:43:04.4680149Z [36;1muv sync --all-extras[0m
+2025-12-26T22:43:04.4713356Z shell: /usr/bin/bash -e {0}
+2025-12-26T22:43:04.4713598Z env:
+2025-12-26T22:43:04.4713815Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2025-12-26T22:43:04.4714100Z ##[endgroup]
+2025-12-26T22:43:04.6452830Z Using CPython 3.12.12
+2025-12-26T22:43:04.6455597Z Creating virtual environment at: .venv
+2025-12-26T22:43:04.6552528Z Resolved 132 packages in 0.65ms
+2025-12-26T22:43:04.6823018Z    Building familiar @ file:///home/runner/work/familliar/familliar/backend
+2025-12-26T22:43:04.7081255Z Downloading pygments (1.2MiB)
+2025-12-26T22:43:04.7103941Z Downloading hf-xet (3.2MiB)
+2025-12-26T22:43:04.7114617Z Downloading uvloop (4.2MiB)
+2025-12-26T22:43:04.7195097Z Downloading sqlalchemy (3.2MiB)
+2025-12-26T22:43:04.7203155Z Downloading nvidia-cufft-cu12 (184.2MiB)
+2025-12-26T22:43:04.7226977Z Downloading pydantic-core (2.0MiB)
+2025-12-26T22:43:04.7254896Z Downloading ruff (13.6MiB)
+2025-12-26T22:43:04.7255355Z Downloading rapidfuzz (3.0MiB)
+2025-12-26T22:43:04.7263212Z Downloading networkx (2.0MiB)
+2025-12-26T22:43:04.7270756Z Downloading transformers (11.4MiB)
+2025-12-26T22:43:04.7302380Z Downloading numpy (15.8MiB)
+2025-12-26T22:43:04.7303103Z Downloading sympy (6.0MiB)
+2025-12-26T22:43:04.7312844Z Downloading nvidia-cufile-cu12 (1.1MiB)
+2025-12-26T22:43:04.7321208Z Downloading numba (3.6MiB)
+2025-12-26T22:43:04.7330131Z Downloading setuptools (1.1MiB)
+2025-12-26T22:43:04.7341538Z Downloading soundfile (1.3MiB)
+2025-12-26T22:43:04.7349267Z Downloading tokenizers (3.1MiB)
+2025-12-26T22:43:04.7359627Z Downloading lxml (5.0MiB)
+2025-12-26T22:43:04.7373656Z Downloading asyncpg (3.4MiB)
+2025-12-26T22:43:04.7374312Z Downloading scipy (34.0MiB)
+2025-12-26T22:43:04.7382884Z Downloading psycopg2-binary (4.0MiB)
+2025-12-26T22:43:04.7394665Z Downloading nvidia-cuda-cupti-cu12 (9.8MiB)
+2025-12-26T22:43:04.7412574Z Downloading nvidia-nvshmem-cu12 (118.9MiB)
+2025-12-26T22:43:04.7428823Z Downloading nvidia-cudnn-cu12 (674.0MiB)
+2025-12-26T22:43:04.7429661Z Downloading nvidia-curand-cu12 (60.7MiB)
+2025-12-26T22:43:04.7440287Z Downloading nvidia-cublas-cu12 (566.8MiB)
+2025-12-26T22:43:04.7448739Z Downloading nvidia-cuda-nvrtc-cu12 (84.0MiB)
+2025-12-26T22:43:04.7459392Z Downloading torch (858.1MiB)
+2025-12-26T22:43:04.7465842Z Downloading nvidia-cusparse-cu12 (274.9MiB)
+2025-12-26T22:43:04.7474967Z Downloading nvidia-cusparselt-cu12 (273.9MiB)
+2025-12-26T22:43:04.7498129Z Downloading nvidia-nvjitlink-cu12 (37.4MiB)
+2025-12-26T22:43:04.7498968Z Downloading nvidia-nccl-cu12 (307.4MiB)
+2025-12-26T22:43:04.7499836Z Downloading triton (162.6MiB)
+2025-12-26T22:43:04.7513858Z Downloading llvmlite (53.7MiB)
+2025-12-26T22:43:04.7523374Z Downloading scikit-learn (8.5MiB)
+2025-12-26T22:43:04.7537956Z Downloading nvidia-cusolver-cu12 (255.1MiB)
+2025-12-26T22:43:04.7548185Z Downloading pillow (6.7MiB)
+2025-12-26T22:43:04.7705849Z Downloading mypy (13.0MiB)
+2025-12-26T22:43:06.2051022Z  Downloaded nvidia-cufile-cu12
+2025-12-26T22:43:06.2768886Z  Downloaded soundfile
+2025-12-26T22:43:06.5729338Z    Building demjson3==3.0.6
+2025-12-26T22:43:06.8740117Z  Downloaded pydantic-core
+2025-12-26T22:43:06.9886781Z  Downloaded pygments
+2025-12-26T22:43:07.6046937Z    Building bandcamp-api==0.2.3
+2025-12-26T22:43:07.7273884Z  Downloaded tokenizers
+2025-12-26T22:43:07.7663860Z  Downloaded rapidfuzz
+2025-12-26T22:43:07.8161703Z  Downloaded hf-xet
+2025-12-26T22:43:07.9307673Z  Downloaded setuptools
+2025-12-26T22:43:08.0010130Z  Downloaded sqlalchemy
+2025-12-26T22:43:08.0317952Z  Downloaded asyncpg
+2025-12-26T22:43:08.2926246Z  Downloaded networkx
+2025-12-26T22:43:08.4870213Z  Downloaded psycopg2-binary
+2025-12-26T22:43:08.8509796Z  Downloaded uvloop
+2025-12-26T22:43:08.9297743Z       Built familiar @ file:///home/runner/work/familliar/familliar/backend
+2025-12-26T22:43:09.2849209Z  Downloaded numba
+2025-12-26T22:43:09.4101678Z  Downloaded lxml
+2025-12-26T22:43:09.4414026Z       Built bandcamp-api==0.2.3
+2025-12-26T22:43:09.5891180Z       Built demjson3==3.0.6
+2025-12-26T22:43:10.2588705Z  Downloaded pillow
+2025-12-26T22:43:10.9748033Z  Downloaded scikit-learn
+2025-12-26T22:43:11.1149115Z  Downloaded nvidia-cuda-cupti-cu12
+2025-12-26T22:43:11.2629691Z  Downloaded sympy
+2025-12-26T22:43:12.2164734Z  Downloaded ruff
+2025-12-26T22:43:12.6085295Z  Downloaded numpy
+2025-12-26T22:43:13.2548178Z  Downloaded transformers
+2025-12-26T22:43:15.4969909Z  Downloaded nvidia-nvjitlink-cu12
+2025-12-26T22:43:16.4144995Z  Downloaded scipy
+2025-12-26T22:43:17.1959239Z  Downloaded mypy
+2025-12-26T22:43:17.8369130Z  Downloaded llvmlite
+2025-12-26T22:43:18.4130380Z  Downloaded nvidia-curand-cu12
+2025-12-26T22:43:20.7974016Z  Downloaded nvidia-cuda-nvrtc-cu12
+2025-12-26T22:43:23.7785138Z  Downloaded nvidia-nvshmem-cu12
+2025-12-26T22:43:27.9277806Z  Downloaded nvidia-cufft-cu12
+2025-12-26T22:43:28.4444739Z  Downloaded triton
+2025-12-26T22:43:31.1800073Z  Downloaded nvidia-cusolver-cu12
+2025-12-26T22:43:31.8710048Z  Downloaded nvidia-cusparse-cu12
+2025-12-26T22:43:31.9709559Z  Downloaded nvidia-cusparselt-cu12
+2025-12-26T22:43:33.1122050Z  Downloaded nvidia-nccl-cu12
+2025-12-26T22:43:36.7442621Z  Downloaded nvidia-cublas-cu12
+2025-12-26T22:43:37.4911265Z  Downloaded nvidia-cudnn-cu12
+2025-12-26T22:43:46.5326591Z  Downloaded torch
+2025-12-26T22:43:46.5330723Z Prepared 126 packages in 41.87s
+2025-12-26T22:43:47.2208764Z Installed 126 packages in 687ms
+2025-12-26T22:43:47.2214102Z  + amqp==5.3.1
+2025-12-26T22:43:47.2216616Z  + annotated-doc==0.0.4
+2025-12-26T22:43:47.2217202Z  + annotated-types==0.7.0
+2025-12-26T22:43:47.2218012Z  + anthropic==0.75.0
+2025-12-26T22:43:47.2218417Z  + anyio==4.12.0
+2025-12-26T22:43:47.2218713Z  + asyncpg==0.31.0
+2025-12-26T22:43:47.2218996Z  + audioread==3.1.0
+2025-12-26T22:43:47.2220049Z  + bandcamp-api==0.2.3
+2025-12-26T22:43:47.2220563Z  + beautifulsoup4==4.14.3
+2025-12-26T22:43:47.2227945Z  + billiard==4.2.4
+2025-12-26T22:43:47.2228946Z  + celery==5.6.0
+2025-12-26T22:43:47.2229264Z  + certifi==2025.11.12
+2025-12-26T22:43:47.2229610Z  + cffi==2.0.0
+2025-12-26T22:43:47.2229947Z  + charset-normalizer==3.4.4
+2025-12-26T22:43:47.2230519Z  + click==8.3.1
+2025-12-26T22:43:47.2230832Z  + click-didyoumean==0.3.1
+2025-12-26T22:43:47.2231181Z  + click-plugins==1.1.1.2
+2025-12-26T22:43:47.2231519Z  + click-repl==0.3.0
+2025-12-26T22:43:47.2231818Z  + decorator==5.2.1
+2025-12-26T22:43:47.2232110Z  + demjson3==3.0.6
+2025-12-26T22:43:47.2232389Z  + distro==1.9.0
+2025-12-26T22:43:47.2232692Z  + docstring-parser==0.17.0
+2025-12-26T22:43:47.2233051Z  + exceptiongroup==1.3.1
+2025-12-26T22:43:47.2233577Z  + familiar==0.1.0 (from file:///home/runner/work/familliar/familliar/backend)
+2025-12-26T22:43:47.2234145Z  + fastapi==0.127.0
+2025-12-26T22:43:47.2234436Z  + filelock==3.20.1
+2025-12-26T22:43:47.2234734Z  + fsspec==2025.12.0
+2025-12-26T22:43:47.2235307Z  + greenlet==3.3.0
+2025-12-26T22:43:47.2235597Z  + h11==0.16.0
+2025-12-26T22:43:47.2235869Z  + hf-xet==1.2.0
+2025-12-26T22:43:47.2236157Z  + html5lib==1.1
+2025-12-26T22:43:47.2236445Z  + httpcore==1.0.9
+2025-12-26T22:43:47.2236746Z  + httptools==0.7.1
+2025-12-26T22:43:47.2237033Z  + httpx==0.28.1
+2025-12-26T22:43:47.2237531Z  + huggingface-hub==0.36.0
+2025-12-26T22:43:47.2237861Z  + idna==3.11
+2025-12-26T22:43:47.2238146Z  + iniconfig==2.3.0
+2025-12-26T22:43:47.2238435Z  + jinja2==3.1.6
+2025-12-26T22:43:47.2238710Z  + jiter==0.12.0
+2025-12-26T22:43:47.2238994Z  + joblib==1.5.3
+2025-12-26T22:43:47.2239268Z  + kombu==5.6.1
+2025-12-26T22:43:47.2239723Z  + lazy-loader==0.4
+2025-12-26T22:43:47.2240137Z  + librosa==0.11.0
+2025-12-26T22:43:47.2240525Z  + librt==0.7.4
+2025-12-26T22:43:47.2240906Z  + llvmlite==0.46.0
+2025-12-26T22:43:47.2241284Z  + lxml==6.0.2
+2025-12-26T22:43:47.2241688Z  + markupsafe==3.0.3
+2025-12-26T22:43:47.2242078Z  + mpmath==1.3.0
+2025-12-26T22:43:47.2242452Z  + msgpack==1.1.2
+2025-12-26T22:43:47.2242836Z  + mutagen==1.47.0
+2025-12-26T22:43:47.2243215Z  + mypy==1.19.1
+2025-12-26T22:43:47.2243613Z  + mypy-extensions==1.1.0
+2025-12-26T22:43:47.2244060Z  + networkx==3.6.1
+2025-12-26T22:43:47.2244679Z  + numba==0.63.1
+2025-12-26T22:43:47.2245112Z  + numpy==2.3.5
+2025-12-26T22:43:47.2245521Z  + nvidia-cublas-cu12==12.8.4.1
+2025-12-26T22:43:47.2246013Z  + nvidia-cuda-cupti-cu12==12.8.90
+2025-12-26T22:43:47.2246470Z  + nvidia-cuda-nvrtc-cu12==12.8.93
+2025-12-26T22:43:47.2251960Z  + nvidia-cuda-runtime-cu12==12.8.90
+2025-12-26T22:43:47.2260694Z  + nvidia-cudnn-cu12==9.10.2.21
+2025-12-26T22:43:47.2261085Z  + nvidia-cufft-cu12==11.3.3.83
+2025-12-26T22:43:47.2261450Z  + nvidia-cufile-cu12==1.13.1.3
+2025-12-26T22:43:47.2264951Z  + nvidia-curand-cu12==10.3.9.90
+2025-12-26T22:43:47.2265360Z  + nvidia-cusolver-cu12==11.7.3.90
+2025-12-26T22:43:47.2265820Z  + nvidia-cusparse-cu12==12.5.8.93
+2025-12-26T22:43:47.2266270Z  + nvidia-cusparselt-cu12==0.7.1
+2025-12-26T22:43:47.2266635Z  + nvidia-nccl-cu12==2.27.5
+2025-12-26T22:43:47.2266986Z  + nvidia-nvjitlink-cu12==12.8.93
+2025-12-26T22:43:47.2267552Z  + nvidia-nvshmem-cu12==3.3.20
+2025-12-26T22:43:47.2267919Z  + nvidia-nvtx-cu12==12.8.90
+2025-12-26T22:43:47.2268270Z  + packaging==25.0
+2025-12-26T22:43:47.2268549Z  + pathspec==0.12.1
+2025-12-26T22:43:47.2268861Z  + pgvector==0.4.2
+2025-12-26T22:43:47.2269134Z  + pillow==12.0.0
+2025-12-26T22:43:47.2269416Z  + platformdirs==4.5.1
+2025-12-26T22:43:47.2269713Z  + pluggy==1.6.0
+2025-12-26T22:43:47.2269974Z  + pooch==1.8.2
+2025-12-26T22:43:47.2270255Z  + prompt-toolkit==3.0.52
+2025-12-26T22:43:47.2270576Z  + psycopg2-binary==2.9.11
+2025-12-26T22:43:47.2270899Z  + pycparser==2.23
+2025-12-26T22:43:47.2271161Z  + pydantic==2.12.5
+2025-12-26T22:43:47.2271444Z  + pydantic-core==2.41.5
+2025-12-26T22:43:47.2271748Z  + pydantic-settings==2.12.0
+2025-12-26T22:43:47.2272064Z  + pygments==2.19.2
+2025-12-26T22:43:47.2272364Z  + pytest==9.0.2
+2025-12-26T22:43:47.2272691Z  + pytest-asyncio==1.3.0
+2025-12-26T22:43:47.2272917Z  + python-dateutil==2.9.0.post0
+2025-12-26T22:43:47.2273142Z  + python-dotenv==1.2.1
+2025-12-26T22:43:47.2273353Z  + python-multipart==0.0.21
+2025-12-26T22:43:47.2273549Z  + pyyaml==6.0.3
+2025-12-26T22:43:47.2273728Z  + rapidfuzz==3.14.3
+2025-12-26T22:43:47.2273900Z  + redis==6.4.0
+2025-12-26T22:43:47.2274071Z  + regex==2025.11.3
+2025-12-26T22:43:47.2274237Z  + requests==2.32.5
+2025-12-26T22:43:47.2274410Z  + ruff==0.14.10
+2025-12-26T22:43:47.2274596Z  + safetensors==0.7.0
+2025-12-26T22:43:47.2274952Z  + scikit-learn==1.8.0
+2025-12-26T22:43:47.2275224Z  + scipy==1.16.3
+2025-12-26T22:43:47.2275494Z  + setuptools==80.9.0
+2025-12-26T22:43:47.2275781Z  + six==1.17.0
+2025-12-26T22:43:47.2276039Z  + sniffio==1.3.1
+2025-12-26T22:43:47.2276328Z  + soundfile==0.13.1
+2025-12-26T22:43:47.2276612Z  + soupsieve==2.8.1
+2025-12-26T22:43:47.2276887Z  + soxr==1.0.0
+2025-12-26T22:43:47.2277156Z  + spotipy==2.25.2
+2025-12-26T22:43:47.2277708Z  + sqlalchemy==2.0.45
+2025-12-26T22:43:47.2278007Z  + starlette==0.50.0
+2025-12-26T22:43:47.2278570Z  + sympy==1.14.0
+2025-12-26T22:43:47.2278875Z  + threadpoolctl==3.6.0
+2025-12-26T22:43:47.2279214Z  + tokenizers==0.22.1
+2025-12-26T22:43:47.2279517Z  + torch==2.9.1
+2025-12-26T22:43:47.2279817Z  + tqdm==4.67.1
+2025-12-26T22:43:47.2280120Z  + transformers==4.57.3
+2025-12-26T22:43:47.2280435Z  + triton==3.5.1
+2025-12-26T22:43:47.2280756Z  + typing-extensions==4.15.0
+2025-12-26T22:43:47.2281132Z  + typing-inspection==0.4.2
+2025-12-26T22:43:47.2281481Z  + tzdata==2025.3
+2025-12-26T22:43:47.2281770Z  + tzlocal==5.3.1
+2025-12-26T22:43:47.2282061Z  + urllib3==2.6.2
+2025-12-26T22:43:47.2282352Z  + uvicorn==0.40.0
+2025-12-26T22:43:47.2282648Z  + uvloop==0.22.1
+2025-12-26T22:43:47.2282927Z  + vine==5.1.0
+2025-12-26T22:43:47.2283216Z  + watchfiles==1.1.1
+2025-12-26T22:43:47.2283518Z  + wcwidth==0.2.14
+2025-12-26T22:43:47.2283827Z  + webencodings==0.5.1
+2025-12-26T22:43:47.2284151Z  + websockets==15.0.1
+2025-12-26T22:43:47.2610614Z ##[group]Run uv run ruff check .
+2025-12-26T22:43:47.2610925Z [36;1muv run ruff check .[0m
+2025-12-26T22:43:47.2707887Z shell: /usr/bin/bash -e {0}
+2025-12-26T22:43:47.2708124Z env:
+2025-12-26T22:43:47.2708349Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2025-12-26T22:43:47.2708634Z ##[endgroup]
+2025-12-26T22:43:47.4522432Z All checks passed!
+2025-12-26T22:43:47.4603203Z ##[group]Run uv run mypy app --ignore-missing-imports
+2025-12-26T22:43:47.4603889Z [36;1muv run mypy app --ignore-missing-imports[0m
+2025-12-26T22:43:47.4651302Z shell: /usr/bin/bash -e {0}
+2025-12-26T22:43:47.4651672Z env:
+2025-12-26T22:43:47.4652024Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2025-12-26T22:43:47.4652488Z ##[endgroup]
+2025-12-26T22:44:11.1314080Z app/services/app_settings.py:69: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:11.3234346Z app/services/metadata.py:38: error: Module "mutagen" does not explicitly export attribute "File"  [attr-defined]
+2025-12-26T22:44:11.3239564Z app/services/metadata.py:76: error: Name "mutagen.FileType" is not defined  [name-defined]
+2025-12-26T22:44:11.3240759Z app/services/metadata.py:114: error: Call to untyped function "EasyID3" in typed context  [no-untyped-call]
+2025-12-26T22:44:11.3242045Z app/services/metadata.py:118: error: Module "mutagen" does not explicitly export attribute "File"  [attr-defined]
+2025-12-26T22:44:11.3243208Z app/services/metadata.py:172: error: Call to untyped function "MP4" in typed context  [no-untyped-call]
+2025-12-26T22:44:11.3244360Z app/services/metadata.py:211: error: Call to untyped function "OggVorbis" in typed context  [no-untyped-call]
+2025-12-26T22:44:22.9963873Z app/services/video.py:37: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:22.9966357Z app/services/video.py:37: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:22.9972140Z app/services/video.py:163: error: Item "None" of "StreamReader | None" has no attribute "readline"  [union-attr]
+2025-12-26T22:44:22.9973394Z app/services/video.py:221: error: Call to untyped function "VideoService" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.0069685Z app/services/import_service.py:73: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.0072066Z app/services/import_service.py:114: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.6221936Z app/services/artwork.py:64: error: Module "mutagen" does not explicitly export attribute "File"  [attr-defined]
+2025-12-26T22:44:23.6223238Z app/services/artwork.py:66: error: Returning Any from function declared to return "bytes | None"  [no-any-return]
+2025-12-26T22:44:23.6224384Z app/services/artwork.py:76: error: Call to untyped function "ID3" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.6225477Z app/services/artwork.py:78: error: Call to untyped function "keys" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.6226677Z app/services/artwork.py:80: error: Returning Any from function declared to return "bytes | None"  [no-any-return]
+2025-12-26T22:44:23.6228505Z app/services/artwork.py:94: error: Returning Any from function declared to return "bytes | None"  [no-any-return]
+2025-12-26T22:44:23.6229808Z app/services/artwork.py:96: error: Returning Any from function declared to return "bytes | None"  [no-any-return]
+2025-12-26T22:44:23.6230987Z app/services/artwork.py:105: error: Call to untyped function "MP4" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.6232358Z app/services/artwork.py:144: error: Incompatible types in assignment (expression has type "Image", variable has type "ImageFile")  [assignment]
+2025-12-26T22:44:23.8358195Z app/services/spotify.py:28: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8362980Z app/services/spotify.py:28: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.8368208Z app/services/spotify.py:191: error: Call to untyped function "SpotifyService" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.8373219Z app/services/spotify.py:193: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8378607Z app/services/spotify.py:275: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8384087Z app/services/spotify.py:320: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8389422Z app/services/spotify.py:348: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8394679Z app/services/spotify.py:380: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8400160Z app/services/spotify.py:475: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
+2025-12-26T22:44:23.8404693Z app/services/spotify.py:483: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8540156Z app/services/smart_playlists.py:46: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8542770Z app/services/smart_playlists.py:77: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:23.8545495Z app/services/smart_playlists.py:166: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8546675Z app/services/smart_playlists.py:189: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8548070Z app/services/smart_playlists.py:241: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8549238Z app/services/smart_playlists.py:241: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8550431Z app/services/smart_playlists.py:301: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8676694Z app/services/organizer.py:350: error: Incompatible types in assignment (expression has type "OrganizeResult", variable has type "Result[tuple[Track]]")  [assignment]
+2025-12-26T22:44:23.8679277Z app/services/organizer.py:351: error: Argument 1 to "append" of "list" has incompatible type "Result[tuple[Track]]"; expected "OrganizeResult"  [arg-type]
+2025-12-26T22:44:23.8681153Z app/services/organizer.py:353: error: "Result[tuple[Track]]" has no attribute "status"  [attr-defined]
+2025-12-26T22:44:23.8683368Z app/services/organizer.py:355: error: "Result[tuple[Track]]" has no attribute "status"  [attr-defined]
+2025-12-26T22:44:23.8715257Z app/db/migrate_add_profiles.py:46: error: Argument 1 to "CreateTable" has incompatible type "FromClause"; expected "Table"  [arg-type]
+2025-12-26T22:44:23.8870318Z app/services/lyrics.py:30: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8888734Z app/services/lyrics.py:30: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.8891817Z app/services/lyrics.py:77: error: Argument "params" to "get" of "AsyncClient" has incompatible type "dict[str, object]"; expected "QueryParams | Mapping[str, str | int | float | bool | None | Sequence[str | int | float | bool | None]] | list[tuple[str, str | int | float | bool | None]] | tuple[tuple[str, str | int | float | bool | None], ...] | str | bytes | None"  [arg-type]
+2025-12-26T22:44:23.8895335Z app/services/lyrics.py:113: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8898355Z app/services/lyrics.py:133: error: Item "None" of "Any | None" has no attribute "split"  [union-attr]
+2025-12-26T22:44:23.8899828Z app/services/lyrics.py:139: error: Argument "plain_text" to "LyricsResult" has incompatible type "Any | None"; expected "str"  [arg-type]
+2025-12-26T22:44:23.8901997Z app/services/lyrics.py:165: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8903956Z app/services/lyrics.py:165: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.8906031Z app/services/lyrics.py:178: error: Call to untyped function "LyricsService" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.8978595Z app/services/lastfm.py:28: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8981289Z app/services/lastfm.py:28: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.8984008Z app/services/lastfm.py:51: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8986729Z app/services/lastfm.py:57: error: Unsupported operand types for + ("str" and "None")  [operator]
+2025-12-26T22:44:23.8989712Z app/services/lastfm.py:57: note: Right operand is of type "str | None"
+2025-12-26T22:44:23.8992502Z app/services/lastfm.py:222: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.8994215Z app/services/lastfm.py:240: error: Returning Any from function declared to return "dict[Any, Any] | None"  [no-any-return]
+2025-12-26T22:44:23.8996713Z app/services/lastfm.py:245: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.8997925Z app/services/lastfm.py:245: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.8998970Z app/services/lastfm.py:258: error: Call to untyped function "LastfmService" in typed context  [no-untyped-call]
+2025-12-26T22:44:23.9041762Z app/services/bandcamp.py:28: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.9043839Z app/services/bandcamp.py:28: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:23.9046099Z app/services/bandcamp.py:76: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:23.9047629Z app/services/bandcamp.py:136: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:23.9048729Z app/services/bandcamp.py:194: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:23.9049732Z app/services/bandcamp.py:194: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:24.2068764Z app/services/sessions.py:55: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.2074926Z app/services/sessions.py:88: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2075932Z app/services/sessions.py:88: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:24.2076887Z app/services/sessions.py:260: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2078107Z app/services/sessions.py:269: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2079199Z app/services/sessions.py:285: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2080369Z app/services/sessions.py:316: error: Call to untyped function "SessionManager" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.2128578Z app/api/deps.py:30: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2130490Z app/api/deps.py:55: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2132908Z app/api/deps.py:91: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.2166978Z app/api/routes/settings.py:66: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.2169134Z app/api/routes/settings.py:74: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.3621218Z app/api/routes/sessions.py:11: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.3627867Z app/api/routes/sessions.py:33: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3633998Z app/api/routes/sessions.py:48: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3635511Z app/api/routes/sessions.py:100: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3637710Z app/api/routes/sessions.py:142: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3639965Z app/api/routes/sessions.py:182: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3641930Z app/api/routes/sessions.py:198: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3643767Z app/api/routes/sessions.py:202: error: Incompatible types in assignment (expression has type "Participant | None", variable has type "Participant")  [assignment]
+2025-12-26T22:44:24.3645660Z app/api/routes/sessions.py:221: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3647796Z app/api/routes/sessions.py:284: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3649692Z app/api/routes/sessions.py:288: error: Incompatible types in assignment (expression has type "Participant | None", variable has type "Participant")  [assignment]
+2025-12-26T22:44:24.3651567Z app/api/routes/sessions.py:307: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3653474Z app/api/routes/sessions.py:327: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3655352Z app/api/routes/sessions.py:345: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3657159Z app/api/routes/sessions.py:380: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3663617Z app/api/routes/sessions.py:395: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3665564Z app/api/routes/sessions.py:414: error: Incompatible types in assignment (expression has type "ListeningSession | None", variable has type "ListeningSession")  [assignment]
+2025-12-26T22:44:24.3731308Z app/api/routes/videos.py:201: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3738026Z app/api/routes/videos.py:208: error: Call to untyped function "stream_video_file" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.3739192Z app/api/routes/videos.py:221: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.3957011Z app/api/routes/tracks.py:44: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.3978281Z app/api/routes/tracks.py:219: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3979481Z app/api/routes/tracks.py:233: error: Call to untyped function "stream_range" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.3980664Z app/api/routes/tracks.py:244: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3981847Z app/api/routes/tracks.py:251: error: Call to untyped function "stream_full" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.3983011Z app/api/routes/tracks.py:295: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.3984162Z app/api/routes/tracks.py:300: error: Call to untyped function "stream_artwork" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.4100825Z app/api/routes/spotify.py:21: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4108012Z app/api/routes/spotify.py:28: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4109149Z app/api/routes/spotify.py:57: error: Call to untyped function "SpotifyService" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.4110532Z app/api/routes/spotify.py:90: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4111641Z app/api/routes/spotify.py:101: error: Call to untyped function "SpotifyService" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.4112797Z app/api/routes/spotify.py:134: error: Call to untyped function "SpotifyService" in typed context  [no-untyped-call]
+2025-12-26T22:44:24.4113921Z app/api/routes/spotify.py:253: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4336660Z app/api/routes/smart_playlists.py:55: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4345356Z app/api/routes/smart_playlists.py:86: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:24.4346749Z app/api/routes/smart_playlists.py:104: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:24.4348210Z app/api/routes/smart_playlists.py:118: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4349340Z app/api/routes/smart_playlists.py:129: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4350473Z app/api/routes/smart_playlists.py:158: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4351599Z app/api/routes/smart_playlists.py:177: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4352716Z app/api/routes/smart_playlists.py:209: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4353827Z app/api/routes/smart_playlists.py:228: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4354962Z app/api/routes/smart_playlists.py:256: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4355993Z app/api/routes/smart_playlists.py:276: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4408178Z app/api/routes/profiles.py:99: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4471029Z app/api/routes/organizer.py:93: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4472376Z app/api/routes/organizer.py:115: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4475504Z app/api/routes/organizer.py:133: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4476631Z app/api/routes/organizer.py:151: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4481329Z app/api/routes/organizer.py:171: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:24.4585317Z app/api/routes/lastfm.py:155: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4613712Z app/api/routes/health.py:12: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:24.4615280Z app/api/routes/health.py:18: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7657577Z app/services/llm.py:255: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7658913Z app/services/llm.py:258: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7660131Z app/services/llm.py:289: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7665727Z app/services/llm.py:314: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7666895Z app/services/llm.py:346: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7668648Z app/services/llm.py:390: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7676095Z app/services/llm.py:430: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7680530Z app/services/llm.py:465: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7681606Z app/services/llm.py:481: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7682586Z app/services/llm.py:486: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7683565Z app/services/llm.py:511: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7684556Z app/services/llm.py:536: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7685570Z app/services/llm.py:565: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7686522Z app/services/llm.py:599: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7696151Z app/services/llm.py:646: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7697626Z app/services/llm.py:654: error: Call to untyped function "BandcampService" in typed context  [no-untyped-call]
+2025-12-26T22:44:25.7698809Z app/services/llm.py:674: error: Call to untyped function "close" in typed context  [no-untyped-call]
+2025-12-26T22:44:25.7699873Z app/services/llm.py:676: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7701002Z app/services/llm.py:705: error: Call to untyped function "BandcampService" in typed context  [no-untyped-call]
+2025-12-26T22:44:25.7702126Z app/services/llm.py:737: error: Call to untyped function "close" in typed context  [no-untyped-call]
+2025-12-26T22:44:25.7703120Z app/services/llm.py:745: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7704109Z app/services/llm.py:761: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:25.7705020Z app/services/llm.py:761: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:25.7705886Z app/services/llm.py:773: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7706804Z app/services/llm.py:776: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7709431Z app/services/llm.py:797: error: Argument "tools" to "create" of "Messages" has incompatible type "list[dict[str, Collection[str]]]"; expected "Iterable[ToolParam | ToolBash20250124Param | ToolTextEditor20250124Param | ToolTextEditor20250429Param | ToolTextEditor20250728Param | WebSearchTool20250305Param] | Omit"  [arg-type]
+2025-12-26T22:44:25.7712367Z app/services/llm.py:798: error: Argument "messages" to "create" of "Messages" has incompatible type "list[dict[Any, Any]]"; expected "Iterable[MessageParam]"  [arg-type]
+2025-12-26T22:44:25.7713797Z app/services/llm.py:824: error: Argument 1 to "append" of "list" has incompatible type "ToolUseBlock"; expected "TextBlock"  [arg-type]
+2025-12-26T22:44:25.7867756Z app/api/routes/chat.py:29: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:25.7870574Z app/api/routes/chat.py:31: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7878343Z app/api/routes/chat.py:36: error: Call to untyped function "LLMService" in typed context  [no-untyped-call]
+2025-12-26T22:44:25.7879283Z app/api/routes/chat.py:92: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:25.7880184Z app/api/routes/chat.py:105: error: Call to untyped function "LLMService" in typed context  [no-untyped-call]
+2025-12-26T22:44:39.8404949Z app/services/analysis.py:40: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8406662Z app/services/analysis.py:103: error: Returning Any from function declared to return "list[float] | None"  [no-any-return]
+2025-12-26T22:44:39.8413955Z app/services/analysis.py:110: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8415556Z app/services/analysis.py:136: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8417101Z app/services/analysis.py:142: error: Incompatible types in assignment (expression has type "str", target has type "None")  [assignment]
+2025-12-26T22:44:39.8418813Z app/services/analysis.py:146: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8420326Z app/services/analysis.py:155: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8421800Z app/services/analysis.py:169: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8423314Z app/services/analysis.py:179: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8424852Z app/services/analysis.py:186: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8426350Z app/services/analysis.py:192: error: Incompatible types in assignment (expression has type "float", target has type "None")  [assignment]
+2025-12-26T22:44:39.8492824Z app/workers/tasks.py:19: error: Untyped decorator makes function "analyze_track" untyped  [untyped-decorator]
+2025-12-26T22:44:39.8514810Z app/workers/tasks.py:20: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+2025-12-26T22:44:39.8515790Z app/workers/tasks.py:20: error: Missing return statement  [return]
+2025-12-26T22:44:39.8516673Z app/workers/tasks.py:20: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8518020Z app/workers/tasks.py:119: error: Untyped decorator makes function "batch_analyze" untyped  [untyped-decorator]
+2025-12-26T22:44:39.8519160Z app/workers/tasks.py:120: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8520189Z app/workers/tasks.py:139: error: Unsupported operand types for + ("object" and "int")  [operator]
+2025-12-26T22:44:39.8521230Z app/workers/tasks.py:141: error: Unsupported operand types for + ("object" and "int")  [operator]
+2025-12-26T22:44:39.8522162Z app/workers/tasks.py:142: error: "object" has no attribute "append"  [attr-defined]
+2025-12-26T22:44:39.8657492Z app/services/scanner.py:55: error: Need type annotation for "files" (hint: "files: list[<type>] = ...")  [var-annotated]
+2025-12-26T22:44:39.8664055Z app/services/scanner.py:85: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8665170Z app/services/scanner.py:97: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8812362Z app/api/routes/library.py:41: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8817868Z app/api/routes/library.py:196: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8818888Z app/api/routes/library.py:196: note: Use "-> None" if function does not return a value
+2025-12-26T22:44:39.8875237Z app/main.py:79: error: Missing type parameters for generic type "dict"  [type-arg]
+2025-12-26T22:44:39.8876562Z app/main.py:98: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8878979Z app/main.py:102: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8879920Z app/main.py:106: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8880802Z app/main.py:110: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:39.8881687Z app/main.py:115: error: Function is missing a return type annotation  [no-untyped-def]
+2025-12-26T22:44:40.0113589Z Found 188 errors in 31 files (checked 43 source files)
+2025-12-26T22:44:40.1274294Z ##[error]Process completed with exit code 1.
+2025-12-26T22:44:40.1380157Z Post job cleanup.
+2025-12-26T22:44:40.3572858Z [command]/usr/bin/git version
+2025-12-26T22:44:40.3620864Z git version 2.52.0
+2025-12-26T22:44:40.3683214Z Temporarily overriding HOME='/home/runner/work/_temp/2fbd14b3-711b-454f-a5db-650ccdf7094b' before making global git config changes
+2025-12-26T22:44:40.3684738Z Adding repository directory to the temporary git global config as a safe directory
+2025-12-26T22:44:40.3690280Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/familliar/familliar
+2025-12-26T22:44:40.3734785Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2025-12-26T22:44:40.3770570Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2025-12-26T22:44:40.4059491Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2025-12-26T22:44:40.4083745Z http.https://github.com/.extraheader
+2025-12-26T22:44:40.4098035Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2025-12-26T22:44:40.4133465Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2025-12-26T22:44:40.4364318Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2025-12-26T22:44:40.4398105Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2025-12-26T22:44:40.4746962Z Cleaning up orphan processes

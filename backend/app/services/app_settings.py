@@ -18,8 +18,14 @@ class AppSettings(BaseModel):
     lastfm_api_key: str | None = None
     lastfm_api_secret: str | None = None
 
-    # Future integrations
+    # LLM Settings
     anthropic_api_key: str | None = None
+    llm_provider: str = "claude"  # "claude" or "ollama"
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.2"  # Default model with tool support
+
+    # Audio fingerprinting
+    acoustid_api_key: str | None = None  # Get free key at https://acoustid.org/new-application
 
 
 class AppSettingsService:
