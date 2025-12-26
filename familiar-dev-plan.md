@@ -24,8 +24,9 @@
 1. **Phase 1:** Backend infrastructure, database, audio analysis pipeline
 2. **Phase 2:** Basic playback (backend streaming + frontend audio engine)
 3. **Phase 3:** LLM integration (Claude API + tools)
-4. **Phase 4:** Spotify sync, Bandcamp integration
-5. **Phase 5:** Polish (lyrics, scrobbling, videos, sharing)
+4. **Phase 4:** Spotify sync, purchase discovery
+5. **Phase 5:** Local persistence & offline listening (IndexedDB)
+6. **Phase 6:** Polish (lyrics, scrobbling, videos, sharing)
 
 ---
 
@@ -2080,13 +2081,384 @@ SPOTIFY_TOOLS = [
 
 ---
 
-## Phase 5: Polish & Advanced Features
+## Phase 5: Local Persistence & Offline Listening
+
+**Goal**: Enable offline functionality and persist user state across sessions using IndexedDB.
+
+### 5.1 IndexedDB Storage Layer (Dexie.js)
+
+Using Dexie.js as a wrapper around IndexedDB for TypeScript support, promises, and easy schema versioning.
+
+```bash
+npm install dexie
+```
+
+**Database Schema:**
+
+```typescript
+// frontend/src/db/index.ts
+import Dexie, { Table } from 'dexie';
+
+interface CachedTrack {
+  id: string;           // Track UUID
+  audioBlob: Blob;      // Audio file data
+  metadata: {
+    title: string;
+    artist: string;
+    album: string;
+    duration: number;
+    artwork_url: string;
+  };
+  cachedAt: Date;
+  size: number;         // Bytes
+}
+
+interface OfflinePlaylist {
+  id: string;
+  name: string;
+  trackIds: string[];   // References to CachedTracks
+  cachedAt: Date;
+  totalSize: number;
+}
+
+interface ChatSession {
+  id: string;
+  title: string;        // Auto-generated from first message
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface ChatMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  toolCalls?: ToolCall[];
+  timestamp: Date;
+}
+
+interface AppSettings {
+  key: string;
+  value: unknown;
+}
+
+class FamiliarDB extends Dexie {
+  cachedTracks!: Table<CachedTrack>;
+  offlinePlaylists!: Table<OfflinePlaylist>;
+  chatSessions!: Table<ChatSession>;
+  chatMessages!: Table<ChatMessage>;
+  settings!: Table<AppSettings>;
+
+  constructor() {
+    super('FamiliarDB');
+    this.version(1).stores({
+      cachedTracks: 'id, cachedAt',
+      offlinePlaylists: 'id, cachedAt',
+      chatSessions: 'id, updatedAt',
+      chatMessages: 'id, sessionId, timestamp',
+      settings: 'key',
+    });
+  }
+}
+
+export const db = new FamiliarDB();
+```
+
+### 5.2 Offline Audio Caching
+
+**Download Flow:**
+```
+User clicks "Save Offline" on playlist/album
+    ↓
+OfflineManager.downloadPlaylist(playlistId)
+    ↓
+For each track:
+  1. Check if already cached
+  2. Fetch audio blob from /api/v1/tracks/{id}/stream
+  3. Store in IndexedDB with metadata
+    ↓
+Update offlinePlaylists table
+    ↓
+UI shows download progress
+```
+
+**Audio Engine Integration:**
+
+Rather than using Service Worker for audio caching, check IndexedDB directly in the audio engine:
+
+```typescript
+// In useAudioEngine.ts
+const getAudioSource = async (trackId: string): Promise<string> => {
+  // Check IndexedDB first
+  const cached = await db.cachedTracks.get(trackId);
+  if (cached) {
+    return URL.createObjectURL(cached.audioBlob);
+  }
+  // Fall back to streaming
+  return tracksApi.getStreamUrl(trackId);
+};
+```
+
+**Offline Manager Service:**
+
+```typescript
+// frontend/src/services/offlineManager.ts
+class OfflineManager {
+  private maxStorageBytes: number;
+
+  async getStorageUsage(): Promise<{ used: number; limit: number }> {
+    const tracks = await db.cachedTracks.toArray();
+    const used = tracks.reduce((sum, t) => sum + t.size, 0);
+    return { used, limit: this.maxStorageBytes };
+  }
+
+  async downloadTrack(trackId: string): Promise<void> {
+    // Check storage limit
+    const { used, limit } = await this.getStorageUsage();
+    const response = await fetch(tracksApi.getStreamUrl(trackId));
+    const blob = await response.blob();
+
+    if (used + blob.size > limit) {
+      throw new Error('Storage limit exceeded');
+    }
+
+    // Get metadata
+    const track = await tracksApi.get(trackId);
+
+    await db.cachedTracks.put({
+      id: trackId,
+      audioBlob: blob,
+      metadata: {
+        title: track.title,
+        artist: track.artist,
+        album: track.album,
+        duration: track.duration_seconds,
+        artwork_url: tracksApi.getArtworkUrl(trackId),
+      },
+      cachedAt: new Date(),
+      size: blob.size,
+    });
+  }
+
+  async downloadPlaylist(playlistId: string, onProgress?: (p: number) => void): Promise<void> {
+    // Implementation for batch download with progress
+  }
+
+  async removeTrack(trackId: string): Promise<void> {
+    await db.cachedTracks.delete(trackId);
+  }
+
+  async clearAllCache(): Promise<void> {
+    await db.cachedTracks.clear();
+    await db.offlinePlaylists.clear();
+  }
+}
+```
+
+### 5.3 Player State Persistence
+
+Use Zustand persist middleware with custom IndexedDB storage:
+
+```typescript
+// frontend/src/stores/playerStore.ts
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+
+// Custom IndexedDB storage adapter
+const indexedDBStorage = {
+  getItem: async (name: string) => {
+    const setting = await db.settings.get(name);
+    return setting?.value ?? null;
+  },
+  setItem: async (name: string, value: unknown) => {
+    await db.settings.put({ key: name, value });
+  },
+  removeItem: async (name: string) => {
+    await db.settings.delete(name);
+  },
+};
+
+export const usePlayerStore = create<PlayerState>()(
+  persist(
+    (set, get) => ({
+      // ... existing state
+    }),
+    {
+      name: 'player-state',
+      storage: createJSONStorage(() => indexedDBStorage),
+      partialize: (state) => ({
+        // Only persist these fields
+        queue: state.queue,
+        queueIndex: state.queueIndex,
+        volume: state.volume,
+        isMuted: state.isMuted,
+        repeatMode: state.repeatMode,
+        shuffleOn: state.shuffleOn,
+        // DON'T persist: isPlaying, currentTime (would be confusing)
+      }),
+    }
+  )
+);
+```
+
+### 5.4 Chat History Persistence
+
+Chat sessions and messages stored in IndexedDB only (not PostgreSQL) for simplicity and offline support.
+
+```typescript
+// frontend/src/services/chatStorage.ts
+import { db, ChatSession, ChatMessage } from '../db';
+
+export const chatStorage = {
+  // Sessions
+  async createSession(): Promise<string> {
+    const id = crypto.randomUUID();
+    await db.chatSessions.add({
+      id,
+      title: 'New Conversation',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    return id;
+  },
+
+  async getSessions(limit = 50): Promise<ChatSession[]> {
+    return db.chatSessions
+      .orderBy('updatedAt')
+      .reverse()
+      .limit(limit)
+      .toArray();
+  },
+
+  async updateSessionTitle(id: string, title: string): Promise<void> {
+    await db.chatSessions.update(id, { title, updatedAt: new Date() });
+  },
+
+  async deleteSession(id: string): Promise<void> {
+    await db.transaction('rw', [db.chatSessions, db.chatMessages], async () => {
+      await db.chatMessages.where('sessionId').equals(id).delete();
+      await db.chatSessions.delete(id);
+    });
+  },
+
+  // Messages
+  async addMessage(sessionId: string, message: Omit<ChatMessage, 'id' | 'timestamp'>): Promise<string> {
+    const id = crypto.randomUUID();
+    await db.chatMessages.add({
+      ...message,
+      id,
+      sessionId,
+      timestamp: new Date(),
+    });
+
+    // Update session timestamp
+    await db.chatSessions.update(sessionId, { updatedAt: new Date() });
+
+    // Auto-generate title from first user message
+    const session = await db.chatSessions.get(sessionId);
+    if (session?.title === 'New Conversation' && message.role === 'user') {
+      const title = message.content.slice(0, 50) + (message.content.length > 50 ? '...' : '');
+      await db.chatSessions.update(sessionId, { title });
+    }
+
+    return id;
+  },
+
+  async getMessages(sessionId: string): Promise<ChatMessage[]> {
+    return db.chatMessages
+      .where('sessionId')
+      .equals(sessionId)
+      .sortBy('timestamp');
+  },
+};
+```
+
+### 5.5 Storage Management UI
+
+```typescript
+// frontend/src/components/Settings/StorageSettings.tsx
+function StorageSettings() {
+  const [usage, setUsage] = useState({ used: 0, limit: 0 });
+  const [limit, setLimit] = useState(10); // GB
+
+  return (
+    <div>
+      <h3>Offline Storage</h3>
+
+      {/* Usage bar */}
+      <div className="bg-zinc-800 rounded-full h-2">
+        <div
+          className="bg-green-500 h-2 rounded-full"
+          style={{ width: `${(usage.used / usage.limit) * 100}%` }}
+        />
+      </div>
+      <p>{formatBytes(usage.used)} / {limit} GB used</p>
+
+      {/* Limit slider */}
+      <label>Storage Limit</label>
+      <input
+        type="range"
+        min={1}
+        max={50}
+        value={limit}
+        onChange={(e) => setLimit(Number(e.target.value))}
+      />
+
+      {/* Clear cache button */}
+      <button onClick={() => offlineManager.clearAllCache()}>
+        Clear All Cached Audio
+      </button>
+    </div>
+  );
+}
+```
+
+### 5.6 Files to Create/Modify
+
+**New Files:**
+| File | Purpose |
+|------|---------|
+| `frontend/src/db/index.ts` | Dexie database schema |
+| `frontend/src/services/offlineManager.ts` | Audio caching logic |
+| `frontend/src/services/chatStorage.ts` | Chat persistence |
+| `frontend/src/components/Settings/StorageSettings.tsx` | Storage management UI |
+| `frontend/src/components/Chat/ChatSidebar.tsx` | Session list |
+
+**Modified Files:**
+| File | Changes |
+|------|---------|
+| `frontend/src/stores/playerStore.ts` | Add persist middleware |
+| `frontend/src/hooks/useAudioEngine.ts` | Check IndexedDB before streaming |
+| `frontend/src/components/Chat/ChatPanel.tsx` | Session management, persistence |
+
+### 5.7 Implementation Order
+
+1. **Dexie setup** - Database schema, basic CRUD
+2. **Chat persistence** - Sessions + messages (simplest to test)
+3. **Player state persistence** - Zustand persist middleware
+4. **Offline audio** - Download manager, playback from cache
+5. **Storage management** - Settings UI, usage tracking
+
+### 5.8 Deliverables for Phase 5
+
+- [ ] Dexie.js IndexedDB database setup
+- [ ] Chat conversations persist across browser sessions
+- [ ] Chat sessions can be listed, selected, deleted
+- [ ] Player queue/volume persists across page refresh
+- [ ] User can download playlists for offline listening
+- [ ] Offline tracks play without network connection
+- [ ] Storage usage is visible and configurable
+- [ ] User can clear cached audio
+
+---
+
+## Phase 6: Polish & Advanced Features
 
 **Goal**: Production-ready quality, optional advanced features.
 
 **Duration**: 2-4 weeks
 
-### 5.1 Multi-Room Audio (Optional)
+### 6.1 Multi-Room Audio (Optional)
 
 ```python
 class OutputManager:
@@ -2121,7 +2493,7 @@ class BrowserOutput(AudioOutput):
     pass
 ```
 
-### 5.2 Smart Playlists
+### 6.2 Smart Playlists
 
 ```python
 # Auto-updating playlists based on rules
@@ -2146,7 +2518,7 @@ rules = [
 ]
 ```
 
-### 5.3 Library Organization
+### 6.3 Library Organization
 
 ```python
 class LibraryOrganizer:
@@ -2169,7 +2541,7 @@ class LibraryOrganizer:
         await self.db.update_track_path(track.id, new_path)
 ```
 
-### 5.4 Performance & Reliability
+### 6.4 Performance & Reliability
 
 - [ ] Connection pooling for database
 - [ ] Redis caching for frequent queries
@@ -2180,7 +2552,7 @@ class LibraryOrganizer:
 - [ ] Error tracking (Sentry or similar)
 - [ ] Backup strategy for database
 
-### 5.5 UI Polish
+### 6.5 UI Polish
 
 - [ ] Dark/light mode
 - [ ] Keyboard shortcuts
@@ -2189,7 +2561,7 @@ class LibraryOrganizer:
 - [ ] Waveform visualization (optional)
 - [ ] Lyrics display (if available via Musixmatch API or embedded)
 
-### 5.6 Deliverables for Phase 5
+### 6.6 Deliverables for Phase 6
 
 - [ ] Output abstraction layer
 - [ ] Sonos integration (if prioritized)
@@ -2223,10 +2595,11 @@ class LibraryOrganizer:
 | Phase 1: Foundation | 3-4 weeks | Library fully indexed with embeddings |
 | Phase 2: Playback | 2-3 weeks | Functional player without AI |
 | Phase 3: LLM | 3-4 weeks | "Chat with your library" working |
-| Phase 4: Spotify | 2-3 weeks | Full Spotify sync + Bandcamp recs |
-| Phase 5: Polish | 3-5 weeks | Videos, sharing, lyrics, production-ready |
+| Phase 4: Spotify | 2-3 weeks | Full Spotify sync + purchase discovery |
+| Phase 5: Local Persistence | 1-2 weeks | Offline listening, chat history, state persistence |
+| Phase 6: Polish | 3-5 weeks | Videos, sharing, lyrics, production-ready |
 
-**Total: 13-19 weeks** depending on scope and polish level.
+**Total: 14-21 weeks** depending on scope and polish level.
 
 ---
 
@@ -2253,6 +2626,9 @@ class LibraryOrganizer:
 | **Music videos** | yt-dlp with user choice: full video / audio-only / stream-only |
 | **Video storage** | User-configurable cache size, auto-prune options |
 | **Listening sessions** | WebRTC streaming, guests need no account, host-only control with handoff |
+| **Chat storage** | IndexedDB only (per-device, not synced) |
+| **Offline storage limit** | User-configurable (slider in settings) |
+| **Player state persistence** | IndexedDB via Zustand persist middleware |
 
 ---
 
@@ -2300,6 +2676,9 @@ class LibraryOrganizer:
 | LLM tools | `backend/app/services/llm.py`, Section 3.1 (Tool Definitions) |
 | Frontend audio | `frontend/src/hooks/useAudioEngine.ts`, Section 2.2 (Audio Engine) |
 | Full player | `frontend/src/components/FullPlayer/`, UI Layout section |
+| IndexedDB / offline | `frontend/src/db/index.ts`, Phase 5 (Local Persistence) |
+| Chat persistence | `frontend/src/services/chatStorage.ts`, Section 5.4 |
+| Player state persist | `frontend/src/stores/playerStore.ts`, Section 5.3 |
 
 ### Common Tasks
 

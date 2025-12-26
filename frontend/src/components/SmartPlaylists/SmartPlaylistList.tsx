@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2, Upload, Download } from 'lucide-react';
+import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2, Upload } from 'lucide-react';
 import { smartPlaylistsApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { SmartPlaylistBuilder } from './SmartPlaylistBuilder';

@@ -3,8 +3,11 @@
 import hashlib
 import time
 from dataclasses import dataclass
+from uuid import UUID
 
 import httpx
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.services.app_settings import get_app_settings_service
@@ -25,7 +28,6 @@ class LastfmService:
 
     def __init__(self):
         self.client = httpx.AsyncClient(timeout=10.0)
-        self._sessions: dict[str, LastfmSession] = {}
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
         """Get Last.fm credentials from app settings or env fallback."""
@@ -57,10 +59,12 @@ class LastfmService:
 
         return hashlib.md5(sig_string.encode()).hexdigest()
 
-    async def get_session(self, token: str) -> LastfmSession:
+    async def exchange_token(self, token: str) -> LastfmSession:
         """
         Exchange an auth token for a session key.
         Called after user authorizes via Last.fm web auth.
+
+        Note: This does NOT persist to database - caller must save via save_session().
         """
         if not self.is_configured():
             raise ValueError("Last.fm API key not configured")
@@ -82,22 +86,56 @@ class LastfmService:
             raise ValueError(f"Last.fm error: {data.get('message', 'Unknown error')}")
 
         session_data = data.get("session", {})
-        session = LastfmSession(
+        return LastfmSession(
             session_key=session_data.get("key", ""),
             username=session_data.get("name", "")
         )
 
-        # Store session by username
-        self._sessions[session.username] = session
-        return session
+    async def save_session(
+        self,
+        db: AsyncSession,
+        profile_id: UUID,
+        session: LastfmSession,
+    ) -> None:
+        """Persist Last.fm session to database."""
+        from app.db.models import LastfmProfile
 
-    def get_stored_session(self, username: str) -> LastfmSession | None:
-        """Get a stored session by username."""
-        return self._sessions.get(username)
+        existing = await db.get(LastfmProfile, profile_id)
+        if existing:
+            existing.username = session.username
+            existing.session_key = session.session_key
+        else:
+            db.add(LastfmProfile(
+                profile_id=profile_id,
+                username=session.username,
+                session_key=session.session_key,
+            ))
+        await db.commit()
 
-    def store_session(self, session: LastfmSession) -> None:
-        """Store a session."""
-        self._sessions[session.username] = session
+    async def get_stored_session(
+        self,
+        db: AsyncSession,
+        profile_id: UUID,
+    ) -> LastfmSession | None:
+        """Get stored session for a profile from database."""
+        from app.db.models import LastfmProfile
+
+        lastfm_profile = await db.get(LastfmProfile, profile_id)
+        if lastfm_profile and lastfm_profile.session_key:
+            return LastfmSession(
+                session_key=lastfm_profile.session_key,
+                username=lastfm_profile.username or "",
+            )
+        return None
+
+    async def delete_session(self, db: AsyncSession, profile_id: UUID) -> None:
+        """Delete stored Last.fm session for a profile."""
+        from app.db.models import LastfmProfile
+
+        lastfm_profile = await db.get(LastfmProfile, profile_id)
+        if lastfm_profile:
+            await db.delete(lastfm_profile)
+            await db.commit()
 
     async def update_now_playing(
         self,

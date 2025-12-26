@@ -1,13 +1,12 @@
 """Spotify integration endpoints."""
 
-from uuid import UUID
-
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
+from sqlalchemy import delete
 
-from app.api.deps import DbSession
-from app.config import settings
+from app.api.deps import DbSession, CurrentProfile
+from app.db.models import SpotifyProfileV2, SpotifyFavoriteV2
 from app.services.spotify import SpotifyService, SpotifySyncService
 
 
@@ -47,14 +46,15 @@ class UnmatchedTrack(BaseModel):
     search_links: dict[str, StoreSearchLink] = {}
 
 
-# Temporary: hardcoded user ID until auth is implemented
-# TODO: Replace with proper auth in Phase 4.5
-TEMP_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-
-
 @router.get("/status", response_model=SpotifyStatusResponse)
-async def get_spotify_status(db: DbSession) -> SpotifyStatusResponse:
-    """Check Spotify connection status."""
+async def get_spotify_status(
+    db: DbSession,
+    profile: CurrentProfile,
+) -> SpotifyStatusResponse:
+    """Check Spotify connection status.
+
+    Requires X-Profile-ID header.
+    """
     spotify_service = SpotifyService()
 
     if not spotify_service.is_configured():
@@ -63,10 +63,16 @@ async def get_spotify_status(db: DbSession) -> SpotifyStatusResponse:
             connected=False,
         )
 
-    # Check if user has connected Spotify
+    if not profile:
+        return SpotifyStatusResponse(
+            configured=True,
+            connected=False,
+        )
+
+    # Check if profile has connected Spotify
     sync_service = SpotifySyncService(db)
     try:
-        stats = await sync_service.get_sync_stats(TEMP_USER_ID)
+        stats = await sync_service.get_sync_stats(profile.id)
         connected = stats.get("spotify_user_id") is not None
     except Exception:
         connected = False
@@ -82,17 +88,26 @@ async def get_spotify_status(db: DbSession) -> SpotifyStatusResponse:
 
 
 @router.get("/auth")
-async def spotify_auth() -> dict:
-    """Get Spotify OAuth authorization URL."""
+async def spotify_auth(profile: CurrentProfile) -> dict:
+    """Get Spotify OAuth authorization URL.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required - register at POST /profiles/register",
+        )
+
     spotify_service = SpotifyService()
 
     if not spotify_service.is_configured():
         raise HTTPException(
             status_code=503,
-            detail="Spotify credentials not configured. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to .env",
+            detail="Spotify credentials not configured. Add them in Settings.",
         )
 
-    auth_url, state = spotify_service.get_auth_url(TEMP_USER_ID)
+    auth_url, state = spotify_service.get_auth_url(profile.id)
 
     return {
         "auth_url": auth_url,
@@ -107,7 +122,10 @@ async def spotify_callback(
     state: str = Query(...),
     error: str | None = Query(None),
 ) -> RedirectResponse:
-    """Handle Spotify OAuth callback."""
+    """Handle Spotify OAuth callback.
+
+    The profile_id is encoded in the state parameter from the auth request.
+    """
     if error:
         # Redirect to frontend with error
         return RedirectResponse(
@@ -117,11 +135,11 @@ async def spotify_callback(
     spotify_service = SpotifyService()
 
     try:
-        profile = await spotify_service.handle_callback(db, code, state)
+        spotify_profile = await spotify_service.handle_callback(db, code, state)
 
         # Redirect to frontend with success
         return RedirectResponse(
-            url=f"http://localhost:3000/settings?spotify_connected=true&spotify_user={profile.spotify_user_id}"
+            url=f"http://localhost:3000/settings?spotify_connected=true&spotify_user={spotify_profile.spotify_user_id}"
         )
     except Exception as e:
         return RedirectResponse(
@@ -132,18 +150,28 @@ async def spotify_callback(
 @router.post("/sync", response_model=SyncResponse)
 async def sync_spotify(
     db: DbSession,
+    profile: CurrentProfile,
     include_top_tracks: bool = Query(True),
 ) -> SyncResponse:
-    """Sync Spotify favorites to local database."""
+    """Sync Spotify favorites to local database.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required",
+        )
+
     sync_service = SpotifySyncService(db)
 
     try:
         # Sync saved tracks
-        stats = await sync_service.sync_favorites(TEMP_USER_ID)
+        stats = await sync_service.sync_favorites(profile.id)
 
         # Optionally sync top tracks
         if include_top_tracks:
-            top_stats = await sync_service.sync_top_tracks(TEMP_USER_ID)
+            top_stats = await sync_service.sync_top_tracks(profile.id)
             stats["top_tracks_fetched"] = top_stats["fetched"]
             stats["top_tracks_new"] = top_stats["new"]
 
@@ -161,20 +189,28 @@ async def sync_spotify(
 @router.get("/unmatched", response_model=list[UnmatchedTrack])
 async def get_unmatched_tracks(
     db: DbSession,
+    profile: CurrentProfile,
     limit: int = Query(50, ge=1, le=200),
     sort_by: str = Query("popularity", enum=["popularity", "added_at"]),
 ) -> list[UnmatchedTrack]:
     """Get Spotify favorites that don't have local matches.
 
+    Requires X-Profile-ID header.
     Sorted by listening preference (popularity) by default.
     Includes search links for Bandcamp, Discogs, Qobuz, etc.
     """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required",
+        )
+
     from app.services.search_links import generate_search_urls
 
     sync_service = SpotifySyncService(db)
 
     try:
-        unmatched = await sync_service.get_unmatched_favorites(TEMP_USER_ID, limit)
+        unmatched = await sync_service.get_unmatched_favorites(profile.id, limit)
 
         # Generate search links and sort by preference
         result = []
@@ -212,19 +248,28 @@ async def get_unmatched_tracks(
 
 
 @router.post("/disconnect")
-async def disconnect_spotify(db: DbSession) -> dict:
-    """Disconnect Spotify account."""
-    from sqlalchemy import delete
-    from app.db.models import SpotifyProfile, SpotifyFavorite
+async def disconnect_spotify(
+    db: DbSession,
+    profile: CurrentProfile,
+) -> dict:
+    """Disconnect Spotify account.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required",
+        )
 
     # Delete favorites first (foreign key)
     await db.execute(
-        delete(SpotifyFavorite).where(SpotifyFavorite.user_id == TEMP_USER_ID)
+        delete(SpotifyFavoriteV2).where(SpotifyFavoriteV2.profile_id == profile.id)
     )
 
-    # Delete profile
+    # Delete Spotify profile
     await db.execute(
-        delete(SpotifyProfile).where(SpotifyProfile.user_id == TEMP_USER_ID)
+        delete(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile.id)
     )
 
     await db.commit()

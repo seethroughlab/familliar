@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import Track, TrackAnalysis, SpotifyFavorite, SpotifyProfile
+from app.services.app_settings import get_app_settings_service
 
 
 # Tool definitions for Claude
@@ -739,7 +740,13 @@ class LLMService:
     """Service for conversational music discovery using Claude."""
 
     def __init__(self):
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        api_key = self._get_api_key()
+        self.client = anthropic.Anthropic(api_key=api_key)
+
+    def _get_api_key(self) -> str | None:
+        """Get Anthropic API key from app settings or env fallback."""
+        app_settings = get_app_settings_service().get()
+        return app_settings.anthropic_api_key or settings.anthropic_api_key
 
     async def chat(
         self,

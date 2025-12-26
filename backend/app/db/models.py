@@ -41,7 +41,7 @@ class AlbumType(enum.Enum):
 
 
 class User(Base):
-    """User account for multi-user support."""
+    """User account for multi-user support (legacy, being replaced by Profile)."""
 
     __tablename__ = "users"
 
@@ -60,6 +60,102 @@ class User(Base):
     spotify_profile: Mapped["SpotifyProfile | None"] = relationship(
         back_populates="user", cascade="all, delete"
     )
+
+
+class Profile(Base):
+    """Device-based profile for multi-user support without login.
+
+    Each device automatically gets a unique profile identified by device_id.
+    This replaces the need for user authentication while still supporting
+    per-user features like Spotify/Last.fm connections.
+    """
+
+    __tablename__ = "profiles"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    device_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Relationships
+    spotify_profile: Mapped["SpotifyProfileV2 | None"] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+    lastfm_profile: Mapped["LastfmProfile | None"] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+
+
+class LastfmProfile(Base):
+    """Last.fm session storage per profile.
+
+    Persists the Last.fm session key so it survives server restarts.
+    Previously this was stored in-memory and lost on restart.
+    """
+
+    __tablename__ = "lastfm_profiles"
+
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    username: Mapped[str | None] = mapped_column(String(255))
+    session_key: Mapped[str | None] = mapped_column(String(255))
+    connected_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    profile: Mapped["Profile"] = relationship(back_populates="lastfm_profile")
+
+
+class SpotifyProfileV2(Base):
+    """Spotify OAuth tokens per device profile (new version).
+
+    This replaces the old SpotifyProfile which was linked to User.
+    Now linked to Profile for device-based multi-user support.
+    """
+
+    __tablename__ = "spotify_profiles_v2"
+
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    spotify_user_id: Mapped[str | None] = mapped_column(String(255))
+    access_token: Mapped[str | None] = mapped_column(Text)
+    refresh_token: Mapped[str | None] = mapped_column(Text)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
+    sync_mode: Mapped[str] = mapped_column(String(20), default="periodic")
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
+    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Relationships
+    profile: Mapped["Profile"] = relationship(back_populates="spotify_profile")
+    favorites: Mapped[list["SpotifyFavoriteV2"]] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+
+
+class SpotifyFavoriteV2(Base):
+    """Synced Spotify favorites per device profile (new version)."""
+
+    __tablename__ = "spotify_favorites_v2"
+    __table_args__ = (
+        UniqueConstraint("profile_id", "spotify_track_id", name="uq_spotify_favorite_v2"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
+    spotify_track_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    matched_track_id: Mapped[UUID | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"))
+
+    # Spotify track data (JSONB for flexibility)
+    track_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    added_at: Mapped[datetime | None] = mapped_column(DateTime)
+    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    profile: Mapped["SpotifyProfileV2"] = relationship(back_populates="favorites")
+    matched_track: Mapped["Track | None"] = relationship()
 
 
 class Track(Base):

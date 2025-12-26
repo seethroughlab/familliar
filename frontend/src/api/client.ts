@@ -1,8 +1,21 @@
 import axios from 'axios';
 import type { Track, TrackListResponse, LibraryStats } from '../types';
+import { getOrCreateDeviceProfile } from '../services/profileService';
 
 const api = axios.create({
   baseURL: '/api/v1',
+});
+
+// Add X-Profile-ID header to all requests
+api.interceptors.request.use(async (config) => {
+  try {
+    const profileId = await getOrCreateDeviceProfile();
+    config.headers['X-Profile-ID'] = profileId;
+  } catch (error) {
+    // Log but don't block requests if profile fails
+    console.error('Failed to get profile ID:', error);
+  }
+  return config;
 });
 
 export const tracksApi = {
@@ -437,6 +450,32 @@ export const smartPlaylistsApi = {
 
   getAvailableFields: async (): Promise<AvailableFields> => {
     const { data } = await api.get('/smart-playlists/fields/available');
+    return data;
+  },
+};
+
+// Profile API
+export interface ProfileResponse {
+  profile_id: string;
+  device_id: string;
+  created_at: string;
+  has_spotify: boolean;
+  has_lastfm: boolean;
+}
+
+export const profilesApi = {
+  register: async (deviceId: string): Promise<ProfileResponse> => {
+    const { data } = await api.post('/profiles/register', { device_id: deviceId });
+    return data;
+  },
+
+  getMe: async (): Promise<ProfileResponse> => {
+    const { data } = await api.get('/profiles/me');
+    return data;
+  },
+
+  deleteMe: async (): Promise<{ status: string }> => {
+    const { data } = await api.delete('/profiles/me');
     return data;
   },
 };

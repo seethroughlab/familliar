@@ -1,0 +1,1 @@
+[ ] There should be many choices for the music visualizer. The music visualization system should have access to all song metadata (strings: artist, title, etc, lyrics, album art) and some of the music visualizations should use this data

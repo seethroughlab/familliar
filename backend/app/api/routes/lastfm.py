@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, CurrentProfile
 from app.db.models import Track
 from app.services.lastfm import get_lastfm_service
 
@@ -44,13 +44,15 @@ class ScrobbleResponse(BaseModel):
     message: str
 
 
-# In-memory session storage (in production, store in database per user)
-_current_session: dict = {}
-
-
 @router.get("/status", response_model=LastfmStatusResponse)
-async def get_lastfm_status() -> LastfmStatusResponse:
-    """Get Last.fm connection status."""
+async def get_lastfm_status(
+    db: DbSession,
+    profile: CurrentProfile,
+) -> LastfmStatusResponse:
+    """Get Last.fm connection status.
+
+    Requires X-Profile-ID header.
+    """
     lastfm = get_lastfm_service()
 
     if not lastfm.is_configured():
@@ -59,22 +61,40 @@ async def get_lastfm_status() -> LastfmStatusResponse:
             connected=False
         )
 
+    if not profile:
+        return LastfmStatusResponse(
+            configured=True,
+            connected=False
+        )
+
+    # Check for stored session in database
+    session = await lastfm.get_stored_session(db, profile.id)
+
     return LastfmStatusResponse(
         configured=True,
-        connected=bool(_current_session.get("session_key")),
-        username=_current_session.get("username")
+        connected=session is not None,
+        username=session.username if session else None
     )
 
 
 @router.get("/auth", response_model=LastfmAuthResponse)
-async def get_auth_url() -> LastfmAuthResponse:
-    """Get the Last.fm authorization URL."""
+async def get_auth_url(profile: CurrentProfile) -> LastfmAuthResponse:
+    """Get the Last.fm authorization URL.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required - register at POST /profiles/register"
+        )
+
     lastfm = get_lastfm_service()
 
     if not lastfm.is_configured():
         raise HTTPException(
-            status_code=400,
-            detail="Last.fm API not configured. Set LASTFM_API_KEY and LASTFM_API_SECRET."
+            status_code=503,
+            detail="Last.fm API not configured. Add credentials in Settings."
         )
 
     # Callback URL - frontend will handle the token
@@ -85,25 +105,37 @@ async def get_auth_url() -> LastfmAuthResponse:
 
 
 @router.post("/callback", response_model=LastfmCallbackResponse)
-async def handle_callback(token: str = Query(...)) -> LastfmCallbackResponse:
+async def handle_callback(
+    db: DbSession,
+    profile: CurrentProfile,
+    token: str = Query(...),
+) -> LastfmCallbackResponse:
     """
     Handle the Last.fm auth callback.
     Exchange the token for a session key.
+
+    Requires X-Profile-ID header.
     """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required"
+        )
+
     lastfm = get_lastfm_service()
 
     if not lastfm.is_configured():
         raise HTTPException(
-            status_code=400,
+            status_code=503,
             detail="Last.fm API not configured"
         )
 
     try:
-        session = await lastfm.get_session(token)
+        # Exchange token for session
+        session = await lastfm.exchange_token(token)
 
-        # Store session
-        _current_session["session_key"] = session.session_key
-        _current_session["username"] = session.username
+        # Persist to database
+        await lastfm.save_session(db, profile.id, session)
 
         return LastfmCallbackResponse(
             status="connected",
@@ -117,19 +149,46 @@ async def handle_callback(token: str = Query(...)) -> LastfmCallbackResponse:
 
 
 @router.post("/disconnect")
-async def disconnect() -> dict:
-    """Disconnect from Last.fm."""
-    _current_session.clear()
+async def disconnect(
+    db: DbSession,
+    profile: CurrentProfile,
+) -> dict:
+    """Disconnect from Last.fm.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required"
+        )
+
+    lastfm = get_lastfm_service()
+    await lastfm.delete_session(db, profile.id)
+
     return {"status": "disconnected"}
 
 
 @router.post("/now-playing", response_model=ScrobbleResponse)
 async def update_now_playing(
     db: DbSession,
+    profile: CurrentProfile,
     request: ScrobbleRequest,
 ) -> ScrobbleResponse:
-    """Update the "now playing" status on Last.fm."""
-    if not _current_session.get("session_key"):
+    """Update the "now playing" status on Last.fm.
+
+    Requires X-Profile-ID header.
+    """
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required"
+        )
+
+    lastfm = get_lastfm_service()
+    session = await lastfm.get_stored_session(db, profile.id)
+
+    if not session:
         raise HTTPException(
             status_code=400,
             detail="Not connected to Last.fm"
@@ -149,9 +208,8 @@ async def update_now_playing(
             detail="Track must have title and artist for scrobbling"
         )
 
-    lastfm = get_lastfm_service()
     success = await lastfm.update_now_playing(
-        session_key=_current_session["session_key"],
+        session_key=session.session_key,
         artist=track.artist,
         track=track.title,
         album=track.album,
@@ -173,13 +231,25 @@ async def update_now_playing(
 @router.post("/scrobble", response_model=ScrobbleResponse)
 async def scrobble_track(
     db: DbSession,
+    profile: CurrentProfile,
     request: ScrobbleRequest,
 ) -> ScrobbleResponse:
     """
     Scrobble a track to Last.fm.
     Should be called after 50% of the track has been played.
+
+    Requires X-Profile-ID header.
     """
-    if not _current_session.get("session_key"):
+    if not profile:
+        raise HTTPException(
+            status_code=401,
+            detail="Profile ID required"
+        )
+
+    lastfm = get_lastfm_service()
+    session = await lastfm.get_stored_session(db, profile.id)
+
+    if not session:
         raise HTTPException(
             status_code=400,
             detail="Not connected to Last.fm"
@@ -199,11 +269,10 @@ async def scrobble_track(
             detail="Track must have title and artist for scrobbling"
         )
 
-    lastfm = get_lastfm_service()
     timestamp = request.timestamp or int(time.time())
 
     success = await lastfm.scrobble(
-        session_key=_current_session["session_key"],
+        session_key=session.session_key,
         artist=track.artist,
         track=track.title,
         timestamp=timestamp,

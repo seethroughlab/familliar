@@ -1,6 +1,5 @@
 """Spotify integration service for OAuth and sync."""
 
-import hashlib
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
@@ -8,11 +7,11 @@ from uuid import UUID
 
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
-from sqlalchemy import func, select, or_
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import SpotifyFavorite, SpotifyProfile, Track, User
+from app.db.models import SpotifyProfileV2, SpotifyFavoriteV2, Track, Profile
 from app.services.app_settings import get_app_settings_service
 
 
@@ -44,16 +43,19 @@ class SpotifyService:
         client_id, client_secret = self._get_credentials()
         return bool(client_id and client_secret)
 
-    def get_auth_url(self, user_id: UUID) -> tuple[str, str]:
+    def get_auth_url(self, profile_id: UUID) -> tuple[str, str]:
         """Generate OAuth authorization URL.
+
+        Args:
+            profile_id: Device profile ID to associate with Spotify connection
 
         Returns:
             Tuple of (auth_url, state_token)
         """
         client_id, client_secret = self._get_credentials()
 
-        # Create state token that encodes user_id
-        state = f"{user_id}:{secrets.token_urlsafe(16)}"
+        # Create state token that encodes profile_id
+        state = f"{profile_id}:{secrets.token_urlsafe(16)}"
 
         oauth = SpotifyOAuth(
             client_id=client_id,
@@ -71,21 +73,21 @@ class SpotifyService:
         db: AsyncSession,
         code: str,
         state: str,
-    ) -> SpotifyProfile:
+    ) -> SpotifyProfileV2:
         """Handle OAuth callback and store tokens.
 
         Args:
             db: Database session
             code: Authorization code from Spotify
-            state: State token to verify user
+            state: State token to verify profile
 
         Returns:
-            SpotifyProfile with tokens stored
+            SpotifyProfileV2 with tokens stored
         """
-        # Extract user_id from state
+        # Extract profile_id from state
         try:
-            user_id_str, _ = state.split(":", 1)
-            user_id = UUID(user_id_str)
+            profile_id_str, _ = state.split(":", 1)
+            profile_id = UUID(profile_id_str)
         except (ValueError, AttributeError):
             raise ValueError("Invalid OAuth state")
 
@@ -107,59 +109,59 @@ class SpotifyService:
         # Calculate token expiry
         expires_at = datetime.utcnow() + timedelta(seconds=token_info.get("expires_in", 3600))
 
-        # Upsert SpotifyProfile
+        # Upsert SpotifyProfileV2
         result = await db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
         )
-        profile = result.scalar_one_or_none()
+        spotify_profile = result.scalar_one_or_none()
 
-        if profile:
-            profile.spotify_user_id = spotify_user["id"]
-            profile.access_token = token_info["access_token"]
-            profile.refresh_token = token_info.get("refresh_token")
-            profile.token_expires_at = expires_at
+        if spotify_profile:
+            spotify_profile.spotify_user_id = spotify_user["id"]
+            spotify_profile.access_token = token_info["access_token"]
+            spotify_profile.refresh_token = token_info.get("refresh_token")
+            spotify_profile.token_expires_at = expires_at
         else:
-            profile = SpotifyProfile(
-                user_id=user_id,
+            spotify_profile = SpotifyProfileV2(
+                profile_id=profile_id,
                 spotify_user_id=spotify_user["id"],
                 access_token=token_info["access_token"],
                 refresh_token=token_info.get("refresh_token"),
                 token_expires_at=expires_at,
                 sync_mode="periodic",
             )
-            db.add(profile)
+            db.add(spotify_profile)
 
         await db.commit()
-        await db.refresh(profile)
-        return profile
+        await db.refresh(spotify_profile)
+        return spotify_profile
 
-    async def get_client(self, db: AsyncSession, user_id: UUID) -> spotipy.Spotify | None:
-        """Get authenticated Spotify client for a user.
+    async def get_client(self, db: AsyncSession, profile_id: UUID) -> spotipy.Spotify | None:
+        """Get authenticated Spotify client for a device profile.
 
         Handles token refresh automatically.
         """
         result = await db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
         )
-        profile = result.scalar_one_or_none()
+        spotify_profile = result.scalar_one_or_none()
 
-        if not profile or not profile.access_token:
+        if not spotify_profile or not spotify_profile.access_token:
             return None
 
         # Check if token needs refresh
-        if profile.token_expires_at and profile.token_expires_at < datetime.utcnow():
-            if profile.refresh_token:
-                profile = await self._refresh_token(db, profile)
+        if spotify_profile.token_expires_at and spotify_profile.token_expires_at < datetime.utcnow():
+            if spotify_profile.refresh_token:
+                spotify_profile = await self._refresh_token(db, spotify_profile)
             else:
                 return None
 
-        return spotipy.Spotify(auth=profile.access_token)
+        return spotipy.Spotify(auth=spotify_profile.access_token)
 
     async def _refresh_token(
         self,
         db: AsyncSession,
-        profile: SpotifyProfile,
-    ) -> SpotifyProfile:
+        spotify_profile: SpotifyProfileV2,
+    ) -> SpotifyProfileV2:
         """Refresh expired access token."""
         client_id, client_secret = self._get_credentials()
         oauth = SpotifyOAuth(
@@ -168,18 +170,18 @@ class SpotifyService:
             redirect_uri=self.redirect_uri,
         )
 
-        token_info = oauth.refresh_access_token(profile.refresh_token)
+        token_info = oauth.refresh_access_token(spotify_profile.refresh_token)
 
-        profile.access_token = token_info["access_token"]
+        spotify_profile.access_token = token_info["access_token"]
         if "refresh_token" in token_info:
-            profile.refresh_token = token_info["refresh_token"]
-        profile.token_expires_at = datetime.utcnow() + timedelta(
+            spotify_profile.refresh_token = token_info["refresh_token"]
+        spotify_profile.token_expires_at = datetime.utcnow() + timedelta(
             seconds=token_info.get("expires_in", 3600)
         )
 
         await db.commit()
-        await db.refresh(profile)
-        return profile
+        await db.refresh(spotify_profile)
+        return spotify_profile
 
 
 class SpotifySyncService:
@@ -189,13 +191,13 @@ class SpotifySyncService:
         self.db = db
         self.spotify_service = SpotifyService()
 
-    async def sync_favorites(self, user_id: UUID) -> dict:
-        """Sync user's Spotify saved tracks to local database.
+    async def sync_favorites(self, profile_id: UUID) -> dict:
+        """Sync profile's Spotify saved tracks to local database.
 
         Returns:
             Dict with sync statistics
         """
-        client = await self.spotify_service.get_client(self.db, user_id)
+        client = await self.spotify_service.get_client(self.db, profile_id)
         if not client:
             raise ValueError("Spotify not connected")
 
@@ -222,9 +224,9 @@ class SpotifySyncService:
 
                 # Check if already synced
                 existing = await self.db.execute(
-                    select(SpotifyFavorite).where(
-                        SpotifyFavorite.user_id == user_id,
-                        SpotifyFavorite.spotify_track_id == spotify_track["id"],
+                    select(SpotifyFavoriteV2).where(
+                        SpotifyFavoriteV2.profile_id == profile_id,
+                        SpotifyFavoriteV2.spotify_track_id == spotify_track["id"],
                     )
                 )
                 favorite = existing.scalar_one_or_none()
@@ -239,8 +241,8 @@ class SpotifySyncService:
                         stats["matched"] += 1
                 else:
                     # Create new favorite
-                    favorite = SpotifyFavorite(
-                        user_id=user_id,
+                    favorite = SpotifyFavoriteV2(
+                        profile_id=profile_id,
                         spotify_track_id=spotify_track["id"],
                         matched_track_id=local_match.id if local_match else None,
                         track_data=self._extract_track_data(spotify_track),
@@ -262,22 +264,22 @@ class SpotifySyncService:
 
         # Update last sync time
         profile_result = await self.db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
         )
-        profile = profile_result.scalar_one_or_none()
-        if profile:
-            profile.last_sync_at = datetime.utcnow()
+        spotify_profile = profile_result.scalar_one_or_none()
+        if spotify_profile:
+            spotify_profile.last_sync_at = datetime.utcnow()
 
         await self.db.commit()
         return stats
 
-    async def sync_top_tracks(self, user_id: UUID, time_range: str = "medium_term") -> dict:
-        """Sync user's top tracks.
+    async def sync_top_tracks(self, profile_id: UUID, time_range: str = "medium_term") -> dict:
+        """Sync profile's top tracks.
 
         Args:
             time_range: short_term (4 weeks), medium_term (6 months), long_term (years)
         """
-        client = await self.spotify_service.get_client(self.db, user_id)
+        client = await self.spotify_service.get_client(self.db, profile_id)
         if not client:
             raise ValueError("Spotify not connected")
 
@@ -290,9 +292,9 @@ class SpotifySyncService:
 
             # Check if already exists
             existing = await self.db.execute(
-                select(SpotifyFavorite).where(
-                    SpotifyFavorite.user_id == user_id,
-                    SpotifyFavorite.spotify_track_id == spotify_track["id"],
+                select(SpotifyFavoriteV2).where(
+                    SpotifyFavoriteV2.profile_id == profile_id,
+                    SpotifyFavoriteV2.spotify_track_id == spotify_track["id"],
                 )
             )
 
@@ -301,8 +303,8 @@ class SpotifySyncService:
 
             local_match = await self._match_to_local(spotify_track)
 
-            favorite = SpotifyFavorite(
-                user_id=user_id,
+            favorite = SpotifyFavoriteV2(
+                profile_id=profile_id,
                 spotify_track_id=spotify_track["id"],
                 matched_track_id=local_match.id if local_match else None,
                 track_data=self._extract_track_data(spotify_track),
@@ -316,18 +318,18 @@ class SpotifySyncService:
         await self.db.commit()
         return stats
 
-    async def get_unmatched_favorites(self, user_id: UUID, limit: int = 50) -> list[dict]:
+    async def get_unmatched_favorites(self, profile_id: UUID, limit: int = 50) -> list[dict]:
         """Get Spotify favorites that don't have local matches.
 
         Returns tracks with popularity score for preference-based sorting.
         """
         result = await self.db.execute(
-            select(SpotifyFavorite)
+            select(SpotifyFavoriteV2)
             .where(
-                SpotifyFavorite.user_id == user_id,
-                SpotifyFavorite.matched_track_id.is_(None),
+                SpotifyFavoriteV2.profile_id == profile_id,
+                SpotifyFavoriteV2.matched_track_id.is_(None),
             )
-            .order_by(SpotifyFavorite.added_at.desc())
+            .order_by(SpotifyFavoriteV2.added_at.desc())
             .limit(limit)
         )
         favorites = result.scalars().all()
@@ -344,36 +346,36 @@ class SpotifySyncService:
             for f in favorites
         ]
 
-    async def get_sync_stats(self, user_id: UUID) -> dict:
-        """Get sync statistics for a user."""
+    async def get_sync_stats(self, profile_id: UUID) -> dict:
+        """Get sync statistics for a profile."""
         # Total favorites
         total = await self.db.scalar(
-            select(func.count(SpotifyFavorite.id)).where(
-                SpotifyFavorite.user_id == user_id
+            select(func.count(SpotifyFavoriteV2.id)).where(
+                SpotifyFavoriteV2.profile_id == profile_id
             )
         ) or 0
 
         # Matched favorites
         matched = await self.db.scalar(
-            select(func.count(SpotifyFavorite.id)).where(
-                SpotifyFavorite.user_id == user_id,
-                SpotifyFavorite.matched_track_id.isnot(None),
+            select(func.count(SpotifyFavoriteV2.id)).where(
+                SpotifyFavoriteV2.profile_id == profile_id,
+                SpotifyFavoriteV2.matched_track_id.isnot(None),
             )
         ) or 0
 
         # Get profile info
         profile_result = await self.db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == user_id)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
         )
-        profile = profile_result.scalar_one_or_none()
+        spotify_profile = profile_result.scalar_one_or_none()
 
         return {
             "total_favorites": total,
             "matched": matched,
             "unmatched": total - matched,
             "match_rate": round(matched / total * 100, 1) if total > 0 else 0,
-            "last_sync": profile.last_sync_at.isoformat() if profile and profile.last_sync_at else None,
-            "spotify_user_id": profile.spotify_user_id if profile else None,
+            "last_sync": spotify_profile.last_sync_at.isoformat() if spotify_profile and spotify_profile.last_sync_at else None,
+            "spotify_user_id": spotify_profile.spotify_user_id if spotify_profile else None,
         }
 
     async def _match_to_local(self, spotify_track: dict) -> Track | None:
