@@ -1,6 +1,10 @@
 """Library scanner service for discovering and tracking audio files."""
 
+import asyncio
 import hashlib
+import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -9,6 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import AUDIO_EXTENSIONS, settings
 from app.db.models import Track
+
+logger = logging.getLogger(__name__)
+
+# Thread pool for blocking file I/O operations
+_file_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="scanner-io")
+
+# Lowercase extensions for fast lookup
+_AUDIO_EXT_LOWER = {ext.lower() for ext in AUDIO_EXTENSIONS}
 
 
 def compute_file_hash(path: Path, chunk_size: int = 8192) -> str:
@@ -34,6 +46,48 @@ def compute_file_hash(path: Path, chunk_size: int = 8192) -> str:
     return hasher.hexdigest()
 
 
+def _discover_files_sync(library_path: Path) -> list[Path]:
+    """Synchronous file discovery using single-pass os.walk (runs in thread pool).
+
+    Much faster than multiple rglob calls, especially on network volumes.
+    Logs progress every 500 directories scanned.
+    """
+    files = []
+    dirs_scanned = 0
+
+    logger.info(f"Starting single-pass directory walk of {library_path}")
+
+    for root, dirs, filenames in os.walk(library_path):
+        dirs_scanned += 1
+
+        # Log progress every 500 directories
+        if dirs_scanned % 500 == 0:
+            logger.info(f"Discovery progress: scanned {dirs_scanned} directories, found {len(files)} audio files so far...")
+
+        # Check each file in this directory
+        for filename in filenames:
+            # Fast extension check (case-insensitive)
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in _AUDIO_EXT_LOWER:
+                files.append(Path(root) / filename)
+
+    logger.info(f"Discovery complete: scanned {dirs_scanned} directories, found {len(files)} audio files")
+    return sorted(files)
+
+
+def _get_file_info_sync(file_path: Path) -> tuple[str, datetime]:
+    """Get file hash and mtime (runs in thread pool)."""
+    file_hash = compute_file_hash(file_path)
+    file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+    return file_hash, file_mtime
+
+
+def _extract_metadata_sync(file_path: Path) -> dict:
+    """Extract metadata from file (runs in thread pool)."""
+    from app.services.metadata import extract_metadata
+    return extract_metadata(file_path)
+
+
 class LibraryScanner:
     """Scans music library directories for audio files."""
 
@@ -53,13 +107,21 @@ class LibraryScanner:
         if not library_path.exists():
             raise ValueError(f"Library path does not exist: {library_path}")
 
+        loop = asyncio.get_event_loop()
+
         # Get all existing tracks from database
+        logger.info(f"Loading existing tracks from database...")
         existing_tracks = await self._get_existing_tracks()
         existing_paths = {t.file_path: t for t in existing_tracks}
+        logger.info(f"Found {len(existing_tracks)} existing tracks in database")
 
-        # Find all audio files
-        found_files = self._discover_files(library_path)
+        # Find all audio files (in thread pool to not block)
+        logger.info(f"Discovering audio files in {library_path}...")
+        found_files = await loop.run_in_executor(
+            _file_executor, _discover_files_sync, library_path
+        )
         found_paths = {str(p) for p in found_files}
+        logger.info(f"Discovered {len(found_files)} audio files")
 
         results = {
             "total": len(found_files),
@@ -71,13 +133,23 @@ class LibraryScanner:
         }
 
         # Process found files
+        processed = 0
         for file_path in found_files:
             path_str = str(file_path)
-            file_hash = compute_file_hash(file_path)
-            file_mtime = datetime.fromtimestamp(file_path.stat().st_mtime)
+            processed += 1
+
+            # Log progress every 100 files
+            if processed % 100 == 0:
+                logger.info(f"Progress: {processed}/{len(found_files)} files ({results['new']} new, {results['updated']} updated, {results['unchanged']} unchanged)")
+
+            # Get file info in thread pool
+            file_hash, file_mtime = await loop.run_in_executor(
+                _file_executor, _get_file_info_sync, file_path
+            )
 
             if path_str not in existing_paths:
                 # New file
+                logger.info(f"NEW: {file_path.name}")
                 await self._create_track(file_path, file_hash, file_mtime)
                 results["new"] += 1
                 results["queued"] += 1
@@ -85,11 +157,16 @@ class LibraryScanner:
                 existing = existing_paths[path_str]
                 if full_scan or existing.file_hash != file_hash:
                     # Changed file (or full scan requested)
+                    logger.info(f"UPDATED: {file_path.name}")
                     await self._update_track(existing, file_hash, file_mtime)
                     results["updated"] += 1
                     results["queued"] += 1
                 else:
                     results["unchanged"] += 1
+
+            # Yield control periodically to keep server responsive
+            if processed % 50 == 0:
+                await asyncio.sleep(0)
 
         # Handle deleted files - only delete files that were under this library_path
         library_prefix = str(library_path)
@@ -97,22 +174,21 @@ class LibraryScanner:
             p for p in existing_paths.keys()
             if p.startswith(library_prefix)
         ) - found_paths
+
+        if deleted_paths:
+            logger.info(f"Removing {len(deleted_paths)} deleted files from database...")
         for path_str in deleted_paths:
             track = existing_paths[path_str]
+            logger.info(f"DELETED: {Path(path_str).name}")
             await self.db.delete(track)
             results["deleted"] += 1
 
         await self.db.commit()
 
+        logger.info(f"Scan complete: {results['new']} new, {results['updated']} updated, {results['deleted']} deleted, {results['unchanged']} unchanged")
+
         return results
 
-    def _discover_files(self, library_path: Path) -> list[Path]:
-        """Recursively find all audio files in library."""
-        files = []
-        for ext in AUDIO_EXTENSIONS:
-            files.extend(library_path.rglob(f"*{ext}"))
-            files.extend(library_path.rglob(f"*{ext.upper()}"))
-        return sorted(files)
 
     async def _get_existing_tracks(self) -> list[Track]:
         """Get all tracks currently in database."""
@@ -123,11 +199,12 @@ class LibraryScanner:
         self, file_path: Path, file_hash: str, file_mtime: datetime
     ) -> Track:
         """Create a new track record."""
-        # Import here to avoid circular imports
-        from app.services.metadata import extract_metadata
+        loop = asyncio.get_event_loop()
 
-        # Extract metadata from file
-        metadata = extract_metadata(file_path)
+        # Extract metadata from file (in thread pool)
+        metadata = await loop.run_in_executor(
+            _file_executor, _extract_metadata_sync, file_path
+        )
 
         track = Track(
             file_path=str(file_path),
@@ -161,10 +238,12 @@ class LibraryScanner:
         self, track: Track, file_hash: str, file_mtime: datetime
     ) -> Track:
         """Update an existing track record."""
-        from app.services.metadata import extract_metadata
+        loop = asyncio.get_event_loop()
 
-        # Re-extract metadata
-        metadata = extract_metadata(Path(track.file_path))
+        # Re-extract metadata (in thread pool)
+        metadata = await loop.run_in_executor(
+            _file_executor, _extract_metadata_sync, Path(track.file_path)
+        )
 
         track.file_hash = file_hash
         track.file_modified_at = file_mtime

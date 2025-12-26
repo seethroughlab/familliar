@@ -1,6 +1,8 @@
 """Library management endpoints."""
 
-from fastapi import APIRouter, BackgroundTasks
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -8,6 +10,7 @@ from app.api.deps import DbSession
 from app.config import settings
 from app.db.models import Track, AlbumType
 from app.services.scanner import LibraryScanner
+from app.services.import_service import ImportService, ImportError, save_upload_to_temp
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -134,3 +137,88 @@ async def start_scan(
 async def get_scan_status() -> ScanStatus:
     """Get current scan status."""
     return ScanStatus(**_scan_state)
+
+
+class ImportResult(BaseModel):
+    """Import operation result."""
+    status: str
+    message: str
+    import_path: str | None = None
+    files_found: int = 0
+    files: list[str] = []
+
+
+class RecentImport(BaseModel):
+    """Recent import directory info."""
+    name: str
+    path: str
+    file_count: int
+    created_at: str | None
+
+
+@router.post("/import", response_model=ImportResult)
+async def import_music(
+    db: DbSession,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+) -> ImportResult:
+    """Import music from a zip file or audio file.
+
+    Accepts:
+    - Zip files containing audio (extracts and imports)
+    - Individual audio files (mp3, flac, m4a, etc.)
+
+    Files are saved to {MUSIC_LIBRARY_PATH}/_imports/{timestamp}/
+    and automatically scanned for metadata.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    # Read uploaded file
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    # Save to temp file
+    try:
+        temp_path = save_upload_to_temp(content, file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
+
+    # Process the import
+    try:
+        import_service = ImportService()
+        result = import_service.process_upload(temp_path, file.filename)
+
+        # Schedule scan of the import directory
+        import_dir = Path(result["import_path"])
+
+        async def scan_import():
+            scanner = LibraryScanner(db)
+            await scanner.scan(import_dir, full_scan=True)
+
+        background_tasks.add_task(scan_import)
+
+        return ImportResult(
+            status="processing",
+            message=f"Imported {result['files_found']} files, scanning for metadata...",
+            import_path=result["import_path"],
+            files_found=result["files_found"],
+            files=result.get("files", []),
+        )
+
+    except ImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {e}")
+    finally:
+        # Clean up temp file
+        temp_path.unlink(missing_ok=True)
+
+
+@router.get("/imports/recent", response_model=list[RecentImport])
+async def get_recent_imports(limit: int = 10) -> list[RecentImport]:
+    """Get list of recent import directories."""
+    import_service = ImportService()
+    imports = import_service.get_recent_imports(limit)
+    return [RecentImport(**i) for i in imports]

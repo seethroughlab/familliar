@@ -80,6 +80,21 @@ export interface SpotifySyncResponse {
   };
 }
 
+export interface StoreSearchLink {
+  name: string;
+  url: string;
+}
+
+export interface UnmatchedTrack {
+  spotify_id: string;
+  name: string | null;
+  artist: string | null;
+  album: string | null;
+  added_at: string | null;
+  popularity: number | null;
+  search_links: Record<string, StoreSearchLink>;
+}
+
 export const spotifyApi = {
   getStatus: async (): Promise<SpotifyStatus> => {
     const { data } = await api.get('/spotify/status');
@@ -100,6 +115,14 @@ export const spotifyApi = {
 
   disconnect: async (): Promise<{ status: string }> => {
     const { data } = await api.post('/spotify/disconnect');
+    return data;
+  },
+
+  getUnmatched: async (params?: {
+    limit?: number;
+    sort_by?: 'popularity' | 'added_at';
+  }): Promise<UnmatchedTrack[]> => {
+    const { data } = await api.get('/spotify/unmatched', { params });
     return data;
   },
 };
@@ -233,6 +256,21 @@ export const appSettingsApi = {
   },
 };
 
+export interface ImportResult {
+  status: string;
+  message: string;
+  import_path: string | null;
+  files_found: number;
+  files: string[];
+}
+
+export interface RecentImport {
+  name: string;
+  path: string;
+  file_count: number;
+  created_at: string | null;
+}
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
@@ -248,6 +286,22 @@ export const libraryApi = {
 
   getScanStatus: async (): Promise<{ status: string; message: string }> => {
     const { data } = await api.get('/library/scan/status');
+    return data;
+  },
+
+  importMusic: async (file: File): Promise<ImportResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/library/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  getRecentImports: async (limit = 10): Promise<RecentImport[]> => {
+    const { data } = await api.get('/library/imports/recent', {
+      params: { limit },
+    });
     return data;
   },
 };
@@ -317,6 +371,32 @@ export interface AvailableFields {
     list: string[];
   };
 }
+
+export interface PlaylistImportResult {
+  playlist_id: string;
+  playlist_name: string;
+  total_tracks: number;
+  matched_tracks: number;
+  unmatched_tracks: number;
+  tracks: Array<{
+    title: string;
+    artist: string;
+    matched: boolean;
+    matched_track_id: string | null;
+    confidence: number;
+  }>;
+}
+
+export const playlistSharingApi = {
+  importPlaylist: async (file: File): Promise<PlaylistImportResult> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/playlists/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+};
 
 export const smartPlaylistsApi = {
   list: async (): Promise<SmartPlaylist[]> => {

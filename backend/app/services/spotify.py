@@ -317,7 +317,10 @@ class SpotifySyncService:
         return stats
 
     async def get_unmatched_favorites(self, user_id: UUID, limit: int = 50) -> list[dict]:
-        """Get Spotify favorites that don't have local matches."""
+        """Get Spotify favorites that don't have local matches.
+
+        Returns tracks with popularity score for preference-based sorting.
+        """
         result = await self.db.execute(
             select(SpotifyFavorite)
             .where(
@@ -336,6 +339,7 @@ class SpotifySyncService:
                 "artist": f.track_data.get("artist"),
                 "album": f.track_data.get("album"),
                 "added_at": f.added_at.isoformat() if f.added_at else None,
+                "popularity": f.track_data.get("popularity"),  # 0-100 score from Spotify
             }
             for f in favorites
         ]

@@ -1985,225 +1985,98 @@ function ToolCallDisplay({ toolCall }) {
 
 ---
 
-## Phase 4: Spotify Integration & Purchase Recommendations
+## Phase 4: Spotify Integration & Purchase Discovery
 
-**Goal**: Learn from Spotify listening habits, recommend purchases for missing music.
+**Goal**: Learn from Spotify listening habits, help discover music to purchase.
 
-**Duration**: 2-3 weeks
+**Key constraint**: No unofficial APIs or scraping. All integrations use official APIs only.
 
-### 4.1 Spotify OAuth Flow
+### 4.1 Spotify Integration (Implemented)
 
-```python
-class SpotifyService:
-    def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
-    
-    def get_auth_url(self, user_id: str) -> str:
-        state = create_oauth_state(user_id)
-        scopes = [
-            "user-library-read",
-            "user-top-read",
-            "user-read-recently-played",
-            "playlist-read-private"
-        ]
-        return f"https://accounts.spotify.com/authorize?" + urlencode({
-            "client_id": self.client_id,
-            "response_type": "code",
-            "redirect_uri": self.redirect_uri,
-            "scope": " ".join(scopes),
-            "state": state
-        })
-    
-    async def handle_callback(self, code: str, state: str) -> SpotifyProfile:
-        user_id = verify_oauth_state(state)
-        tokens = await self.exchange_code(code)
-        
-        profile = SpotifyProfile(
-            user_id=user_id,
-            access_token=tokens["access_token"],
-            refresh_token=tokens["refresh_token"],
-            token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
-        )
-        
-        await self.db.save_spotify_profile(profile)
-        return profile
-```
+OAuth flow and sync are already implemented:
+- `backend/app/api/routes/spotify.py` - OAuth flow, sync endpoint
+- `backend/app/services/spotify.py` - SpotifyService, SpotifySyncService
+- `backend/app/db/models.py` - SpotifyProfile, SpotifyFavorite models
 
-### 4.2 Sync Modes
+**Sync modes:**
+- Saved tracks with `added_at` timestamps
+- Top tracks (short/medium/long term) for listening frequency
+- Matching to local library via ISRC, exact match, partial match
+
+### 4.2 Purchase Discovery (Search Links)
+
+Instead of integrating with store APIs (which don't exist for Bandcamp), we generate search URLs:
 
 ```python
-class SpotifySyncService:
-    async def sync_favorites(self, user_id: str):
-        """Pull saved tracks, top tracks, and recently played"""
-        profile = await self.db.get_spotify_profile(user_id)
-        client = SpotifyClient(profile.access_token)
-        
-        # Saved tracks
-        saved = await client.get_saved_tracks(limit=500)
-        
-        # Top tracks (different time ranges)
-        top_short = await client.get_top_tracks(time_range="short_term", limit=50)
-        top_medium = await client.get_top_tracks(time_range="medium_term", limit=50)
-        top_long = await client.get_top_tracks(time_range="long_term", limit=50)
-        
-        all_tracks = deduplicate(saved + top_short + top_medium + top_long)
-        
-        for track in all_tracks:
-            # Try to match with local library
-            local_match = await self.match_to_local(track)
-            
-            await self.db.upsert_spotify_favorite(SpotifyFavorite(
-                user_id=user_id,
-                spotify_track_id=track.id,
-                track_name=track.name,
-                artist_name=track.artists[0].name,
-                album_name=track.album.name,
-                isrc=track.external_ids.get("isrc"),
-                matched_track_id=local_match.id if local_match else None
-            ))
-    
-    async def match_to_local(self, spotify_track: SpotifyTrack) -> Track | None:
-        """Try to find local track matching Spotify track"""
-        # 1. Try ISRC match (most reliable)
-        if spotify_track.external_ids.get("isrc"):
-            match = await self.db.find_track_by_isrc(spotify_track.external_ids["isrc"])
-            if match:
-                return match
-        
-        # 2. Try title + artist match
-        match = await self.db.find_track_by_metadata(
-            title=spotify_track.name,
-            artist=spotify_track.artists[0].name
-        )
-        if match:
-            return match
-        
-        # 3. Try fuzzy match
-        match = await self.db.find_track_fuzzy(
-            title=spotify_track.name,
-            artist=spotify_track.artists[0].name,
-            threshold=0.85
-        )
-        return match
-    
-    async def start_realtime_sync(self, user_id: str):
-        """Poll recently played every few minutes"""
-        # Use Celery beat or similar for periodic task
-        pass
+# backend/app/services/search_links.py
+STORES = {
+    "bandcamp": "https://bandcamp.com/search?q={query}",
+    "discogs": "https://www.discogs.com/search/?q={query}&type=all",
+    "qobuz": "https://www.qobuz.com/search?q={query}",
+    "7digital": "https://www.7digital.com/search?q={query}",
+    "itunes": "https://music.apple.com/search?term={query}",
+}
 ```
 
-### 4.3 Purchase Recommendations
+**API endpoint**: `GET /api/v1/spotify/unmatched`
+- Returns unmatched Spotify favorites sorted by popularity (listening preference)
+- Each track includes search links for all supported stores
+- User clicks link → opens store in new tab → buys however they want
 
-```python
-class PurchaseRecommendationService:
-    async def get_recommendations(self, user_id: str) -> list[PurchaseRecommendation]:
-        """Find Spotify favorites not in local library, suggest Bandcamp purchases"""
-        
-        # Get unmatched favorites
-        unmatched = await self.db.get_unmatched_spotify_favorites(user_id)
-        
-        recommendations = []
-        for favorite in unmatched:
-            # Search Bandcamp
-            bandcamp_results = await self.search_bandcamp(
-                artist=favorite.artist_name,
-                track=favorite.track_name
-            )
-            
-            if bandcamp_results:
-                recommendations.append(PurchaseRecommendation(
-                    spotify_favorite=favorite,
-                    bandcamp_url=bandcamp_results[0].url,
-                    bandcamp_price=bandcamp_results[0].price,
-                    album_url=bandcamp_results[0].album_url
-                ))
-        
-        return recommendations
-    
-    async def search_bandcamp(self, artist: str, track: str) -> list[BandcampResult]:
-        """Search Bandcamp for a track (scraping since no official API)"""
-        # Use bandcamp-search library or custom scraper
-        pass
+### 4.3 Music Import (Drag-Drop)
+
+Simple, robust import workflow for purchased music:
+
+```
+User Flow:
+1. User sees "Missing from Library" with search links
+2. User buys music from Bandcamp/Discogs/wherever
+3. User downloads zip file from store
+4. User drags zip into Familiar import zone
+5. Familiar extracts, moves to library, scans
+6. Track appears in library, matched to Spotify favorite
 ```
 
-### 4.4 Bandcamp Auto-Import
+**API endpoint**: `POST /api/v1/library/import`
+- Accepts: zip files, individual audio files
+- Extracts to `{MUSIC_LIBRARY_PATH}/_imports/{timestamp}/`
+- Triggers scan of import folder
+- Returns import results
 
-```python
-class BandcampImporter:
-    def __init__(self, download_dir: Path, library_dir: Path):
-        self.download_dir = download_dir
-        self.library_dir = library_dir
-    
-    async def import_purchases(self, user_id: str, bandcamp_username: str):
-        """Download all purchased music from Bandcamp"""
-        # Use bandcamp-dl or similar
-        result = await run_subprocess([
-            "bandcamp-dl",
-            "--base-dir", str(self.download_dir),
-            "--template", "%{artist}/%{album}/%{track} - %{title}",
-            bandcamp_username
-        ])
-        
-        # Move to library and trigger analysis
-        for file in self.download_dir.rglob("*.flac"):
-            dest = self.library_dir / file.relative_to(self.download_dir)
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(file, dest)
-        
-        # Watcher will pick up new files automatically
-```
-
-### 4.5 LLM Tools for Spotify/Purchases
+### 4.4 LLM Tools
 
 ```python
 SPOTIFY_TOOLS = [
     {
         "name": "get_spotify_favorites_not_in_library",
-        "description": "Get tracks the user likes on Spotify but doesn't have locally.",
+        "description": "Get tracks the user likes on Spotify but doesn't own locally, sorted by listening preference.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "limit": {"type": "integer", "default": 20}
             }
         }
-    },
-    {
-        "name": "get_purchase_recommendations",
-        "description": "Get Bandcamp purchase recommendations for missing tracks.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "limit": {"type": "integer", "default": 10}
-            }
-        }
-    },
-    {
-        "name": "add_to_bandcamp_wishlist",
-        "description": "Add a track/album to the user's Bandcamp wishlist for later purchase.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "bandcamp_url": {"type": "string"}
-            },
-            "required": ["bandcamp_url"]
-        }
     }
 ]
 ```
 
+### 4.5 What's NOT in Phase 4
+
+- ❌ Bandcamp API integration (doesn't exist)
+- ❌ Bandcamp scraping (unofficial, fragile)
+- ❌ Auto-download from stores
+- ❌ Wishlist sync with stores
+- ❌ Price comparison across stores
+
 ### 4.6 Deliverables for Phase 4
 
-- [ ] Spotify OAuth connection flow
-- [ ] Periodic sync of saved tracks and top tracks
-- [ ] Real-time sync option (poll recently played)
-- [ ] Local library matching (ISRC, metadata, fuzzy)
-- [ ] Bandcamp search for unmatched tracks
-- [ ] Purchase recommendation UI
-- [ ] Bandcamp wishlist integration (if possible)
-- [ ] Auto-import purchased Bandcamp music
-- [ ] LLM tools for Spotify/purchase queries
+- [x] Spotify OAuth connection flow
+- [x] Periodic sync of saved tracks and top tracks
+- [x] Local library matching (ISRC, metadata, partial)
+- [x] Search links generation for stores
+- [ ] "Missing from Library" UI with search buttons
+- [ ] Drag-drop import for purchased music
+- [ ] LLM tool for querying missing tracks
 
 ---
 

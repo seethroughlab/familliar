@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2 } from 'lucide-react';
+import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2, Upload, Download } from 'lucide-react';
 import { smartPlaylistsApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { SmartPlaylistBuilder } from './SmartPlaylistBuilder';
 import { usePlayerStore } from '../../stores/playerStore';
+import { PlaylistExport, PlaylistImport } from '../PlaylistSharing';
 
 interface Props {
   onSelectPlaylist?: (playlist: SmartPlaylist) => void;
@@ -13,6 +14,7 @@ interface Props {
 export function SmartPlaylistList({ onSelectPlaylist }: Props) {
   const queryClient = useQueryClient();
   const [showBuilder, setShowBuilder] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editingPlaylist, setEditingPlaylist] = useState<SmartPlaylist | undefined>();
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
@@ -104,16 +106,26 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
           <Zap className="w-5 h-5 text-yellow-500" />
           Smart Playlists
         </h3>
-        <button
-          onClick={() => {
-            setEditingPlaylist(undefined);
-            setShowBuilder(true);
-          }}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 rounded-md transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-md transition-colors"
+            title="Import .familiar playlist"
+          >
+            <Upload className="w-4 h-4" />
+            Import
+          </button>
+          <button
+            onClick={() => {
+              setEditingPlaylist(undefined);
+              setShowBuilder(true);
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 rounded-md transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New
+          </button>
+        </div>
       </div>
 
       {/* Playlist list */}
@@ -186,6 +198,10 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                         <RefreshCw className="w-4 h-4" />
                         Refresh
                       </button>
+                      <PlaylistExport
+                        playlist={playlist}
+                        onExport={() => setMenuOpen(null)}
+                      />
                       <button
                         onClick={() => handleDelete(playlist.id)}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400"
@@ -216,6 +232,14 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
             setShowBuilder(false);
             setEditingPlaylist(undefined);
           }}
+        />
+      )}
+
+      {/* Import modal */}
+      {showImport && (
+        <PlaylistImport
+          onClose={() => setShowImport(false)}
+          onImportComplete={() => setShowImport(false)}
         />
       )}
     </div>

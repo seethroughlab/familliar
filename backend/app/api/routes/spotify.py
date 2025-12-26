@@ -30,13 +30,21 @@ class SyncResponse(BaseModel):
     stats: dict | None = None
 
 
+class StoreSearchLink(BaseModel):
+    """Search link for a music store."""
+    name: str
+    url: str
+
+
 class UnmatchedTrack(BaseModel):
-    """Unmatched Spotify track."""
+    """Unmatched Spotify track with search links."""
     spotify_id: str
     name: str | None
     artist: str | None
     album: str | None
     added_at: str | None
+    popularity: int | None = None  # Spotify popularity score (0-100)
+    search_links: dict[str, StoreSearchLink] = {}
 
 
 # Temporary: hardcoded user ID until auth is implemented
@@ -154,13 +162,51 @@ async def sync_spotify(
 async def get_unmatched_tracks(
     db: DbSession,
     limit: int = Query(50, ge=1, le=200),
+    sort_by: str = Query("popularity", enum=["popularity", "added_at"]),
 ) -> list[UnmatchedTrack]:
-    """Get Spotify favorites that don't have local matches."""
+    """Get Spotify favorites that don't have local matches.
+
+    Sorted by listening preference (popularity) by default.
+    Includes search links for Bandcamp, Discogs, Qobuz, etc.
+    """
+    from app.services.search_links import generate_search_urls
+
     sync_service = SpotifySyncService(db)
 
     try:
         unmatched = await sync_service.get_unmatched_favorites(TEMP_USER_ID, limit)
-        return [UnmatchedTrack(**track) for track in unmatched]
+
+        # Generate search links and sort by preference
+        result = []
+        for track in unmatched:
+            artist = track.get("artist") or "Unknown Artist"
+            name = track.get("name") or "Unknown Track"
+            album = track.get("album")
+
+            # Generate search links for all stores
+            links = generate_search_urls(artist, name, album)
+            search_links = {
+                key: StoreSearchLink(name=val["name"], url=val["url"])
+                for key, val in links.items()
+            }
+
+            result.append(UnmatchedTrack(
+                spotify_id=track["spotify_id"],
+                name=name,
+                artist=artist,
+                album=album,
+                added_at=track.get("added_at"),
+                popularity=track.get("popularity"),
+                search_links=search_links,
+            ))
+
+        # Sort by preference
+        if sort_by == "popularity":
+            result.sort(key=lambda t: t.popularity or 0, reverse=True)
+        elif sort_by == "added_at":
+            result.sort(key=lambda t: t.added_at or "", reverse=True)
+
+        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
