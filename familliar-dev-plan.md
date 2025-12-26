@@ -2657,6 +2657,103 @@ class LibraryOrganizer:
 
 ---
 
+## WebRTC Signaling Server (TURN/STUN) Setup
+
+For listening sessions to work across different networks (especially when guests are behind symmetric NAT), you need a TURN server. STUN servers are free (Google provides public ones), but TURN servers relay the actual media and need more resources.
+
+### Quick Setup with coturn
+
+1. **Install coturn** on a public VPS:
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install coturn
+
+   # Enable service
+   sudo systemctl enable coturn
+   ```
+
+2. **Configure `/etc/turnserver.conf`**:
+   ```ini
+   # Network settings
+   listening-port=3478
+   tls-listening-port=5349
+   external-ip=YOUR_PUBLIC_IP
+
+   # Authentication
+   lt-cred-mech
+   user=familiar:YOUR_SECURE_PASSWORD
+   realm=familiar.local
+
+   # Security
+   fingerprint
+   no-multicast-peers
+   no-cli
+
+   # Logging
+   log-file=/var/log/turnserver.log
+   simple-log
+   ```
+
+3. **Open firewall ports**:
+   ```bash
+   # UDP/TCP for TURN
+   sudo ufw allow 3478/udp
+   sudo ufw allow 3478/tcp
+   sudo ufw allow 5349/tcp  # TLS
+
+   # UDP relay range
+   sudo ufw allow 49152:65535/udp
+   ```
+
+4. **Start the server**:
+   ```bash
+   sudo systemctl start coturn
+   ```
+
+### Configure Familiar to Use Your TURN Server
+
+Add these environment variables to your Familiar deployment:
+
+```bash
+# .env or docker-compose.yml
+TURN_SERVER_URL=turn:your-server.com:3478
+TURN_SERVER_USERNAME=familiar
+TURN_SERVER_CREDENTIAL=YOUR_SECURE_PASSWORD
+```
+
+Or add to `data/settings.json`:
+```json
+{
+  "turn_server_url": "turn:your-server.com:3478",
+  "turn_server_username": "familiar",
+  "turn_server_credential": "YOUR_SECURE_PASSWORD"
+}
+```
+
+### Testing Your TURN Server
+
+1. Use the [Trickle ICE](https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/) tool
+2. Add your TURN server credentials
+3. Gather candidates — you should see "relay" candidates if TURN is working
+
+### Alternative: Cloudflare Calls (Paid)
+
+For production deployments, consider Cloudflare Calls which provides global TURN infrastructure:
+- No self-hosting required
+- Pay-per-use pricing
+- Global edge network
+
+### When TURN is Required
+
+TURN is only needed when:
+- Users are behind symmetric NAT (common in corporate networks)
+- Direct peer-to-peer connection fails
+- Guests are on mobile networks with carrier-grade NAT
+
+Most home networks work fine with just STUN (Google's free servers are configured by default).
+
+---
+
 ## Notes for Claude Code
 
 ### When Implementing

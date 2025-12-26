@@ -78,14 +78,31 @@ def analyze_track(self, track_id: str) -> dict:
 
             # Try to identify track via AcoustID (if API key is set)
             acoustid_metadata = None
+            musicbrainz_recording_id = None
             if acoustid_fingerprint:
                 id_result = identify_track(file_path)
                 if id_result.get("metadata"):
                     acoustid_metadata = id_result["metadata"]
+                    musicbrainz_recording_id = acoustid_metadata.get("musicbrainz_recording_id")
                     logger.info(
                         f"AcoustID match: {acoustid_metadata.get('title')} by {acoustid_metadata.get('artist')} "
                         f"(score: {acoustid_metadata.get('acoustid_score', 0):.2f})"
                     )
+
+            # Enrich with MusicBrainz metadata
+            from app.services.musicbrainz import enrich_track
+            musicbrainz_metadata = enrich_track(
+                title=track.title,
+                artist=track.artist,
+                musicbrainz_recording_id=musicbrainz_recording_id,
+            )
+
+            # Store MusicBrainz enrichment in features if available
+            if musicbrainz_metadata:
+                features["musicbrainz"] = musicbrainz_metadata
+                logger.info(
+                    f"MusicBrainz enrichment: tags={musicbrainz_metadata.get('tags', [])}"
+                )
 
             # Create or update analysis record
             analysis = TrackAnalysis(
@@ -123,7 +140,8 @@ def analyze_track(self, track_id: str) -> dict:
                 f"Analysis complete for {track.title}: "
                 f"BPM={features.get('bpm')}, Key={features.get('key')}, "
                 f"Embedding={'Yes' if embedding else 'No'}, "
-                f"AcoustID={'Yes' if acoustid_fingerprint else 'No'}"
+                f"AcoustID={'Yes' if acoustid_fingerprint else 'No'}, "
+                f"MusicBrainz={'Yes' if musicbrainz_metadata else 'No'}"
             )
 
             return {
@@ -134,6 +152,7 @@ def analyze_track(self, track_id: str) -> dict:
                 "embedding_generated": embedding is not None,
                 "acoustid_generated": acoustid_fingerprint is not None,
                 "acoustid_matched": acoustid_metadata is not None,
+                "musicbrainz_enriched": musicbrainz_metadata is not None,
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }

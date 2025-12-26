@@ -11,11 +11,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.routes import (
+    bandcamp,
     chat,
     health,
     lastfm,
     library,
     organizer,
+    outputs,
     profiles,
     sessions,
     smart_playlists,
@@ -73,6 +75,8 @@ app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(smart_playlists.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
 app.include_router(organizer.router, prefix="/api/v1")
+app.include_router(bandcamp.router, prefix="/api/v1")
+app.include_router(outputs.router, prefix="/api/v1")
 
 
 @app.get("/")
