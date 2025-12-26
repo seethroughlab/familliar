@@ -4,14 +4,27 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
 
+from app.config import settings
 from app.services.sessions import SessionRole, get_session_manager
 
-# STUN/TURN servers for WebRTC
-# In production, you'd want your own TURN server for reliable NAT traversal
-ICE_SERVERS = [
-    {"urls": "stun:stun.l.google.com:19302"},
-    {"urls": "stun:stun1.l.google.com:19302"},
-]
+
+def get_ice_servers() -> list[dict]:
+    """Get ICE servers configuration including optional TURN server."""
+    servers = [
+        {"urls": "stun:stun.l.google.com:19302"},
+        {"urls": "stun:stun1.l.google.com:19302"},
+    ]
+
+    # Add TURN server if configured (needed for symmetric NAT traversal)
+    if settings.turn_server_url:
+        turn_config = {"urls": settings.turn_server_url}
+        if settings.turn_server_username:
+            turn_config["username"] = settings.turn_server_username
+        if settings.turn_server_credential:
+            turn_config["credential"] = settings.turn_server_credential
+        servers.append(turn_config)
+
+    return servers
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -233,7 +246,7 @@ async def session_websocket(websocket: WebSocket):
                     "session": session.to_dict(),
                     "your_user_id": str(current_user_id),
                     "your_peer_id": participant.peer_id,
-                    "ice_servers": ICE_SERVERS,
+                    "ice_servers": get_ice_servers(),
                 })
 
                 # Notify host about new guest

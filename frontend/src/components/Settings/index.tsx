@@ -1,6 +1,7 @@
 import { SpotifySettings } from './SpotifySettings';
 import { LastfmSettings } from './LastfmSettings';
 import { OfflineSettings } from './OfflineSettings';
+import { LibraryOrganizer } from './LibraryOrganizer';
 
 export function SettingsPanel() {
   return (
@@ -27,6 +28,15 @@ export function SettingsPanel() {
           </h3>
           <div className="space-y-4">
             <OfflineSettings />
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">
+            Library Management
+          </h3>
+          <div className="space-y-4">
+            <LibraryOrganizer />
           </div>
         </section>
       </div>

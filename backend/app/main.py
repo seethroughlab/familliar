@@ -15,7 +15,7 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes, sessions, smart_playlists, profiles
+from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes, sessions, smart_playlists, profiles, organizer
 
 
 @asynccontextmanager
@@ -56,6 +56,7 @@ app.include_router(settings_routes.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(smart_playlists.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
+app.include_router(organizer.router, prefix="/api/v1")
 
 
 @app.get("/")

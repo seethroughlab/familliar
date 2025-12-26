@@ -12,8 +12,10 @@ import { OfflineIndicator } from './components/PWA/OfflineIndicator';
 import { SessionPanel } from './components/Sessions';
 import { SmartPlaylistList } from './components/SmartPlaylists';
 import { GuestListener } from './components/Guest';
+import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
 import { usePlayerStore } from './stores/playerStore';
 
@@ -33,9 +35,26 @@ function AppContent() {
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('library');
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   const [showSessionPanel, setShowSessionPanel] = useState(false);
+  const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   // Initialize Last.fm scrobbling
   useScrobbling();
+
+  // Initialize keyboard shortcuts
+  useKeyboardShortcuts({
+    onToggleFullPlayer: () => setShowFullPlayer((prev) => !prev),
+    onShowHelp: () => setShowShortcutsHelp(true),
+    onEscape: () => {
+      // Close overlays in order of priority
+      if (showShortcutsHelp) {
+        setShowShortcutsHelp(false);
+      } else if (showFullPlayer) {
+        setShowFullPlayer(false);
+      } else if (showSessionPanel) {
+        setShowSessionPanel(false);
+      }
+    },
+  });
 
   // Initialize offline sync listeners
   useEffect(() => {
@@ -207,6 +226,11 @@ function AppContent() {
           onSendMessage={sendChatMessage}
           onClose={() => setShowSessionPanel(false)}
         />
+      )}
+
+      {/* Keyboard shortcuts help */}
+      {showShortcutsHelp && (
+        <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
       )}
     </div>
   );

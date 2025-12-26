@@ -1,0 +1,94 @@
+# Multi-stage Dockerfile for Familiar
+# Builds both frontend and backend into a single production image
+
+# =============================================================================
+# Stage 1: Build frontend
+# =============================================================================
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy package files
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source and build
+COPY frontend/ ./
+RUN npm run build
+
+# =============================================================================
+# Stage 2: Python base with uv
+# =============================================================================
+FROM python:3.12-slim AS python-base
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
+WORKDIR /app
+
+# =============================================================================
+# Stage 3: Install Python dependencies
+# =============================================================================
+FROM python-base AS python-deps
+
+# Copy only dependency files first for caching
+COPY backend/pyproject.toml backend/uv.lock* ./
+
+# Install dependencies (without dev extras for production)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev
+
+# =============================================================================
+# Stage 4: Production image
+# =============================================================================
+FROM python-base AS production
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy Python virtual environment from deps stage
+COPY --from=python-deps /app/.venv /app/.venv
+
+# Copy backend application code
+COPY backend/app ./app
+
+# Copy built frontend
+COPY --from=frontend-builder /app/frontend/dist ./static
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash familiar \
+    && mkdir -p /data/music /data/art /data/videos \
+    && chown -R familiar:familiar /app /data
+
+USER familiar
+
+# Ensure the virtual environment is in PATH
+ENV PATH="/app/.venv/bin:$PATH"
+
+# Default environment variables
+ENV DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar \
+    REDIS_URL=redis://redis:6379/0 \
+    MUSIC_LIBRARY_PATH=/data/music \
+    ART_PATH=/data/art \
+    VIDEOS_PATH=/data/videos
+
+# Expose API port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+
+# Default command runs the API server
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

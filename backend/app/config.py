@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     lastfm_api_key: str | None = None
     lastfm_api_secret: str | None = None
 
+    # WebRTC TURN server (optional, for NAT traversal in corporate networks)
+    turn_server_url: str | None = None  # e.g. "turn:turn.example.com:3478"
+    turn_server_username: str | None = None
+    turn_server_credential: str | None = None
+
     # Development
     debug: bool = True
     log_level: str = "INFO"

@@ -480,4 +480,59 @@ export const profilesApi = {
   },
 };
 
+// Library Organization API
+export interface OrganizeTemplate {
+  name: string;
+  template: string;
+  example: string;
+}
+
+export interface OrganizeResult {
+  track_id: string;
+  old_path: string;
+  new_path: string | null;
+  status: 'moved' | 'skipped' | 'error';
+  message: string;
+}
+
+export interface OrganizeStats {
+  total: number;
+  moved: number;
+  skipped: number;
+  errors: number;
+  results: OrganizeResult[];
+}
+
+export const organizerApi = {
+  getTemplates: async (): Promise<{ templates: OrganizeTemplate[] }> => {
+    const { data } = await api.get('/library/organize/templates');
+    return data;
+  },
+
+  preview: async (template: string, limit = 100): Promise<OrganizeStats> => {
+    const { data } = await api.post('/library/organize/preview', { template, limit });
+    return data;
+  },
+
+  run: async (template: string, dryRun = true): Promise<OrganizeStats> => {
+    const { data } = await api.post('/library/organize/run', { template, dry_run: dryRun });
+    return data;
+  },
+
+  previewTrack: async (trackId: string, template: string): Promise<OrganizeResult> => {
+    const { data } = await api.get(`/library/organize/track/${trackId}/preview`, {
+      params: { template },
+    });
+    return data;
+  },
+
+  organizeTrack: async (trackId: string, template: string, dryRun = false): Promise<OrganizeResult> => {
+    const { data } = await api.post(`/library/organize/track/${trackId}`, {
+      template,
+      dry_run: dryRun,
+    });
+    return data;
+  },
+};
+
 export default api;
