@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete
 
 from app.api.deps import DbSession, CurrentProfile
-from app.db.models import SpotifyProfileV2, SpotifyFavoriteV2
+from app.db.models import SpotifyProfile, SpotifyFavorite
 from app.services.spotify import SpotifyService, SpotifySyncService
 
 
@@ -264,12 +264,12 @@ async def disconnect_spotify(
 
     # Delete favorites first (foreign key)
     await db.execute(
-        delete(SpotifyFavoriteV2).where(SpotifyFavoriteV2.profile_id == profile.id)
+        delete(SpotifyFavorite).where(SpotifyFavorite.profile_id == profile.id)
     )
 
     # Delete Spotify profile
     await db.execute(
-        delete(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile.id)
+        delete(SpotifyProfile).where(SpotifyProfile.profile_id == profile.id)
     )
 
     await db.commit()

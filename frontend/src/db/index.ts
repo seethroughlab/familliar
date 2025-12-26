@@ -66,12 +66,25 @@ export interface PendingAction {
   retries: number;
 }
 
+// Player state persistence
+export interface PersistedPlayerState {
+  id: 'player-state'; // Single record with fixed ID
+  volume: number;
+  shuffle: boolean;
+  repeat: 'off' | 'all' | 'one';
+  queueTrackIds: string[]; // Just store track IDs, not full objects
+  queueIndex: number;
+  currentTrackId: string | null;
+  updatedAt: Date;
+}
+
 export class FamiliarDB extends Dexie {
   deviceProfile!: Table<DeviceProfile>;
   chatSessions!: Table<ChatSession>;
   cachedTracks!: Table<CachedTrack>;
   offlineTracks!: Table<OfflineTrack>;
   pendingActions!: Table<PendingAction>;
+  playerState!: Table<PersistedPlayerState>;
 
   constructor() {
     super('FamiliarDB');
@@ -93,6 +106,16 @@ export class FamiliarDB extends Dexie {
       cachedTracks: 'id, artist, album, cachedAt',
       offlineTracks: 'id, cachedAt',
       pendingActions: '++id, type, createdAt',
+    });
+
+    // Version 4: Add player state persistence
+    this.version(4).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      pendingActions: '++id, type, createdAt',
+      playerState: 'id',
     });
   }
 }

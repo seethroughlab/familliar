@@ -3,7 +3,7 @@ import { Send, Loader2, Music, Wrench, Plus, Trash2, MessageSquare } from 'lucid
 import { usePlayerStore } from '../../stores/playerStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
-import type { ChatSession, ChatMessage, ChatToolCall } from '../../db';
+import type { ChatSession, ChatToolCall } from '../../db';
 
 interface Track {
   id: string;
@@ -28,9 +28,9 @@ export function ChatPanel() {
   useEffect(() => {
     const init = async () => {
       const profile = await getOrCreateDeviceProfile();
-      setProfileId(profile.profileId);
+      setProfileId(profile);
 
-      const allSessions = await chatService.listSessions(profile.profileId);
+      const allSessions = await chatService.listSessions(profile);
       setSessions(allSessions);
 
       // Load most recent session or create new one

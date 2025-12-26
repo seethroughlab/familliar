@@ -15,6 +15,7 @@ import { GuestListener } from './components/Guest';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
 import { initSyncListeners } from './services/syncService';
+import { usePlayerStore } from './stores/playerStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -41,6 +42,12 @@ function AppContent() {
     const cleanup = initSyncListeners();
     return cleanup;
   }, []);
+
+  // Hydrate player state from IndexedDB
+  const hydrate = usePlayerStore((state) => state.hydrate);
+  useEffect(() => {
+    hydrate();
+  }, [hydrate]);
 
   // Listening session (using a simple user ID for now)
   const userId = 'user-' + (localStorage.getItem('familiar-user-id') || (() => {

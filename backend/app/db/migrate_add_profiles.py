@@ -1,6 +1,6 @@
 """
 Migration script to add device-based profile tables.
-Run this to add profiles, lastfm_profiles, spotify_profiles_v2, and spotify_favorites_v2 tables
+Run this to add profiles, lastfm_profiles, spotify_profiles, and spotify_favorites tables
 without dropping existing data.
 
 Usage: uv run python -m app.db.migrate_add_profiles
@@ -11,7 +11,7 @@ import asyncio
 from sqlalchemy import text
 from sqlalchemy.schema import CreateTable
 
-from app.db.models import Profile, LastfmProfile, SpotifyProfileV2, SpotifyFavoriteV2
+from app.db.models import Profile, LastfmProfile, SpotifyProfile, SpotifyFavorite
 from app.db.session import engine
 
 
@@ -34,8 +34,8 @@ async def migrate() -> None:
         new_tables = [
             (Profile, "profiles"),
             (LastfmProfile, "lastfm_profiles"),
-            (SpotifyProfileV2, "spotify_profiles_v2"),
-            (SpotifyFavoriteV2, "spotify_favorites_v2"),
+            (SpotifyProfile, "spotify_profiles"),
+            (SpotifyFavorite, "spotify_favorites"),
         ]
 
         for model, table_name in new_tables:

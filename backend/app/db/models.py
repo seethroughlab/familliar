@@ -57,9 +57,6 @@ class User(Base):
     listening_history: Mapped[list["ListeningHistory"]] = relationship(
         back_populates="user", cascade="all, delete"
     )
-    spotify_profile: Mapped["SpotifyProfile | None"] = relationship(
-        back_populates="user", cascade="all, delete"
-    )
 
 
 class Profile(Base):
@@ -79,7 +76,7 @@ class Profile(Base):
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
 
     # Relationships
-    spotify_profile: Mapped["SpotifyProfileV2 | None"] = relationship(
+    spotify_profile: Mapped["SpotifyProfile | None"] = relationship(
         back_populates="profile", cascade="all, delete"
     )
     lastfm_profile: Mapped["LastfmProfile | None"] = relationship(
@@ -107,14 +104,13 @@ class LastfmProfile(Base):
     profile: Mapped["Profile"] = relationship(back_populates="lastfm_profile")
 
 
-class SpotifyProfileV2(Base):
-    """Spotify OAuth tokens per device profile (new version).
+class SpotifyProfile(Base):
+    """Spotify OAuth tokens per device profile.
 
-    This replaces the old SpotifyProfile which was linked to User.
-    Now linked to Profile for device-based multi-user support.
+    Linked to Profile for device-based multi-user support.
     """
 
-    __tablename__ = "spotify_profiles_v2"
+    __tablename__ = "spotify_profiles"
 
     profile_id: Mapped[UUID] = mapped_column(
         ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
@@ -129,17 +125,17 @@ class SpotifyProfileV2(Base):
 
     # Relationships
     profile: Mapped["Profile"] = relationship(back_populates="spotify_profile")
-    favorites: Mapped[list["SpotifyFavoriteV2"]] = relationship(
-        back_populates="profile", cascade="all, delete"
+    favorites: Mapped[list["SpotifyFavorite"]] = relationship(
+        back_populates="spotify_profile", cascade="all, delete"
     )
 
 
-class SpotifyFavoriteV2(Base):
-    """Synced Spotify favorites per device profile (new version)."""
+class SpotifyFavorite(Base):
+    """Synced Spotify favorites per device profile."""
 
-    __tablename__ = "spotify_favorites_v2"
+    __tablename__ = "spotify_favorites"
     __table_args__ = (
-        UniqueConstraint("profile_id", "spotify_track_id", name="uq_spotify_favorite_v2"),
+        UniqueConstraint("profile_id", "spotify_track_id", name="uq_spotify_favorite_profile"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -154,7 +150,7 @@ class SpotifyFavoriteV2(Base):
     synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
-    profile: Mapped["SpotifyProfileV2"] = relationship(back_populates="favorites")
+    spotify_profile: Mapped["SpotifyProfile"] = relationship(back_populates="favorites")
     matched_track: Mapped["Track | None"] = relationship()
 
 
@@ -295,60 +291,6 @@ class ListeningHistory(Base):
     # Relationships
     user: Mapped["User"] = relationship(back_populates="listening_history")
     track: Mapped["Track"] = relationship()
-
-
-class SpotifyProfile(Base):
-    """Spotify OAuth tokens and sync settings (Phase 4)."""
-
-    __tablename__ = "spotify_profiles"
-
-    user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
-    )
-    spotify_user_id: Mapped[str | None] = mapped_column(String(255))
-    access_token: Mapped[str | None] = mapped_column(Text)
-    refresh_token: Mapped[str | None] = mapped_column(Text)
-    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
-    sync_mode: Mapped[str] = mapped_column(String(20), default="periodic")
-    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime)
-    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-
-    # Relationships
-    user: Mapped["User"] = relationship(back_populates="spotify_profile")
-    favorites: Mapped[list["SpotifyFavorite"]] = relationship(
-        back_populates="profile",
-        cascade="all, delete",
-        foreign_keys="SpotifyFavorite.user_id",
-        primaryjoin="SpotifyProfile.user_id == SpotifyFavorite.user_id",
-    )
-
-
-class SpotifyFavorite(Base):
-    """Synced Spotify favorites with local library matching (Phase 4)."""
-
-    __tablename__ = "spotify_favorites"
-    __table_args__ = (
-        UniqueConstraint("user_id", "spotify_track_id", name="uq_spotify_favorite"),
-    )
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    spotify_track_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    matched_track_id: Mapped[UUID | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"))
-
-    # Spotify track data (JSONB for flexibility)
-    track_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-
-    added_at: Mapped[datetime | None] = mapped_column(DateTime)
-    synced_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    # Relationships
-    profile: Mapped["SpotifyProfile"] = relationship(
-        back_populates="favorites",
-        foreign_keys=[user_id],
-        primaryjoin="SpotifyFavorite.user_id == SpotifyProfile.user_id",
-    )
-    matched_track: Mapped["Track | None"] = relationship()
 
 
 class SmartPlaylist(Base):

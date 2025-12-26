@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { spotifyApi, appSettingsApi } from '../../api/client';
 import type { SpotifyStatus } from '../../api/client';
 import { Music2, RefreshCw, LogOut, ExternalLink, CheckCircle, XCircle, Loader2, Settings, Save } from 'lucide-react';
+import { MissingTracks } from '../Library/MissingTracks';
 
 export function SpotifySettings() {
   const queryClient = useQueryClient();
@@ -295,6 +296,11 @@ export function SpotifySettings() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Missing tracks with store search links */}
+      {status.connected && status.stats && status.stats.unmatched > 0 && (
+        <MissingTracks />
       )}
     </div>
   );

@@ -9,7 +9,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Track, TrackAnalysis, SpotifyFavoriteV2, SpotifyProfileV2
+from app.db.models import Track, TrackAnalysis, SpotifyFavorite, SpotifyProfile
 from app.services.app_settings import get_app_settings_service
 
 
@@ -518,7 +518,7 @@ class ToolExecutor:
             }
 
         result = await self.db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == self.profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == self.profile_id)
         )
         profile = result.scalar_one_or_none()
 
@@ -540,13 +540,13 @@ class ToolExecutor:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
         result = await self.db.execute(
-            select(SpotifyFavoriteV2, Track)
-            .join(Track, SpotifyFavoriteV2.matched_track_id == Track.id)
+            select(SpotifyFavorite, Track)
+            .join(Track, SpotifyFavorite.matched_track_id == Track.id)
             .where(
-                SpotifyFavoriteV2.profile_id == self.profile_id,
-                SpotifyFavoriteV2.matched_track_id.isnot(None)
+                SpotifyFavorite.profile_id == self.profile_id,
+                SpotifyFavorite.matched_track_id.isnot(None)
             )
-            .order_by(SpotifyFavoriteV2.added_at.desc())
+            .order_by(SpotifyFavorite.added_at.desc())
             .limit(limit)
         )
         rows = result.all()
@@ -569,12 +569,12 @@ class ToolExecutor:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
         result = await self.db.execute(
-            select(SpotifyFavoriteV2)
+            select(SpotifyFavorite)
             .where(
-                SpotifyFavoriteV2.profile_id == self.profile_id,
-                SpotifyFavoriteV2.matched_track_id.is_(None)
+                SpotifyFavorite.profile_id == self.profile_id,
+                SpotifyFavorite.matched_track_id.is_(None)
             )
-            .order_by(SpotifyFavoriteV2.added_at.desc())
+            .order_by(SpotifyFavorite.added_at.desc())
             .limit(limit)
         )
         favorites = result.scalars().all()
@@ -611,22 +611,22 @@ class ToolExecutor:
 
         # Total favorites
         total = await self.db.scalar(
-            select(func.count(SpotifyFavoriteV2.id)).where(
-                SpotifyFavoriteV2.profile_id == self.profile_id
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.profile_id == self.profile_id
             )
         ) or 0
 
         # Matched favorites
         matched = await self.db.scalar(
-            select(func.count(SpotifyFavoriteV2.id)).where(
-                SpotifyFavoriteV2.profile_id == self.profile_id,
-                SpotifyFavoriteV2.matched_track_id.isnot(None)
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.profile_id == self.profile_id,
+                SpotifyFavorite.matched_track_id.isnot(None)
             )
         ) or 0
 
         # Get profile info
         profile_result = await self.db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == self.profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == self.profile_id)
         )
         profile = profile_result.scalar_one_or_none()
 
@@ -686,12 +686,12 @@ class ToolExecutor:
 
         # Get unmatched Spotify favorites
         result = await self.db.execute(
-            select(SpotifyFavoriteV2)
+            select(SpotifyFavorite)
             .where(
-                SpotifyFavoriteV2.profile_id == self.profile_id,
-                SpotifyFavoriteV2.matched_track_id.is_(None)
+                SpotifyFavorite.profile_id == self.profile_id,
+                SpotifyFavorite.matched_track_id.is_(None)
             )
-            .order_by(SpotifyFavoriteV2.added_at.desc())
+            .order_by(SpotifyFavorite.added_at.desc())
             .limit(limit * 2)  # Get more to have variety
         )
         favorites = result.scalars().all()

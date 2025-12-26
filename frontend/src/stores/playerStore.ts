@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 import type { Track, QueueItem } from '../types';
+import {
+  debouncedSavePlayerState,
+  loadPlayerState,
+  fetchTracksByIds,
+} from '../services/playerPersistence';
 
 type RepeatMode = 'off' | 'all' | 'one';
 
@@ -20,6 +25,9 @@ interface PlayerState {
   queueIndex: number;
   history: Track[];
 
+  // Hydration
+  isHydrated: boolean;
+
   // Actions
   setCurrentTrack: (track: Track | null) => void;
   setIsPlaying: (playing: boolean) => void;
@@ -37,10 +45,26 @@ interface PlayerState {
   playNext: () => void;
   playPrevious: () => void;
   setQueue: (tracks: Track[], startIndex?: number) => void;
+
+  // Hydration
+  hydrate: () => Promise<void>;
 }
 
 let queueIdCounter = 0;
 const generateQueueId = () => `queue-${++queueIdCounter}`;
+
+// Helper to persist state after changes
+const persistState = () => {
+  const state = usePlayerStore.getState();
+  debouncedSavePlayerState({
+    volume: state.volume,
+    shuffle: state.shuffle,
+    repeat: state.repeat,
+    queue: state.queue,
+    queueIndex: state.queueIndex,
+    currentTrack: state.currentTrack,
+  });
+};
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
   // Initial state
@@ -54,32 +78,50 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   queue: [],
   queueIndex: -1,
   history: [],
+  isHydrated: false,
 
   // Setters
-  setCurrentTrack: (track) => set({ currentTrack: track }),
+  setCurrentTrack: (track) => {
+    set({ currentTrack: track });
+    persistState();
+  },
   setIsPlaying: (playing) => set({ isPlaying: playing }),
   setCurrentTime: (time) => set({ currentTime: time }),
   setDuration: (duration) => set({ duration: duration }),
-  setVolume: (volume) => set({ volume: Math.max(0, Math.min(1, volume)) }),
-  toggleShuffle: () => set((state) => ({ shuffle: !state.shuffle })),
-  toggleRepeat: () => set((state) => ({
-    repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off'
-  })),
+  setVolume: (volume) => {
+    set({ volume: Math.max(0, Math.min(1, volume)) });
+    persistState();
+  },
+  toggleShuffle: () => {
+    set((state) => ({ shuffle: !state.shuffle }));
+    persistState();
+  },
+  toggleRepeat: () => {
+    set((state) => ({
+      repeat: state.repeat === 'off' ? 'all' : state.repeat === 'all' ? 'one' : 'off'
+    }));
+    persistState();
+  },
 
   // Queue actions
   addToQueue: (track) => {
     set((state) => ({
       queue: [...state.queue, { track, queueId: generateQueueId() }],
     }));
+    persistState();
   },
 
   removeFromQueue: (queueId) => {
     set((state) => ({
       queue: state.queue.filter((item) => item.queueId !== queueId),
     }));
+    persistState();
   },
 
-  clearQueue: () => set({ queue: [], queueIndex: -1 }),
+  clearQueue: () => {
+    set({ queue: [], queueIndex: -1 });
+    persistState();
+  },
 
   playTrack: (track) => {
     const state = get();
@@ -94,6 +136,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: true,
       currentTime: 0,
     });
+    persistState();
   },
 
   playNext: () => {
@@ -117,6 +160,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         isPlaying: true,
         currentTime: 0,
       });
+      persistState();
     } else {
       set({ isPlaying: false });
     }
@@ -140,6 +184,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         currentTime: 0,
         queueIndex: Math.max(-1, s.queueIndex - 1),
       }));
+      persistState();
     }
   },
 
@@ -155,5 +200,48 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: tracks.length > 0,
       currentTime: 0,
     });
+    persistState();
+  },
+
+  // Hydrate state from IndexedDB
+  hydrate: async () => {
+    try {
+      const persisted = await loadPlayerState();
+      if (!persisted) {
+        set({ isHydrated: true });
+        return;
+      }
+
+      // Fetch tracks if we have queue track IDs
+      let queue: QueueItem[] = [];
+      let currentTrack: Track | null = null;
+
+      if (persisted.queueTrackIds.length > 0) {
+        const tracks = await fetchTracksByIds(persisted.queueTrackIds);
+        queue = tracks.map((track) => ({
+          track,
+          queueId: generateQueueId(),
+        }));
+
+        // Find current track in queue
+        if (persisted.currentTrackId && persisted.queueIndex >= 0) {
+          currentTrack = queue[persisted.queueIndex]?.track || null;
+        }
+      }
+
+      set({
+        volume: persisted.volume,
+        shuffle: persisted.shuffle,
+        repeat: persisted.repeat,
+        queue,
+        queueIndex: persisted.queueIndex,
+        currentTrack,
+        isPlaying: false, // Don't auto-play on hydration
+        isHydrated: true,
+      });
+    } catch (error) {
+      console.error('Failed to hydrate player state:', error);
+      set({ isHydrated: true });
+    }
   },
 }));

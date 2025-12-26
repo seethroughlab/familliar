@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 import { tracksApi } from '../api/client';
+import { getOfflineTrack, createOfflineTrackUrl, revokeOfflineTrackUrl } from '../services/offlineService';
 
 const CROSSFADE_DURATION = 3; // seconds
 
@@ -34,6 +35,9 @@ export function useAudioEngine() {
   // For fallback when Web Audio API has issues, keep a simple audio element
   const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
   const useFallbackRef = useRef(false);
+
+  // Track current offline URL for cleanup
+  const currentOfflineUrlRef = useRef<string | null>(null);
 
   const {
     currentTrack,
@@ -178,38 +182,63 @@ export function useAudioEngine() {
         fallbackAudioRef.current.pause();
         fallbackAudioRef.current.src = '';
       }
+      // Clean up any offline URL
+      if (currentOfflineUrlRef.current) {
+        revokeOfflineTrackUrl(currentOfflineUrlRef.current);
+        currentOfflineUrlRef.current = null;
+      }
       return;
     }
 
-    const streamUrl = tracksApi.getStreamUrl(currentTrack.id);
-    isLoadingRef.current = true;
-
-    // Use fallback for now (simpler and more reliable for streaming)
-    // Web Audio API crossfade will be used for track transitions
-    useFallbackRef.current = true;
-
-    if (fallbackAudioRef.current) {
-      fallbackAudioRef.current.src = streamUrl;
-      fallbackAudioRef.current.load();
-
-      if (isPlaying) {
-        fallbackAudioRef.current.play().catch(console.error);
-      }
+    // Clean up previous offline URL
+    if (currentOfflineUrlRef.current) {
+      revokeOfflineTrackUrl(currentOfflineUrlRef.current);
+      currentOfflineUrlRef.current = null;
     }
 
-    // Also preload buffer for crossfade capability
-    loadAudioBuffer(streamUrl).then(buffer => {
+    isLoadingRef.current = true;
+
+    // Check for offline track first, then fall back to streaming
+    const loadTrack = async () => {
+      let audioUrl: string;
+
+      // Try to get offline track
+      const offlineBlob = await getOfflineTrack(currentTrack.id);
+      if (offlineBlob) {
+        audioUrl = createOfflineTrackUrl(offlineBlob);
+        currentOfflineUrlRef.current = audioUrl;
+        console.log('Playing from offline cache:', currentTrack.title);
+      } else {
+        audioUrl = tracksApi.getStreamUrl(currentTrack.id);
+      }
+
+      // Use fallback for now (simpler and more reliable for streaming)
+      // Web Audio API crossfade will be used for track transitions
+      useFallbackRef.current = true;
+
+      if (fallbackAudioRef.current) {
+        fallbackAudioRef.current.src = audioUrl;
+        fallbackAudioRef.current.load();
+
+        if (isPlaying) {
+          fallbackAudioRef.current.play().catch(console.error);
+        }
+      }
+
+      // Also preload buffer for crossfade capability
+      const buffer = await loadAudioBuffer(audioUrl);
       if (buffer) {
         currentBufferRef.current = buffer;
         setDuration(buffer.duration);
       }
       isLoadingRef.current = false;
-    });
+    };
 
+    loadTrack();
     updateMediaSession();
     pausedAtRef.current = 0;
     startTimeRef.current = 0;
-  }, [currentTrack?.id, loadAudioBuffer, setDuration, updateMediaSession]);
+  }, [currentTrack?.id, loadAudioBuffer, setDuration, updateMediaSession, isPlaying]);
 
   // Handle play/pause
   useEffect(() => {

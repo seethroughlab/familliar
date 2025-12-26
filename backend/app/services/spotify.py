@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import SpotifyProfileV2, SpotifyFavoriteV2, Track, Profile
+from app.db.models import SpotifyProfile, SpotifyFavorite, Track, Profile
 from app.services.app_settings import get_app_settings_service
 
 
@@ -73,7 +73,7 @@ class SpotifyService:
         db: AsyncSession,
         code: str,
         state: str,
-    ) -> SpotifyProfileV2:
+    ) -> SpotifyProfile:
         """Handle OAuth callback and store tokens.
 
         Args:
@@ -82,7 +82,7 @@ class SpotifyService:
             state: State token to verify profile
 
         Returns:
-            SpotifyProfileV2 with tokens stored
+            SpotifyProfile with tokens stored
         """
         # Extract profile_id from state
         try:
@@ -109,9 +109,9 @@ class SpotifyService:
         # Calculate token expiry
         expires_at = datetime.utcnow() + timedelta(seconds=token_info.get("expires_in", 3600))
 
-        # Upsert SpotifyProfileV2
+        # Upsert SpotifyProfile
         result = await db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == profile_id)
         )
         spotify_profile = result.scalar_one_or_none()
 
@@ -121,7 +121,7 @@ class SpotifyService:
             spotify_profile.refresh_token = token_info.get("refresh_token")
             spotify_profile.token_expires_at = expires_at
         else:
-            spotify_profile = SpotifyProfileV2(
+            spotify_profile = SpotifyProfile(
                 profile_id=profile_id,
                 spotify_user_id=spotify_user["id"],
                 access_token=token_info["access_token"],
@@ -141,7 +141,7 @@ class SpotifyService:
         Handles token refresh automatically.
         """
         result = await db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == profile_id)
         )
         spotify_profile = result.scalar_one_or_none()
 
@@ -160,8 +160,8 @@ class SpotifyService:
     async def _refresh_token(
         self,
         db: AsyncSession,
-        spotify_profile: SpotifyProfileV2,
-    ) -> SpotifyProfileV2:
+        spotify_profile: SpotifyProfile,
+    ) -> SpotifyProfile:
         """Refresh expired access token."""
         client_id, client_secret = self._get_credentials()
         oauth = SpotifyOAuth(
@@ -224,9 +224,9 @@ class SpotifySyncService:
 
                 # Check if already synced
                 existing = await self.db.execute(
-                    select(SpotifyFavoriteV2).where(
-                        SpotifyFavoriteV2.profile_id == profile_id,
-                        SpotifyFavoriteV2.spotify_track_id == spotify_track["id"],
+                    select(SpotifyFavorite).where(
+                        SpotifyFavorite.profile_id == profile_id,
+                        SpotifyFavorite.spotify_track_id == spotify_track["id"],
                     )
                 )
                 favorite = existing.scalar_one_or_none()
@@ -241,7 +241,7 @@ class SpotifySyncService:
                         stats["matched"] += 1
                 else:
                     # Create new favorite
-                    favorite = SpotifyFavoriteV2(
+                    favorite = SpotifyFavorite(
                         profile_id=profile_id,
                         spotify_track_id=spotify_track["id"],
                         matched_track_id=local_match.id if local_match else None,
@@ -264,7 +264,7 @@ class SpotifySyncService:
 
         # Update last sync time
         profile_result = await self.db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == profile_id)
         )
         spotify_profile = profile_result.scalar_one_or_none()
         if spotify_profile:
@@ -292,9 +292,9 @@ class SpotifySyncService:
 
             # Check if already exists
             existing = await self.db.execute(
-                select(SpotifyFavoriteV2).where(
-                    SpotifyFavoriteV2.profile_id == profile_id,
-                    SpotifyFavoriteV2.spotify_track_id == spotify_track["id"],
+                select(SpotifyFavorite).where(
+                    SpotifyFavorite.profile_id == profile_id,
+                    SpotifyFavorite.spotify_track_id == spotify_track["id"],
                 )
             )
 
@@ -303,7 +303,7 @@ class SpotifySyncService:
 
             local_match = await self._match_to_local(spotify_track)
 
-            favorite = SpotifyFavoriteV2(
+            favorite = SpotifyFavorite(
                 profile_id=profile_id,
                 spotify_track_id=spotify_track["id"],
                 matched_track_id=local_match.id if local_match else None,
@@ -324,12 +324,12 @@ class SpotifySyncService:
         Returns tracks with popularity score for preference-based sorting.
         """
         result = await self.db.execute(
-            select(SpotifyFavoriteV2)
+            select(SpotifyFavorite)
             .where(
-                SpotifyFavoriteV2.profile_id == profile_id,
-                SpotifyFavoriteV2.matched_track_id.is_(None),
+                SpotifyFavorite.profile_id == profile_id,
+                SpotifyFavorite.matched_track_id.is_(None),
             )
-            .order_by(SpotifyFavoriteV2.added_at.desc())
+            .order_by(SpotifyFavorite.added_at.desc())
             .limit(limit)
         )
         favorites = result.scalars().all()
@@ -350,22 +350,22 @@ class SpotifySyncService:
         """Get sync statistics for a profile."""
         # Total favorites
         total = await self.db.scalar(
-            select(func.count(SpotifyFavoriteV2.id)).where(
-                SpotifyFavoriteV2.profile_id == profile_id
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.profile_id == profile_id
             )
         ) or 0
 
         # Matched favorites
         matched = await self.db.scalar(
-            select(func.count(SpotifyFavoriteV2.id)).where(
-                SpotifyFavoriteV2.profile_id == profile_id,
-                SpotifyFavoriteV2.matched_track_id.isnot(None),
+            select(func.count(SpotifyFavorite.id)).where(
+                SpotifyFavorite.profile_id == profile_id,
+                SpotifyFavorite.matched_track_id.isnot(None),
             )
         ) or 0
 
         # Get profile info
         profile_result = await self.db.execute(
-            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == profile_id)
+            select(SpotifyProfile).where(SpotifyProfile.profile_id == profile_id)
         )
         spotify_profile = profile_result.scalar_one_or_none()
 
