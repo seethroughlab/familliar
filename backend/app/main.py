@@ -1,15 +1,29 @@
 """Familiar API - Main FastAPI application."""
 
 import logging
-from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
+from app.api.routes import (
+    chat,
+    health,
+    lastfm,
+    library,
+    organizer,
+    profiles,
+    sessions,
+    smart_playlists,
+    spotify,
+    tracks,
+    videos,
+)
+from app.api.routes import settings as settings_routes
 from app.config import settings as app_config
 
 # Configure logging
@@ -18,7 +32,6 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes, sessions, smart_playlists, profiles, organizer
 
 
 @asynccontextmanager

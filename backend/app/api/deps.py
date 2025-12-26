@@ -2,7 +2,7 @@
 
 from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import async_session_maker
 
+if TYPE_CHECKING:
+    from app.db.models import Profile
 
 # Default user ID for single-user mode (legacy, being replaced by profiles)
 DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")

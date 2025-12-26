@@ -11,7 +11,7 @@ import asyncio
 from sqlalchemy import text
 from sqlalchemy.schema import CreateTable
 
-from app.db.models import Profile, LastfmProfile, SpotifyProfile, SpotifyFavorite
+from app.db.models import LastfmProfile, Profile, SpotifyFavorite, SpotifyProfile
 from app.db.session import engine
 
 

@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
 from app.services.organizer import (
+    TEMPLATES,
     LibraryOrganizer,
     OrganizeResult,
     OrganizeStats,
     get_available_templates,
-    TEMPLATES,
 )
 
 router = APIRouter(prefix="/library/organize", tags=["Library Organization"])

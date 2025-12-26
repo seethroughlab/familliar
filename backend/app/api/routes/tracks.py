@@ -1,6 +1,5 @@
 """Track endpoints."""
 
-import mimetypes
 from pathlib import Path
 from uuid import UUID
 
@@ -12,7 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession
 from app.db.models import Track, TrackAnalysis
-from app.services.artwork import compute_album_hash, get_artwork_path, extract_artwork
+from app.services.artwork import compute_album_hash, get_artwork_path
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 

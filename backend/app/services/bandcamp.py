@@ -1,6 +1,5 @@
 """Bandcamp search service for finding albums to purchase."""
 
-import re
 from dataclasses import dataclass
 
 import httpx
@@ -58,7 +57,7 @@ class BandcampService:
         try:
             response = await self.client.get(self.SEARCH_URL, params=params)
             response.raise_for_status()
-        except httpx.HTTPError as e:
+        except httpx.HTTPError:
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")

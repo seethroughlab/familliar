@@ -1,16 +1,15 @@
 """Chat endpoints for LLM-powered music discovery."""
 
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.deps import DbSession, CurrentProfile
+from app.api.deps import CurrentProfile, DbSession
 from app.config import settings
 from app.services.llm import LLMService
-
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import AUDIO_EXTENSIONS, settings
+from app.config import AUDIO_EXTENSIONS
 from app.db.models import Track
 
 logger = logging.getLogger(__name__)
@@ -110,7 +110,7 @@ class LibraryScanner:
         loop = asyncio.get_event_loop()
 
         # Get all existing tracks from database
-        logger.info(f"Loading existing tracks from database...")
+        logger.info("Loading existing tracks from database...")
         existing_tracks = await self._get_existing_tracks()
         existing_paths = {t.file_path: t for t in existing_tracks}
         logger.info(f"Found {len(existing_tracks)} existing tracks in database")

@@ -135,7 +135,7 @@ def batch_analyze(track_ids: list[str]) -> dict:
 
     for track_id in track_ids:
         try:
-            result = analyze_track.delay(track_id)
+            analyze_track.delay(track_id)
             results["success"] += 1
         except Exception as e:
             results["failed"] += 1

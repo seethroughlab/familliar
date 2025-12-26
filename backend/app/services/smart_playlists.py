@@ -1,14 +1,12 @@
 """Smart playlist service for rule-based auto-updating playlists."""
 
 from datetime import datetime, timedelta
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Float, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import SmartPlaylist, Track, TrackAnalysis
-
 
 # Fields that exist directly on the Track model
 TRACK_FIELDS = {

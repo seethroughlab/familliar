@@ -2,14 +2,14 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 
 from app.api.deps import DbSession
 from app.db.models import Track
-from app.services.video import get_video_service, VideoSearchResult, VideoDownloadStatus
+from app.services.video import get_video_service
 
 router = APIRouter(prefix="/videos", tags=["videos"])
 

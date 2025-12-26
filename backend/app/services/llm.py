@@ -1,7 +1,7 @@
 """LLM service for conversational music discovery."""
 
 import json
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from uuid import UUID
 
 import anthropic
@@ -9,9 +9,8 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Track, TrackAnalysis, SpotifyFavorite, SpotifyProfile
+from app.db.models import SpotifyFavorite, SpotifyProfile, Track, TrackAnalysis
 from app.services.app_settings import get_app_settings_service
-
 
 # Tool definitions for Claude
 MUSIC_TOOLS = [

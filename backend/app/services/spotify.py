@@ -2,7 +2,6 @@
 
 import secrets
 from datetime import datetime, timedelta
-from typing import Any
 from uuid import UUID
 
 import spotipy
@@ -11,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import SpotifyProfile, SpotifyFavorite, Track, Profile
+from app.db.models import SpotifyFavorite, SpotifyProfile, Track
 from app.services.app_settings import get_app_settings_service
 
 

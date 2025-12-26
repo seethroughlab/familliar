@@ -2,7 +2,6 @@
 
 import urllib.parse
 
-
 STORES = {
     "bandcamp": {
         "name": "Bandcamp",

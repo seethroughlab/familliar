@@ -6,7 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.deps import DbSession, CurrentProfile
+from app.api.deps import CurrentProfile, DbSession
 from app.db.models import Profile
 
 router = APIRouter(prefix="/profiles", tags=["profiles"])

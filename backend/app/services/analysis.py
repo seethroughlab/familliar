@@ -147,7 +147,7 @@ def extract_features(file_path: Path) -> dict:
 
         # Spectral features for danceability approximation
         spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+        _spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]  # For future use
 
         # Danceability: combination of tempo regularity and beat strength
         onset_env = librosa.onset.onset_strength(y=y, sr=sr)
@@ -157,11 +157,11 @@ def extract_features(file_path: Path) -> dict:
         # Zero crossing rate (indicator of percussiveness/noisiness)
         zcr = librosa.feature.zero_crossing_rate(y)[0]
 
-        # MFCC for timbral features
-        mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+        # MFCC for timbral features (computed for future embedding use)
+        _mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
 
-        # Spectral contrast
-        contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
+        # Spectral contrast (computed for future use)
+        _contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
 
         # Acousticness: based on spectral features
         # Higher spectral centroid and rolloff usually indicate electric/produced sound
@@ -186,7 +186,7 @@ def extract_features(file_path: Path) -> dict:
         features["valence"] = float((np.mean(tonnetz[0]) + 1) / 2)
 
         # Speechiness: based on zero crossing rate and spectral flatness
-        flatness = librosa.feature.spectral_flatness(y=y)[0]
+        _flatness = librosa.feature.spectral_flatness(y=y)[0]  # For future use
         zcr_mean = np.mean(zcr)
         # Speech typically has high ZCR and moderate spectral flatness
         features["speechiness"] = float(min(1, zcr_mean * 2))

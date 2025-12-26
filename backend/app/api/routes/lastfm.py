@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from app.api.deps import DbSession, CurrentProfile
+from app.api.deps import CurrentProfile, DbSession
 from app.db.models import Track
 from app.services.lastfm import get_lastfm_service
 

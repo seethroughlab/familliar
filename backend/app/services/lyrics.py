@@ -1,8 +1,9 @@
 """Lyrics fetching service using LRCLIB.net for synced lyrics."""
 
 import re
-import httpx
 from dataclasses import dataclass
+
+import httpx
 
 
 @dataclass

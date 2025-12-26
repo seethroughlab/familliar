@@ -5,13 +5,12 @@ from io import BytesIO
 from pathlib import Path
 
 import mutagen
-from mutagen.flac import FLAC, Picture
+from mutagen.flac import FLAC
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 from PIL import Image
 
 from app.config import settings
-
 
 # Standard sizes for artwork
 ARTWORK_SIZES = {

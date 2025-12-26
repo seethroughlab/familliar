@@ -5,10 +5,9 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import delete
 
-from app.api.deps import DbSession, CurrentProfile
-from app.db.models import SpotifyProfile, SpotifyFavorite
+from app.api.deps import CurrentProfile, DbSession
+from app.db.models import SpotifyFavorite, SpotifyProfile
 from app.services.spotify import SpotifyService, SpotifySyncService
-
 
 router = APIRouter(prefix="/spotify", tags=["spotify"])
 
