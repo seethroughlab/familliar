@@ -255,6 +255,47 @@ class SpotifyFavorite(Base):
     matched_track: Mapped["Track | None"] = relationship()
 
 
+class SmartPlaylist(Base):
+    """Rule-based auto-updating playlists."""
+
+    __tablename__ = "smart_playlists"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+
+    # Rules stored as JSONB for flexibility
+    # Example: [
+    #   {"field": "genre", "operator": "contains", "value": "electronic"},
+    #   {"field": "bpm", "operator": "between", "value": [120, 140]},
+    #   {"field": "energy", "operator": ">=", "value": 0.7}
+    # ]
+    rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
+
+    # Rule matching mode: "all" (AND) or "any" (OR)
+    match_mode: Mapped[str] = mapped_column(String(10), default="all")
+
+    # Ordering
+    order_by: Mapped[str] = mapped_column(String(50), default="title")
+    order_direction: Mapped[str] = mapped_column(String(4), default="asc")
+
+    # Limits
+    max_tracks: Mapped[int | None] = mapped_column(Integer)
+
+    # Cache
+    cached_track_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_refreshed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship()
+
+
 class TrackVideo(Base):
     """Music video downloads linked to tracks (Phase 5)."""
 

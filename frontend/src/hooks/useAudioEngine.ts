@@ -372,9 +372,21 @@ export function useAudioEngine() {
     }, CROSSFADE_DURATION * 1000);
   }, [loadAudioBuffer, volume]);
 
+  // Get the audio context for WebRTC streaming
+  const getContext = useCallback((): AudioContext | null => {
+    return audioContextRef.current || globalAudioContext;
+  }, []);
+
+  // Get the output node (analyser) for WebRTC streaming
+  const getOutputNode = useCallback((): AudioNode | null => {
+    return analyserRef.current || globalAnalyser;
+  }, []);
+
   return {
     seek,
     togglePlayPause,
     crossfadeTo,
+    getContext,
+    getOutputNode,
   };
 }

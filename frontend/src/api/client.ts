@@ -252,4 +252,113 @@ export const libraryApi = {
   },
 };
 
+// Smart Playlists
+export interface SmartPlaylistRule {
+  field: string;
+  operator: string;
+  value?: unknown;
+}
+
+export interface SmartPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  rules: SmartPlaylistRule[];
+  match_mode: 'all' | 'any';
+  order_by: string;
+  order_direction: 'asc' | 'desc';
+  max_tracks: number | null;
+  cached_track_count: number;
+  last_refreshed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartPlaylistCreate {
+  name: string;
+  description?: string;
+  rules: SmartPlaylistRule[];
+  match_mode?: 'all' | 'any';
+  order_by?: string;
+  order_direction?: 'asc' | 'desc';
+  max_tracks?: number;
+}
+
+export interface SmartPlaylistTracksResponse {
+  playlist: SmartPlaylist;
+  tracks: Array<{
+    id: string;
+    title: string | null;
+    artist: string | null;
+    album: string | null;
+    duration_seconds: number | null;
+    genre: string | null;
+    year: number | null;
+  }>;
+  total: number;
+}
+
+export interface AvailableFields {
+  track_fields: Array<{
+    name: string;
+    type: string;
+    description: string;
+  }>;
+  analysis_fields: Array<{
+    name: string;
+    type: string;
+    description: string;
+    range?: [number, number];
+  }>;
+  operators: {
+    string: string[];
+    number: string[];
+    date: string[];
+    list: string[];
+  };
+}
+
+export const smartPlaylistsApi = {
+  list: async (): Promise<SmartPlaylist[]> => {
+    const { data } = await api.get('/smart-playlists');
+    return data;
+  },
+
+  get: async (id: string): Promise<SmartPlaylist> => {
+    const { data } = await api.get(`/smart-playlists/${id}`);
+    return data;
+  },
+
+  create: async (playlist: SmartPlaylistCreate): Promise<SmartPlaylist> => {
+    const { data } = await api.post('/smart-playlists', playlist);
+    return data;
+  },
+
+  update: async (id: string, playlist: Partial<SmartPlaylistCreate>): Promise<SmartPlaylist> => {
+    const { data } = await api.put(`/smart-playlists/${id}`, playlist);
+    return data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/smart-playlists/${id}`);
+  },
+
+  getTracks: async (id: string, limit = 100, offset = 0): Promise<SmartPlaylistTracksResponse> => {
+    const { data } = await api.get(`/smart-playlists/${id}/tracks`, {
+      params: { limit, offset },
+    });
+    return data;
+  },
+
+  refresh: async (id: string): Promise<SmartPlaylist> => {
+    const { data } = await api.post(`/smart-playlists/${id}/refresh`);
+    return data;
+  },
+
+  getAvailableFields: async (): Promise<AvailableFields> => {
+    const { data } = await api.get('/smart-playlists/fields/available');
+    return data;
+  },
+};
+
 export default api;

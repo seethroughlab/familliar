@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings as app_config
-from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes
+from app.api.routes import health, tracks, library, chat, spotify, videos, lastfm, settings as settings_routes, sessions, smart_playlists
 
 
 @asynccontextmanager
@@ -45,6 +45,8 @@ app.include_router(spotify.router, prefix="/api/v1")
 app.include_router(videos.router, prefix="/api/v1")
 app.include_router(lastfm.router, prefix="/api/v1")
 app.include_router(settings_routes.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(smart_playlists.router, prefix="/api/v1")
 
 
 @app.get("/")

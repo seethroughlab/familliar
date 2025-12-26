@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter } from 'react-router-dom';
-import { Search, Library, MessageSquare, Settings } from 'lucide-react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Search, Library, MessageSquare, Settings, Zap } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
 import { SettingsPanel } from './components/Settings';
 import { FullPlayer } from './components/FullPlayer';
+import { InstallPrompt } from './components/PWA/InstallPrompt';
+import { SessionPanel } from './components/Sessions';
+import { SmartPlaylistList } from './components/SmartPlaylists';
+import { GuestListener } from './components/Guest';
 import { useScrobbling } from './hooks/useScrobbling';
+import { useListeningSession } from './hooks/useListeningSession';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -18,15 +23,36 @@ const queryClient = new QueryClient({
   },
 });
 
-type RightPanelTab = 'context' | 'library' | 'settings';
+type RightPanelTab = 'context' | 'library' | 'playlists' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('library');
   const [showFullPlayer, setShowFullPlayer] = useState(false);
+  const [showSessionPanel, setShowSessionPanel] = useState(false);
 
   // Initialize Last.fm scrobbling
   useScrobbling();
+
+  // Listening session (using a simple user ID for now)
+  const userId = 'user-' + (localStorage.getItem('familiar-user-id') || (() => {
+    const id = Math.random().toString(36).substring(7);
+    localStorage.setItem('familiar-user-id', id);
+    return id;
+  })());
+  const username = localStorage.getItem('familiar-username') || 'Anonymous';
+
+  const {
+    session,
+    isConnecting,
+    error: sessionError,
+    chatMessages,
+    isHost,
+    createSession,
+    joinSession,
+    leaveSession,
+    sendChatMessage,
+  } = useListeningSession({ userId, username });
 
   return (
     <div className="h-screen flex flex-col bg-black text-white">
@@ -65,6 +91,17 @@ function AppContent() {
                 >
                   <Library className="w-4 h-4 inline-block mr-1.5" />
                   Library
+                </button>
+                <button
+                  onClick={() => setRightPanelTab('playlists')}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    rightPanelTab === 'playlists'
+                      ? 'bg-zinc-800 text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <Zap className="w-4 h-4 inline-block mr-1.5" />
+                  Playlists
                 </button>
                 <button
                   onClick={() => setRightPanelTab('settings')}
@@ -110,6 +147,11 @@ function AppContent() {
                 <p className="text-sm mt-2">Start a conversation in the chat to see results here.</p>
               </div>
             )}
+            {rightPanelTab === 'playlists' && (
+              <div className="px-4 py-6">
+                <SmartPlaylistList />
+              </div>
+            )}
             {rightPanelTab === 'settings' && (
               <SettingsPanel />
             )}
@@ -118,11 +160,35 @@ function AppContent() {
       </div>
 
       {/* Player bar - fixed at bottom */}
-      <PlayerBar onExpandClick={() => setShowFullPlayer(true)} />
+      <PlayerBar
+        onExpandClick={() => setShowFullPlayer(true)}
+        onSessionClick={() => setShowSessionPanel(true)}
+        isInSession={!!session}
+        sessionParticipantCount={session?.participant_count || 0}
+      />
 
       {/* Full player overlay */}
       {showFullPlayer && (
         <FullPlayer onClose={() => setShowFullPlayer(false)} />
+      )}
+
+      {/* PWA install prompt */}
+      <InstallPrompt />
+
+      {/* Listening session panel */}
+      {showSessionPanel && (
+        <SessionPanel
+          session={session}
+          isHost={isHost}
+          isConnecting={isConnecting}
+          error={sessionError}
+          chatMessages={chatMessages}
+          onCreateSession={createSession}
+          onJoinSession={joinSession}
+          onLeaveSession={leaveSession}
+          onSendMessage={sendChatMessage}
+          onClose={() => setShowSessionPanel(false)}
+        />
       )}
     </div>
   );
@@ -132,7 +198,10 @@ function App() {
   return (
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <AppContent />
+        <Routes>
+          <Route path="/guest" element={<GuestListener />} />
+          <Route path="*" element={<AppContent />} />
+        </Routes>
       </QueryClientProvider>
     </BrowserRouter>
   );
