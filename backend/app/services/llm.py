@@ -9,7 +9,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Track, TrackAnalysis, SpotifyFavorite, SpotifyProfile
+from app.db.models import Track, TrackAnalysis, SpotifyFavoriteV2, SpotifyProfileV2
 from app.services.app_settings import get_app_settings_service
 
 
@@ -250,8 +250,9 @@ Keep responses concise and music-focused."""
 class ToolExecutor:
     """Executes tools called by the LLM."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, profile_id: UUID | None = None):
         self.db = db
+        self.profile_id = profile_id
         self._queued_tracks: list[dict] = []
         self._playback_action: str | None = None
 
@@ -510,10 +511,14 @@ class ToolExecutor:
 
     async def _get_spotify_status(self) -> dict:
         """Check if Spotify is connected."""
-        from app.api.routes.spotify import TEMP_USER_ID
+        if not self.profile_id:
+            return {
+                "connected": False,
+                "message": "No profile ID provided. User can connect via Settings."
+            }
 
         result = await self.db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == TEMP_USER_ID)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == self.profile_id)
         )
         profile = result.scalar_one_or_none()
 
@@ -531,16 +536,17 @@ class ToolExecutor:
 
     async def _get_spotify_favorites(self, limit: int = 50) -> dict:
         """Get Spotify favorites that are matched to local library."""
-        from app.api.routes.spotify import TEMP_USER_ID
+        if not self.profile_id:
+            return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
         result = await self.db.execute(
-            select(SpotifyFavorite, Track)
-            .join(Track, SpotifyFavorite.matched_track_id == Track.id)
+            select(SpotifyFavoriteV2, Track)
+            .join(Track, SpotifyFavoriteV2.matched_track_id == Track.id)
             .where(
-                SpotifyFavorite.user_id == TEMP_USER_ID,
-                SpotifyFavorite.matched_track_id.isnot(None)
+                SpotifyFavoriteV2.profile_id == self.profile_id,
+                SpotifyFavoriteV2.matched_track_id.isnot(None)
             )
-            .order_by(SpotifyFavorite.added_at.desc())
+            .order_by(SpotifyFavoriteV2.added_at.desc())
             .limit(limit)
         )
         rows = result.all()
@@ -559,15 +565,16 @@ class ToolExecutor:
 
     async def _get_unmatched_spotify_favorites(self, limit: int = 50) -> dict:
         """Get Spotify favorites that don't have local matches."""
-        from app.api.routes.spotify import TEMP_USER_ID
+        if not self.profile_id:
+            return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
         result = await self.db.execute(
-            select(SpotifyFavorite)
+            select(SpotifyFavoriteV2)
             .where(
-                SpotifyFavorite.user_id == TEMP_USER_ID,
-                SpotifyFavorite.matched_track_id.is_(None)
+                SpotifyFavoriteV2.profile_id == self.profile_id,
+                SpotifyFavoriteV2.matched_track_id.is_(None)
             )
-            .order_by(SpotifyFavorite.added_at.desc())
+            .order_by(SpotifyFavoriteV2.added_at.desc())
             .limit(limit)
         )
         favorites = result.scalars().all()
@@ -592,26 +599,34 @@ class ToolExecutor:
 
     async def _get_spotify_sync_stats(self) -> dict:
         """Get Spotify sync statistics."""
-        from app.api.routes.spotify import TEMP_USER_ID
+        if not self.profile_id:
+            return {
+                "total_favorites": 0,
+                "matched": 0,
+                "unmatched": 0,
+                "match_rate": 0,
+                "last_sync": None,
+                "connected": False
+            }
 
         # Total favorites
         total = await self.db.scalar(
-            select(func.count(SpotifyFavorite.id)).where(
-                SpotifyFavorite.user_id == TEMP_USER_ID
+            select(func.count(SpotifyFavoriteV2.id)).where(
+                SpotifyFavoriteV2.profile_id == self.profile_id
             )
         ) or 0
 
         # Matched favorites
         matched = await self.db.scalar(
-            select(func.count(SpotifyFavorite.id)).where(
-                SpotifyFavorite.user_id == TEMP_USER_ID,
-                SpotifyFavorite.matched_track_id.isnot(None)
+            select(func.count(SpotifyFavoriteV2.id)).where(
+                SpotifyFavoriteV2.profile_id == self.profile_id,
+                SpotifyFavoriteV2.matched_track_id.isnot(None)
             )
         ) or 0
 
         # Get profile info
         profile_result = await self.db.execute(
-            select(SpotifyProfile).where(SpotifyProfile.user_id == TEMP_USER_ID)
+            select(SpotifyProfileV2).where(SpotifyProfileV2.profile_id == self.profile_id)
         )
         profile = profile_result.scalar_one_or_none()
 
@@ -661,17 +676,22 @@ class ToolExecutor:
 
     async def _recommend_bandcamp_purchases(self, limit: int = 5) -> dict:
         """Recommend Bandcamp albums based on unmatched Spotify favorites."""
-        from app.api.routes.spotify import TEMP_USER_ID
         from app.services.bandcamp import BandcampService
+
+        if not self.profile_id:
+            return {
+                "recommendations": [],
+                "message": "No profile ID provided"
+            }
 
         # Get unmatched Spotify favorites
         result = await self.db.execute(
-            select(SpotifyFavorite)
+            select(SpotifyFavoriteV2)
             .where(
-                SpotifyFavorite.user_id == TEMP_USER_ID,
-                SpotifyFavorite.matched_track_id.is_(None)
+                SpotifyFavoriteV2.profile_id == self.profile_id,
+                SpotifyFavoriteV2.matched_track_id.is_(None)
             )
-            .order_by(SpotifyFavorite.added_at.desc())
+            .order_by(SpotifyFavoriteV2.added_at.desc())
             .limit(limit * 2)  # Get more to have variety
         )
         favorites = result.scalars().all()
@@ -753,6 +773,7 @@ class LLMService:
         message: str,
         conversation_history: list[dict],
         db: AsyncSession,
+        profile_id: UUID | None = None,
     ) -> AsyncIterator[dict]:
         """
         Process a chat message and stream the response.
@@ -765,7 +786,7 @@ class LLMService:
         - {"type": "playback", "action": "..."}
         - {"type": "done"}
         """
-        tool_executor = ToolExecutor(db)
+        tool_executor = ToolExecutor(db, profile_id)
         messages = conversation_history + [{"role": "user", "content": message}]
 
         while True:

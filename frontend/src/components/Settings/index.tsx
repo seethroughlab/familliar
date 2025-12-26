@@ -1,5 +1,6 @@
 import { SpotifySettings } from './SpotifySettings';
 import { LastfmSettings } from './LastfmSettings';
+import { OfflineSettings } from './OfflineSettings';
 
 export function SettingsPanel() {
   return (
@@ -19,6 +20,15 @@ export function SettingsPanel() {
             <LastfmSettings />
           </div>
         </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider mb-3">
+            Offline & Storage
+          </h3>
+          <div className="space-y-4">
+            <OfflineSettings />
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -26,3 +36,4 @@ export function SettingsPanel() {
 
 export { SpotifySettings } from './SpotifySettings';
 export { LastfmSettings } from './LastfmSettings';
+export { OfflineSettings } from './OfflineSettings';

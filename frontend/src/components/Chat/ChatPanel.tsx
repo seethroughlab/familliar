@@ -1,21 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
-import { Send, Loader2, Music, Wrench } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, Loader2, Music, Wrench, Plus, Trash2, MessageSquare } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
-
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  toolCalls?: ToolCall[];
-  isStreaming?: boolean;
-}
-
-interface ToolCall {
-  name: string;
-  input: Record<string, unknown>;
-  result?: Record<string, unknown>;
-  status: 'running' | 'complete';
-}
+import { getOrCreateDeviceProfile } from '../../services/profileService';
+import * as chatService from '../../services/chatService';
+import type { ChatSession, ChatMessage, ChatToolCall } from '../../db';
 
 interface Track {
   id: string;
@@ -25,13 +13,33 @@ interface Track {
 }
 
 export function ChatPanel() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [profileId, setProfileId] = useState<string | null>(null);
+  const [showSessions, setShowSessions] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { setQueue } = usePlayerStore();
+
+  // Load profile and sessions on mount
+  useEffect(() => {
+    const init = async () => {
+      const profile = await getOrCreateDeviceProfile();
+      setProfileId(profile.profileId);
+
+      const allSessions = await chatService.listSessions(profile.profileId);
+      setSessions(allSessions);
+
+      // Load most recent session or create new one
+      if (allSessions.length > 0) {
+        setCurrentSession(allSessions[0]);
+      }
+    };
+    init();
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -39,36 +47,82 @@ export function ChatPanel() {
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [currentSession?.messages]);
+
+  const refreshSessions = useCallback(async () => {
+    if (!profileId) return;
+    const allSessions = await chatService.listSessions(profileId);
+    setSessions(allSessions);
+  }, [profileId]);
+
+  const createNewSession = async () => {
+    if (!profileId) return;
+
+    const session = await chatService.createSession(profileId);
+    setSessions((prev) => [session, ...prev]);
+    setCurrentSession(session);
+    setShowSessions(false);
+    inputRef.current?.focus();
+  };
+
+  const selectSession = async (session: ChatSession) => {
+    setCurrentSession(session);
+    setShowSessions(false);
+    inputRef.current?.focus();
+  };
+
+  const deleteSession = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await chatService.deleteSession(sessionId);
+    await refreshSessions();
+
+    if (currentSession?.id === sessionId) {
+      const remaining = sessions.filter((s) => s.id !== sessionId);
+      setCurrentSession(remaining[0] || null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !profileId) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input.trim(),
-    };
+    // Create session if needed
+    let session = currentSession;
+    if (!session) {
+      session = await chatService.createSession(profileId);
+      setSessions((prev) => [session!, ...prev]);
+      setCurrentSession(session);
+    }
 
-    setMessages((prev) => [...prev, userMessage]);
+    const userMessageContent = input.trim();
     setInput('');
     setIsLoading(true);
 
-    // Create assistant message placeholder
-    const assistantId = (Date.now() + 1).toString();
-    const assistantMessage: Message = {
-      id: assistantId,
+    // Add user message
+    const userMessage = await chatService.addMessage(session.id, {
+      role: 'user',
+      content: userMessageContent,
+    });
+
+    // Update local state
+    setCurrentSession((prev) =>
+      prev ? { ...prev, messages: [...prev.messages, userMessage] } : null
+    );
+
+    // Add assistant placeholder
+    const assistantMessage = await chatService.addMessage(session.id, {
       role: 'assistant',
       content: '',
       toolCalls: [],
-      isStreaming: true,
-    };
-    setMessages((prev) => [...prev, assistantMessage]);
+    });
+
+    setCurrentSession((prev) =>
+      prev ? { ...prev, messages: [...prev.messages, assistantMessage] } : null
+    );
 
     try {
-      // Build history for API (exclude the new messages we just added)
-      const history = messages.map((m) => ({
+      // Build history for API (exclude new messages)
+      const history = session.messages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
@@ -77,7 +131,7 @@ export function ChatPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMessage.content,
+          message: userMessageContent,
           history,
         }),
       });
@@ -107,7 +161,7 @@ export function ChatPanel() {
 
             try {
               const event = JSON.parse(data);
-              handleStreamEvent(event, assistantId);
+              await handleStreamEvent(event, session!.id);
             } catch {
               // Ignore parse errors
             }
@@ -116,70 +170,81 @@ export function ChatPanel() {
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === assistantId
-            ? { ...m, content: 'Sorry, something went wrong. Please try again.', isStreaming: false }
-            : m
-        )
-      );
+      await chatService.updateLastMessage(session.id, {
+        content: 'Sorry, something went wrong. Please try again.',
+      });
     } finally {
       setIsLoading(false);
-      setMessages((prev) =>
-        prev.map((m) => (m.id === assistantId ? { ...m, isStreaming: false } : m))
-      );
+      // Refresh session from DB to get final state
+      const updatedSession = await chatService.getSession(session.id);
+      if (updatedSession) {
+        setCurrentSession(updatedSession);
+      }
+      await refreshSessions();
     }
   };
 
-  const handleStreamEvent = (event: Record<string, unknown>, messageId: string) => {
+  const handleStreamEvent = async (
+    event: Record<string, unknown>,
+    sessionId: string
+  ) => {
     switch (event.type) {
       case 'text':
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId ? { ...m, content: m.content + (event.content as string) } : m
-          )
-        );
+        await chatService.appendToLastMessage(sessionId, event.content as string);
+        // Update local state for immediate feedback
+        setCurrentSession((prev) => {
+          if (!prev) return null;
+          const messages = [...prev.messages];
+          const lastIdx = messages.length - 1;
+          messages[lastIdx] = {
+            ...messages[lastIdx],
+            content: messages[lastIdx].content + (event.content as string),
+          };
+          return { ...prev, messages };
+        });
         break;
 
       case 'tool_call':
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  toolCalls: [
-                    ...(m.toolCalls || []),
-                    {
-                      name: event.name as string,
-                      input: event.input as Record<string, unknown>,
-                      status: 'running' as const,
-                    },
-                  ],
-                }
-              : m
-          )
-        );
+        const toolCall: ChatToolCall = {
+          name: event.name as string,
+          input: event.input as Record<string, unknown>,
+          status: 'running',
+        };
+        await chatService.addToolCallToLastMessage(sessionId, toolCall);
+        setCurrentSession((prev) => {
+          if (!prev) return null;
+          const messages = [...prev.messages];
+          const lastIdx = messages.length - 1;
+          messages[lastIdx] = {
+            ...messages[lastIdx],
+            toolCalls: [...(messages[lastIdx].toolCalls || []), toolCall],
+          };
+          return { ...prev, messages };
+        });
         break;
 
       case 'tool_result':
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === messageId
-              ? {
-                  ...m,
-                  toolCalls: m.toolCalls?.map((tc) =>
-                    tc.name === event.name
-                      ? { ...tc, result: event.result as Record<string, unknown>, status: 'complete' as const }
-                      : tc
-                  ),
-                }
-              : m
-          )
-        );
+        await chatService.updateToolCallInLastMessage(sessionId, event.name as string, {
+          result: event.result as Record<string, unknown>,
+          status: 'complete',
+        });
+        setCurrentSession((prev) => {
+          if (!prev) return null;
+          const messages = [...prev.messages];
+          const lastIdx = messages.length - 1;
+          messages[lastIdx] = {
+            ...messages[lastIdx],
+            toolCalls: messages[lastIdx].toolCalls?.map((tc) =>
+              tc.name === event.name
+                ? { ...tc, result: event.result as Record<string, unknown>, status: 'complete' as const }
+                : tc
+            ),
+          };
+          return { ...prev, messages };
+        });
         break;
 
       case 'queue':
-        // Queue tracks in the player
         const tracks = (event.tracks as Track[]).map((t) => ({
           id: t.id,
           title: t.title,
@@ -202,7 +267,6 @@ export function ChatPanel() {
         break;
 
       case 'playback':
-        // Handle playback control
         const action = event.action as string;
         const store = usePlayerStore.getState();
         if (action === 'play') store.setIsPlaying(true);
@@ -213,13 +277,68 @@ export function ChatPanel() {
     }
   };
 
+  const messages = currentSession?.messages || [];
+
   return (
     <div className="flex flex-col h-full bg-zinc-900">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-zinc-800">
-        <h2 className="text-lg font-semibold">Familiar</h2>
-        <p className="text-xs text-zinc-500">Ask me to play something</p>
+      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Familiar</h2>
+          <p className="text-xs text-zinc-500">
+            {currentSession ? currentSession.title : 'Ask me to play something'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowSessions(!showSessions)}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="Chat history"
+          >
+            <MessageSquare className="w-5 h-5" />
+          </button>
+          <button
+            onClick={createNewSession}
+            className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="New chat"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
       </div>
+
+      {/* Session list dropdown */}
+      {showSessions && (
+        <div className="border-b border-zinc-800 bg-zinc-950 max-h-64 overflow-y-auto">
+          {sessions.length === 0 ? (
+            <p className="p-4 text-sm text-zinc-500 text-center">No conversations yet</p>
+          ) : (
+            sessions.map((session) => (
+              <div
+                key={session.id}
+                onClick={() => selectSession(session)}
+                className={`flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-zinc-800 transition-colors ${
+                  currentSession?.id === session.id ? 'bg-zinc-800' : ''
+                }`}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{session.title}</p>
+                  <p className="text-xs text-zinc-500">
+                    {session.messages.length} messages
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => deleteSession(session.id, e)}
+                  className="p-1.5 text-zinc-500 hover:text-red-400 hover:bg-zinc-700 rounded transition-colors"
+                  title="Delete conversation"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -258,7 +377,7 @@ export function ChatPanel() {
               <p className="text-sm whitespace-pre-wrap">{message.content}</p>
 
               {/* Streaming indicator */}
-              {message.isStreaming && !message.content && (
+              {message.role === 'assistant' && !message.content && isLoading && (
                 <Loader2 className="w-4 h-4 animate-spin" />
               )}
             </div>
@@ -296,7 +415,7 @@ export function ChatPanel() {
   );
 }
 
-function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
+function ToolCallBadge({ toolCall }: { toolCall: ChatToolCall }) {
   const toolNames: Record<string, string> = {
     search_library: 'Searching',
     find_similar_tracks: 'Finding similar',
@@ -305,6 +424,12 @@ function ToolCallBadge({ toolCall }: { toolCall: ToolCall }) {
     queue_tracks: 'Queueing',
     control_playback: 'Controlling',
     get_track_details: 'Getting details',
+    get_spotify_status: 'Checking Spotify',
+    get_spotify_favorites: 'Getting favorites',
+    get_unmatched_spotify_favorites: 'Finding unmatched',
+    get_spotify_sync_stats: 'Sync stats',
+    search_bandcamp: 'Searching Bandcamp',
+    recommend_bandcamp_purchases: 'Recommending',
   };
 
   const displayName = toolNames[toolCall.name] || toolCall.name;

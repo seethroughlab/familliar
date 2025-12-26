@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from app.api.deps import DbSession
+from app.api.deps import DbSession, CurrentProfile
 from app.config import settings
 from app.services.llm import LLMService
 
@@ -31,12 +31,13 @@ async def generate_sse_events(
     message: str,
     history: list[dict],
     db,
+    profile_id=None,
 ) -> AsyncIterator[str]:
     """Generate Server-Sent Events for streaming chat response."""
     llm_service = LLMService()
 
     try:
-        async for event in llm_service.chat(message, history, db):
+        async for event in llm_service.chat(message, history, db, profile_id):
             # Format as SSE
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
@@ -49,6 +50,7 @@ async def generate_sse_events(
 async def chat_stream(
     request: ChatRequest,
     db: DbSession,
+    profile: CurrentProfile,
 ) -> StreamingResponse:
     """
     Stream a chat response with tool execution.
@@ -70,9 +72,10 @@ async def chat_stream(
 
     # Convert history to format expected by LLM service
     history = [{"role": msg.role, "content": msg.content} for msg in request.history]
+    profile_id = profile.id if profile else None
 
     return StreamingResponse(
-        generate_sse_events(request.message, history, db),
+        generate_sse_events(request.message, history, db, profile_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -86,6 +89,7 @@ async def chat_stream(
 async def chat(
     request: ChatRequest,
     db: DbSession,
+    profile: CurrentProfile,
 ) -> dict:
     """
     Non-streaming chat endpoint.
@@ -101,13 +105,14 @@ async def chat(
 
     llm_service = LLMService()
     history = [{"role": msg.role, "content": msg.content} for msg in request.history]
+    profile_id = profile.id if profile else None
 
     response_text = ""
     tool_calls = []
     queued_tracks = []
     playback_action = None
 
-    async for event in llm_service.chat(request.message, history, db):
+    async for event in llm_service.chat(request.message, history, db, profile_id):
         if event["type"] == "text":
             response_text += event["content"]
         elif event["type"] == "tool_call":

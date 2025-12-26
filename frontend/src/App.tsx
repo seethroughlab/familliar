@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, MessageSquare, Settings, Zap } from 'lucide-react';
@@ -8,11 +8,13 @@ import { ChatPanel } from './components/Chat';
 import { SettingsPanel } from './components/Settings';
 import { FullPlayer } from './components/FullPlayer';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
+import { OfflineIndicator } from './components/PWA/OfflineIndicator';
 import { SessionPanel } from './components/Sessions';
 import { SmartPlaylistList } from './components/SmartPlaylists';
 import { GuestListener } from './components/Guest';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
+import { initSyncListeners } from './services/syncService';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -33,6 +35,12 @@ function AppContent() {
 
   // Initialize Last.fm scrobbling
   useScrobbling();
+
+  // Initialize offline sync listeners
+  useEffect(() => {
+    const cleanup = initSyncListeners();
+    return cleanup;
+  }, []);
 
   // Listening session (using a simple user ID for now)
   const userId = 'user-' + (localStorage.getItem('familiar-user-id') || (() => {
@@ -174,6 +182,9 @@ function AppContent() {
 
       {/* PWA install prompt */}
       <InstallPrompt />
+
+      {/* Offline indicator */}
+      <OfflineIndicator />
 
       {/* Listening session panel */}
       {showSessionPanel && (

@@ -384,13 +384,33 @@ class SpotifySyncService:
         Matching priority:
         1. ISRC (International Standard Recording Code) - most reliable
         2. Exact artist + title match
-        3. Fuzzy matching (future enhancement)
+        3. Contains match (substring)
+        4. Fuzzy matching with rapidfuzz (threshold 85%)
         """
+        from rapidfuzz import fuzz
+
         # Extract info from Spotify track
         isrc = spotify_track.get("external_ids", {}).get("isrc")
-        track_name = spotify_track.get("name", "").lower()
+        track_name = spotify_track.get("name", "").lower().strip()
         artists = spotify_track.get("artists", [])
-        artist_name = artists[0]["name"].lower() if artists else ""
+        artist_name = artists[0]["name"].lower().strip() if artists else ""
+
+        # Normalize for matching - remove common variations
+        def normalize(s: str) -> str:
+            """Normalize string for matching."""
+            import re
+            # Remove featuring/feat variations
+            s = re.sub(r'\s*[\(\[](feat\.?|ft\.?|featuring)[^\)\]]*[\)\]]', '', s, flags=re.IGNORECASE)
+            # Remove remaster/remix annotations
+            s = re.sub(r'\s*[\(\[][^\)\]]*(?:remaster|remix|version|edit)[^\)\]]*[\)\]]', '', s, flags=re.IGNORECASE)
+            # Normalize apostrophes
+            s = s.replace("'", "'").replace("'", "'").replace("`", "'")
+            # Remove extra whitespace
+            s = ' '.join(s.split())
+            return s.strip()
+
+        normalized_track_name = normalize(track_name)
+        normalized_artist_name = normalize(artist_name)
 
         # 1. Try ISRC match
         if isrc:
@@ -423,6 +443,41 @@ class SpotifySyncService:
             match = result.scalar_one_or_none()
             if match:
                 return match
+
+        # 4. Fuzzy match with rapidfuzz
+        if normalized_track_name and normalized_artist_name:
+            # Get candidate tracks - limit to reasonable set for performance
+            result = await self.db.execute(
+                select(Track)
+                .where(Track.title.isnot(None), Track.artist.isnot(None))
+                .limit(5000)  # Safety limit
+            )
+            candidates = result.scalars().all()
+
+            best_match = None
+            best_score = 0
+            threshold = 85  # Minimum combined score to accept
+
+            for track in candidates:
+                if not track.title or not track.artist:
+                    continue
+
+                local_title = normalize(track.title.lower())
+                local_artist = normalize(track.artist.lower())
+
+                # Calculate fuzzy scores
+                title_score = fuzz.ratio(normalized_track_name, local_title)
+                artist_score = fuzz.ratio(normalized_artist_name, local_artist)
+
+                # Combined score with weights (title matters more)
+                combined = (title_score * 0.6) + (artist_score * 0.4)
+
+                if combined >= threshold and combined > best_score:
+                    best_score = combined
+                    best_match = track
+
+            if best_match:
+                return best_match
 
         return None
 

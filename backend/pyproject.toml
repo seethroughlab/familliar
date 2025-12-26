@@ -33,6 +33,7 @@ dependencies = [
     "spotipy>=2.25.2",
     "bandcamp-api>=0.2.3",
     "beautifulsoup4>=4.14.3",
+    "rapidfuzz>=3.0.0",
 ]
 
 [project.optional-dependencies]
