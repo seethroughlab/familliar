@@ -1,7 +1,7 @@
 # Familiar
 
-[![CI](https://github.com/jeffcrouse/familliar/actions/workflows/ci.yml/badge.svg)](https://github.com/jeffcrouse/familliar/actions/workflows/ci.yml)
-[![Release](https://github.com/jeffcrouse/familliar/actions/workflows/release.yml/badge.svg)](https://github.com/jeffcrouse/familliar/actions/workflows/release.yml)
+[![CI](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml)
+[![Release](https://github.com/seethroughlab/familliar/actions/workflows/release.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An LLM-powered local music player that combines library management with AI-powered discovery.
@@ -23,7 +23,7 @@ The easiest way to run Familiar is with Docker:
 
 ```bash
 # Clone the repository
-git clone https://github.com/jeffcrouse/familliar.git
+git clone https://github.com/seethroughlab/familliar.git
 cd familliar
 
 # Copy and configure environment
@@ -60,7 +60,7 @@ Access the web UI at http://localhost:8000
 
 1. **Pull the image:**
    ```bash
-   docker pull ghcr.io/jeffcrouse/familliar:latest
+   docker pull ghcr.io/seethroughlab/familliar:latest
    ```
 
 2. **Create a directory for Familiar:**
@@ -70,8 +70,8 @@ Access the web UI at http://localhost:8000
 
 3. **Download the compose file:**
    ```bash
-   curl -O https://raw.githubusercontent.com/jeffcrouse/familliar/main/docker/docker-compose.prod.yml
-   curl -O https://raw.githubusercontent.com/jeffcrouse/familliar/main/docker/init-pgvector.sql
+   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/main/docker/docker-compose.prod.yml
+   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/main/docker/init-pgvector.sql
    ```
 
 4. **Create environment file:**
@@ -165,7 +165,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
          retries: 5
 
      api:
-       image: ghcr.io/jeffcrouse/familliar:latest
+       image: ghcr.io/seethroughlab/familliar:latest
        container_name: familiar-api
        restart: unless-stopped
        ports:
@@ -185,7 +185,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
            condition: service_healthy
 
      worker:
-       image: ghcr.io/jeffcrouse/familliar:latest
+       image: ghcr.io/seethroughlab/familliar:latest
        container_name: familiar-worker
        restart: unless-stopped
        command: celery -A app.workers.celery_app worker --loglevel=info
@@ -225,7 +225,7 @@ To update to a new version:
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/jeffcrouse/familliar:latest
+docker pull ghcr.io/seethroughlab/familliar:latest
 
 # Restart the containers
 cd /path/to/familiar

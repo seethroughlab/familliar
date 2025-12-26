@@ -45,7 +45,7 @@ services:
       - familiar-network
 
   api:
-    image: ghcr.io/jeffcrouse/familliar:${FAMILIAR_VERSION:-latest}
+    image: ghcr.io/seethroughlab/familliar:${FAMILIAR_VERSION:-latest}
     container_name: familiar-api
     restart: unless-stopped
     ports:
@@ -83,7 +83,7 @@ services:
       - familiar-network
 
   worker:
-    image: ghcr.io/jeffcrouse/familliar:${FAMILIAR_VERSION:-latest}
+    image: ghcr.io/seethroughlab/familliar:${FAMILIAR_VERSION:-latest}
     container_name: familiar-worker
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info
