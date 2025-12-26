@@ -204,7 +204,7 @@ export function ChatPanel() {
         });
         break;
 
-      case 'tool_call':
+      case 'tool_call': {
         const toolCall: ChatToolCall = {
           name: event.name as string,
           input: event.input as Record<string, unknown>,
@@ -222,6 +222,7 @@ export function ChatPanel() {
           return { ...prev, messages };
         });
         break;
+      }
 
       case 'tool_result':
         await chatService.updateToolCallInLastMessage(sessionId, event.name as string, {
@@ -244,7 +245,7 @@ export function ChatPanel() {
         });
         break;
 
-      case 'queue':
+      case 'queue': {
         const tracks = (event.tracks as Track[]).map((t) => ({
           id: t.id,
           title: t.title,
@@ -265,8 +266,9 @@ export function ChatPanel() {
           setQueue(tracks, 0);
         }
         break;
+      }
 
-      case 'playback':
+      case 'playback': {
         const action = event.action as string;
         const store = usePlayerStore.getState();
         if (action === 'play') store.setIsPlaying(true);
@@ -274,6 +276,7 @@ export function ChatPanel() {
         else if (action === 'next') store.playNext();
         else if (action === 'previous') store.playPrevious();
         break;
+      }
     }
   };
 

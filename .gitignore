@@ -74,3 +74,4 @@ logs/
 # Secrets
 *.pem
 *.key
+job-logs-*.txt

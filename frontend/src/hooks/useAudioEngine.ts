@@ -175,7 +175,7 @@ export function useAudioEngine() {
     if (!currentTrack) {
       // Stop everything
       if (currentSourceRef.current) {
-        try { currentSourceRef.current.stop(); } catch {}
+        try { currentSourceRef.current.stop(); } catch { /* Already stopped */ }
         currentSourceRef.current = null;
       }
       if (fallbackAudioRef.current) {
@@ -299,7 +299,7 @@ export function useAudioEngine() {
               playbackRate: 1,
               position: currentTime
             });
-          } catch {}
+          } catch { /* mediaSession not fully supported */ }
         }
 
         // Check if we should start crossfade to next track
@@ -388,7 +388,7 @@ export function useAudioEngine() {
     // Swap after crossfade
     setTimeout(() => {
       if (currentSourceRef.current) {
-        try { currentSourceRef.current.stop(); } catch {}
+        try { currentSourceRef.current.stop(); } catch { /* Already stopped */ }
       }
       currentSourceRef.current = nextSourceRef.current;
       nextSourceRef.current = null;
