@@ -70,8 +70,8 @@ Access the web UI at http://localhost:8000
 
 3. **Download the compose file:**
    ```bash
-   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/main/docker/docker-compose.prod.yml
-   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/main/docker/init-pgvector.sql
+   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/master/docker/docker-compose.prod.yml
+   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/master/docker/init-pgvector.sql
    ```
 
 4. **Create environment file:**
