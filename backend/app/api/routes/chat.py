@@ -37,10 +37,10 @@ async def generate_sse_events(
     profile_id: UUID | None = None,
 ) -> AsyncIterator[str]:
     """Generate Server-Sent Events for streaming chat response."""
-    llm_service = LLMService()
+    llm_service = LLMService()  # type: ignore[no-untyped-call]
 
     try:
-        async for event in llm_service.chat(message, history, db, profile_id):
+        async for event in llm_service.chat(message, history, db, profile_id):  # type: ignore[no-untyped-call]
             # Format as SSE
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
@@ -69,7 +69,7 @@ async def chat_stream(
     """
     # Check for API key in app_settings (user-configured) or env settings
     app_settings = get_app_settings_service().get()
-    has_api_key = app_settings.anthropic_api_key or settings.anthropic_api_key
+    has_api_key = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
 
     # If using Ollama, we don't need an Anthropic key
     if app_settings.llm_provider == "ollama":
@@ -110,7 +110,7 @@ async def chat(
     """
     # Check for API key in app_settings (user-configured) or env settings
     app_settings = get_app_settings_service().get()
-    has_api_key = app_settings.anthropic_api_key or settings.anthropic_api_key
+    has_api_key = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
 
     # If using Ollama, we don't need an Anthropic key
     if app_settings.llm_provider == "ollama":
@@ -122,7 +122,7 @@ async def chat(
             detail="Anthropic API key not configured. Add it in Settings > AI Assistant."
         )
 
-    llm_service = LLMService()
+    llm_service = LLMService()  # type: ignore[no-untyped-call]
     history = [{"role": msg.role, "content": msg.content} for msg in request.history]
     profile_id = profile.id if profile else None
 
@@ -131,7 +131,7 @@ async def chat(
     queued_tracks = []
     playback_action = None
 
-    async for event in llm_service.chat(request.message, history, db, profile_id):
+    async for event in llm_service.chat(request.message, history, db, profile_id):  # type: ignore[no-untyped-call]
         if event["type"] == "text":
             response_text += event["content"]
         elif event["type"] == "tool_call":

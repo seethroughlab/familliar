@@ -1,5 +1,7 @@
 """Health check endpoints."""
 
+from typing import Any
+
 from fastapi import APIRouter
 from sqlalchemy import text
 
@@ -9,13 +11,13 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health_check() -> dict:
+async def health_check() -> dict[str, Any]:
     """Basic liveness check."""
     return {"status": "healthy"}
 
 
 @router.get("/health/db")
-async def db_health_check(db: DbSession) -> dict:
+async def db_health_check(db: DbSession) -> dict[str, Any]:
     """Database connectivity check."""
     try:
         await db.execute(text("SELECT 1"))

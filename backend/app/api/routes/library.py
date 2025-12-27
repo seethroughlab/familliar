@@ -1,6 +1,7 @@
 """Library management endpoints."""
 
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel

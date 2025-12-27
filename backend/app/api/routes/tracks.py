@@ -1,6 +1,6 @@
 """Track endpoints."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -294,7 +294,7 @@ async def get_track_artwork(
             raise HTTPException(status_code=404, detail="No artwork available")
 
     # Stream the artwork file
-    def stream_artwork() -> AsyncIterator[bytes]:
+    def stream_artwork() -> Iterator[bytes]:
         with open(artwork_path, "rb") as f:
             yield f.read()
 

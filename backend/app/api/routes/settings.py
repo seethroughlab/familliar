@@ -1,5 +1,7 @@
 """App settings endpoints for user-configurable settings."""
 
+from typing import Any
+
 from fastapi import APIRouter
 from pydantic import BaseModel
 
@@ -71,7 +73,7 @@ async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
 
 
 @router.delete("/spotify")
-async def clear_spotify_settings() -> dict:
+async def clear_spotify_settings() -> dict[str, Any]:
     """Clear Spotify credentials."""
     service = get_app_settings_service()
     service.update(spotify_client_id="", spotify_client_secret="")
@@ -79,7 +81,7 @@ async def clear_spotify_settings() -> dict:
 
 
 @router.delete("/lastfm")
-async def clear_lastfm_settings() -> dict:
+async def clear_lastfm_settings() -> dict[str, Any]:
     """Clear Last.fm credentials."""
     service = get_app_settings_service()
     service.update(lastfm_api_key="", lastfm_api_secret="")
