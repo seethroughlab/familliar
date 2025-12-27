@@ -91,8 +91,9 @@ def _extract_metadata_sync(file_path: Path) -> dict:
 class LibraryScanner:
     """Scans music library directories for audio files."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, scan_state=None):
         self.db = db
+        self.scan_state = scan_state  # Optional ScanState for progress updates
 
     async def scan(self, library_path: Path, full_scan: bool = False) -> dict:
         """Scan library for new, changed, or deleted files.
@@ -138,6 +139,17 @@ class LibraryScanner:
             path_str = str(file_path)
             processed += 1
 
+            # Update progress state
+            if self.scan_state and processed % 10 == 0:
+                self.scan_state.set_processing(
+                    processed=processed,
+                    total=len(found_files),
+                    new=results["new"],
+                    updated=results["updated"],
+                    unchanged=results["unchanged"],
+                    current=file_path.name,
+                )
+
             # Log progress every 100 files
             if processed % 100 == 0:
                 logger.info(f"Progress: {processed}/{len(found_files)} files ({results['new']} new, {results['updated']} updated, {results['unchanged']} unchanged)")
@@ -177,11 +189,18 @@ class LibraryScanner:
 
         if deleted_paths:
             logger.info(f"Removing {len(deleted_paths)} deleted files from database...")
+            if self.scan_state:
+                self.scan_state.set_cleanup(len(deleted_paths))
+
         for path_str in deleted_paths:
             track = existing_paths[path_str]
             logger.info(f"DELETED: {Path(path_str).name}")
             await self.db.delete(track)
             results["deleted"] += 1
+
+        # Final progress update
+        if self.scan_state:
+            self.scan_state.progress.deleted_tracks = results["deleted"]
 
         await self.db.commit()
 

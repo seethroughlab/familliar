@@ -355,6 +355,38 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 2. Create a new application
 3. Copy API Key and API Secret
 
+### Tailscale HTTPS
+
+If you access Familiar over [Tailscale](https://tailscale.com/), you can enable HTTPS for full PWA support (install prompts, background sync, etc.).
+
+1. **Enable HTTPS certificates** in your Tailscale admin console:
+   - Go to [DNS settings](https://login.tailscale.com/admin/dns)
+   - Enable "HTTPS Certificates"
+
+2. **Use `tailscale serve`** on your server (easiest method):
+   ```bash
+   # Proxy HTTPS to Familiar on port 8000
+   tailscale serve --bg https / http://localhost:8000
+   ```
+
+3. **Access via HTTPS:**
+   ```
+   https://your-server.<tailnet-name>.ts.net
+   ```
+
+This automatically provisions a Let's Encrypt certificate and handles renewal.
+
+**Alternative: Manual certificates**
+
+If you need cert files for nginx/caddy:
+```bash
+tailscale cert your-server.<tailnet-name>.ts.net
+```
+
+This creates `.crt` and `.key` files (you're responsible for renewal every 90 days).
+
+See [Tailscale HTTPS docs](https://tailscale.com/kb/1153/enabling-https) for more details.
+
 ## Project Structure
 
 ```

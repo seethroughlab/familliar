@@ -9,10 +9,11 @@ interface BeforeInstallPromptEvent extends Event {
 type InstallState =
   | 'checking'
   | 'installed'
-  | 'can-install'      // Chrome/Edge with beforeinstallprompt
-  | 'ios-safari'       // iOS Safari - needs Add to Home Screen
-  | 'macos-safari'     // macOS Safari - needs Add to Dock
-  | 'unsupported';     // Firefox or other browsers
+  | 'can-install'       // Chrome/Edge with beforeinstallprompt
+  | 'ios-safari'        // iOS Safari - needs Add to Home Screen
+  | 'macos-safari'      // macOS Safari - needs Add to Dock
+  | 'needs-https'       // Chrome/Edge but not HTTPS
+  | 'unsupported';      // Firefox or other browsers
 
 function detectInstallState(hasPromptEvent: boolean): InstallState {
   // Check if already installed as PWA
@@ -32,6 +33,10 @@ function detectInstallState(hasPromptEvent: boolean): InstallState {
   const isIOS = /iphone|ipad|ipod/.test(ua);
   const isMacOS = /macintosh/.test(ua) && navigator.maxTouchPoints === 0;
   const isSafari = /safari/.test(ua) && !/chrome|chromium|edg/.test(ua);
+  const isChrome = /chrome|chromium/.test(ua) && !/edg/.test(ua);
+  const isEdge = /edg/.test(ua);
+  const isHTTPS = window.location.protocol === 'https:';
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
   if (isIOS && isSafari) {
     return 'ios-safari';
@@ -39,6 +44,11 @@ function detectInstallState(hasPromptEvent: boolean): InstallState {
 
   if (isMacOS && isSafari) {
     return 'macos-safari';
+  }
+
+  // Chrome/Edge need HTTPS (except localhost) to show install prompt
+  if ((isChrome || isEdge) && !isHTTPS && !isLocalhost) {
+    return 'needs-https';
   }
 
   // Firefox or other browsers that don't support PWA install
@@ -211,6 +221,14 @@ function InstallInstructions({ state }: { state: InstallState }) {
         </div>
       );
 
+    case 'needs-https':
+      return (
+        <div className="text-xs text-zinc-400 mt-1">
+          <p>PWA installation requires HTTPS.</p>
+          <p className="mt-1">Access via HTTPS or set up a reverse proxy with SSL.</p>
+        </div>
+      );
+
     case 'unsupported':
       return (
         <div className="text-xs text-zinc-400 mt-1">
@@ -315,6 +333,16 @@ export function InstallStatus() {
             <li>Click <span className="text-white">File</span> in the menu bar</li>
             <li>Click <span className="text-white">"Add to Dock"</span></li>
           </ol>
+        </div>
+      ) : installState === 'needs-https' ? (
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400">
+            PWA installation requires HTTPS.
+          </p>
+          <p className="text-sm text-zinc-500">
+            To install as an app, access Familiar via HTTPS. You can set up a reverse proxy
+            (like Caddy or nginx) with SSL, or use a service like Tailscale for automatic HTTPS.
+          </p>
         </div>
       ) : (
         <div className="space-y-2">

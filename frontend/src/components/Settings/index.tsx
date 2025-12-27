@@ -2,6 +2,7 @@ import { SpotifySettings } from './SpotifySettings';
 import { LastfmSettings } from './LastfmSettings';
 import { OfflineSettings } from './OfflineSettings';
 import { LibraryOrganizer } from './LibraryOrganizer';
+import { LibraryScan } from './LibraryScan';
 import { ThemeSettings } from './ThemeSettings';
 import { LLMSettings } from './LLMSettings';
 import { InstallStatus } from '../PWA/InstallPrompt';
@@ -66,6 +67,7 @@ export function SettingsPanel() {
             Library Management
           </h3>
           <div className="space-y-4">
+            <LibraryScan />
             <LibraryOrganizer />
           </div>
         </section>

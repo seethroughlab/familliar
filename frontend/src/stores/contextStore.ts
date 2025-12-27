@@ -1,5 +1,22 @@
 import { create } from 'zustand';
 
+// Generate UUID that works in non-secure contexts (HTTP)
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch {
+      // Fallback for non-secure contexts
+    }
+  }
+  // Fallback UUID generator
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export interface ContextTrack {
   id: string;
   title: string;
@@ -65,23 +82,21 @@ interface ContextState {
   clearItems: () => void;
 }
 
-export const useContextStore = create<ContextState>((set) => ({
+export const useContextStore = create<ContextState>((set, get) => ({
   items: [],
 
   addItem: (item) => {
-    console.log('[ContextStore] addItem called:', item.type, item.title);
-    set((state) => {
-      const newItems = [
-        {
-          ...item,
-          id: crypto.randomUUID(),
-          timestamp: new Date(),
-        },
-        ...state.items,
-      ].slice(0, 10);
-      console.log('[ContextStore] New items count:', newItems.length);
-      return { items: newItems };
-    });
+    console.log('[ContextStore] addItem called:', item.type, item.title, 'current items:', get().items.length);
+    const newItem: ContextItem = {
+      ...item,
+      id: generateId(),
+      timestamp: new Date(),
+    };
+    const currentItems = get().items;
+    const newItems = [newItem, ...currentItems].slice(0, 10);
+    console.log('[ContextStore] Setting new items count:', newItems.length);
+    set({ items: newItems });
+    console.log('[ContextStore] After set, items:', get().items.length);
   },
 
   clearItems: () => set({ items: [] }),

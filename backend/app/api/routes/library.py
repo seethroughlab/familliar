@@ -28,17 +28,90 @@ class LibraryStats(BaseModel):
     pending_analysis: int
 
 
+class ScanProgress(BaseModel):
+    """Detailed scan progress."""
+
+    phase: str  # "discovery", "processing", "cleanup", "complete"
+    files_discovered: int = 0
+    files_processed: int = 0
+    files_total: int = 0
+    new_tracks: int = 0
+    updated_tracks: int = 0
+    deleted_tracks: int = 0
+    unchanged_tracks: int = 0
+    current_file: str | None = None
+    started_at: str | None = None
+    errors: list[str] = []
+
+
 class ScanStatus(BaseModel):
     """Scan status response."""
 
-    status: str
+    status: str  # "idle", "running", "completed", "error"
     message: str
-    files_found: int | None = None
-    files_queued: int | None = None
+    progress: ScanProgress | None = None
 
 
-# Simple in-memory scan state (replace with Redis in production)
-_scan_state: dict = {"status": "idle", "message": "No scan running"}
+# Shared scan state - import this in scanner.py to update progress
+class ScanState:
+    def __init__(self):
+        self.status = "idle"
+        self.message = "No scan running"
+        self.progress = ScanProgress(phase="idle")
+        self.started_at: str | None = None
+
+    def start(self):
+        from datetime import datetime
+        self.status = "running"
+        self.message = "Scan starting..."
+        self.started_at = datetime.now().isoformat()
+        self.progress = ScanProgress(phase="discovery", started_at=self.started_at)
+
+    def set_discovery(self, dirs_scanned: int, files_found: int):
+        self.progress.phase = "discovery"
+        self.progress.files_discovered = files_found
+        self.message = f"Discovering files... ({dirs_scanned} directories, {files_found} files found)"
+
+    def set_processing(self, processed: int, total: int, new: int, updated: int, unchanged: int, current: str | None = None):
+        self.progress.phase = "processing"
+        self.progress.files_processed = processed
+        self.progress.files_total = total
+        self.progress.new_tracks = new
+        self.progress.updated_tracks = updated
+        self.progress.unchanged_tracks = unchanged
+        self.progress.current_file = current
+        pct = int(processed / total * 100) if total > 0 else 0
+        self.message = f"Processing files... {processed}/{total} ({pct}%)"
+
+    def set_cleanup(self, deleted: int):
+        self.progress.phase = "cleanup"
+        self.progress.deleted_tracks = deleted
+        self.message = f"Cleanup: removed {deleted} deleted files"
+
+    def complete(self):
+        self.status = "completed"
+        self.progress.phase = "complete"
+        p = self.progress
+        self.message = f"Complete: {p.new_tracks} new, {p.updated_tracks} updated, {p.deleted_tracks} deleted, {p.unchanged_tracks} unchanged"
+
+    def error(self, msg: str):
+        self.status = "error"
+        self.message = msg
+        self.progress.errors.append(msg)
+
+    def add_error(self, msg: str):
+        self.progress.errors.append(msg)
+
+    def to_response(self) -> ScanStatus:
+        return ScanStatus(
+            status=self.status,
+            message=self.message,
+            progress=self.progress if self.status != "idle" else None,
+        )
+
+
+# Global scan state
+scan_state = ScanState()
 
 
 @router.get("/stats", response_model=LibraryStats)
@@ -92,38 +165,27 @@ async def start_scan(
     Args:
         full: If True, rescan all files even if unchanged. Default False (incremental).
     """
-    global _scan_state
-
-    if _scan_state["status"] == "running":
+    if scan_state.status == "running":
         return ScanStatus(
             status="already_running",
             message="A scan is already in progress",
+            progress=scan_state.progress,
         )
 
-    _scan_state = {"status": "running", "message": "Scan starting..."}
+    scan_state.start()
 
     async def run_scan() -> None:
-        global _scan_state
         try:
-            scanner = LibraryScanner(db)
-            total_results = {"total": 0, "new": 0, "updated": 0, "deleted": 0, "queued": 0}
+            scanner = LibraryScanner(db, scan_state)
 
             # Scan all configured library paths
             for library_path in settings.music_library_paths:
                 if library_path.exists():
-                    _scan_state["message"] = f"Scanning {library_path.name}..."
-                    result = await scanner.scan(library_path, full_scan=full)
-                    for key in total_results:
-                        total_results[key] += result.get(key, 0)
+                    await scanner.scan(library_path, full_scan=full)
 
-            _scan_state = {
-                "status": "completed",
-                "message": f"Scan complete: {total_results['new']} new, {total_results['updated']} updated, {total_results['deleted']} deleted",
-                "files_found": total_results["total"],
-                "files_queued": total_results["queued"],
-            }
+            scan_state.complete()
         except Exception as e:
-            _scan_state = {"status": "error", "message": str(e)}
+            scan_state.error(str(e))
 
     background_tasks.add_task(run_scan)
 
@@ -135,8 +197,8 @@ async def start_scan(
 
 @router.get("/scan/status", response_model=ScanStatus)
 async def get_scan_status() -> ScanStatus:
-    """Get current scan status."""
-    return ScanStatus(**_scan_state)
+    """Get current scan status with detailed progress."""
+    return scan_state.to_response()
 
 
 class ImportResult(BaseModel):

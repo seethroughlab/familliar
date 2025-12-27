@@ -7,8 +7,8 @@
 [x] The Context window never shows anything. 
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [x] I get an error when I try to save anthopic API key: "Failed to save settings"
-[ ] Is there a way to tell if a scan is currently running? I'd like to be able to access fairly detailed info about the status of scans.
+[x] Is there a way to tell if a scan is currently running in the UI? I'd like to be able to access fairly detailed info about the status of scans from the UI.
 [ ] Add a note to the "Auto-organization" settings for users who have more than one music application - they might not want to enable auto-organization if it's going to break other apps that have stored paths to audio files. Actually, while we're at it, if a database reecord becomes "orphaned" (file no longer where familliar thinks it is), we should have a search feature that tries to find it before elevating it to an error. Another app might have moved it. 
 [ ] Is 8000 the best choice of port for familliar? It seems like we should use ports that are less likely to be already used by other services. 
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
-[ ] DO we have a "favorites" list, and play-count? These will be useful for smart playlists
+[ ] DO we have a "favorites" flag for tracks, and play-count? These will be useful for smart playlists
