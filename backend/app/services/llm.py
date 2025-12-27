@@ -85,6 +85,20 @@ MUSIC_TOOLS = [
         }
     },
     {
+        "name": "get_library_genres",
+        "description": "Get all genres in the library with track counts. IMPORTANT: Use this first when user asks for mood-based music (e.g., 'sleepy', 'chill', 'upbeat') to find what actual genre names match their request.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max genres to return (default 50)",
+                    "default": 50
+                }
+            }
+        }
+    },
+    {
         "name": "queue_tracks",
         "description": "Add tracks to the playback queue. Use after finding tracks the user wants to play.",
         "input_schema": {
@@ -223,11 +237,12 @@ SYSTEM_PROMPT = """You are Familiar, an AI music assistant helping users discove
 You have access to tools that let you search the library, find similar tracks, filter by audio features, and control playback. You can also access the user's Spotify favorites if they've connected their account.
 
 Guidelines:
+- IMPORTANT: For mood-based requests (e.g., "sleepy music", "something chill", "upbeat"), first call get_library_genres to see what genres are available, then search for matching genre names
 - When the user asks for music, use tools to search and find matching tracks, then queue them
+- Search by genre names that exist in their library (e.g., "ambient", "electronic", "jazz"), not mood words like "sleepy" or "relaxing"
 - Explain your choices briefly—why these tracks fit what they asked for
 - If you can't find exactly what they want, suggest alternatives
 - You can combine multiple searches: find similar to X, then filter by energy
-- Consider context: "something chill" means low energy, "workout music" means high energy/BPM
 - Be conversational but efficient—the user wants to listen to music, not read essays
 - When you queue tracks, confirm what you've queued
 
@@ -270,6 +285,8 @@ class ToolExecutor:
             return await self._filter_tracks_by_features(**tool_input)
         elif tool_name == "get_library_stats":
             return await self._get_library_stats()
+        elif tool_name == "get_library_genres":
+            return await self._get_library_genres(**tool_input)
         elif tool_name == "queue_tracks":
             return await self._queue_tracks(**tool_input)
         elif tool_name == "control_playback":
@@ -465,6 +482,24 @@ class ToolExecutor:
             "total_artists": total_artists,
             "total_albums": total_albums,
             "top_genres": top_genres
+        }
+
+    async def _get_library_genres(self, limit: int = 50) -> dict:
+        """Get all genres in the library with track counts."""
+        genres_result = await self.db.execute(
+            select(Track.genre, func.count(Track.id).label("count"))
+            .where(Track.genre.isnot(None))
+            .where(Track.genre != "")
+            .group_by(Track.genre)
+            .order_by(text("count DESC"))
+            .limit(limit)
+        )
+        genres = [{"genre": r[0], "count": r[1]} for r in genres_result.all()]
+
+        return {
+            "genres": genres,
+            "total": len(genres),
+            "hint": "Use these genre names in search_library to find tracks. For mood-based requests, try genres like 'ambient', 'electronic', 'jazz', 'classical' etc."
         }
 
     async def _queue_tracks(self, track_ids: list[str], clear_existing: bool = False) -> dict:

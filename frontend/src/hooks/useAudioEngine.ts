@@ -212,7 +212,6 @@ export function useAudioEngine() {
       if (offlineBlob) {
         audioUrl = createOfflineTrackUrl(offlineBlob);
         currentOfflineUrlRef.current = audioUrl;
-        console.log('Playing from offline cache:', currentTrack.title);
       } else {
         audioUrl = tracksApi.getStreamUrl(currentTrack.id);
       }
@@ -222,12 +221,22 @@ export function useAudioEngine() {
       useFallbackRef.current = true;
 
       if (fallbackAudioRef.current) {
-        fallbackAudioRef.current.src = audioUrl;
-        fallbackAudioRef.current.load();
+        const audio = fallbackAudioRef.current;
+        audio.src = audioUrl;
+        audio.load();
 
-        if (isPlaying) {
-          fallbackAudioRef.current.play().catch(console.error);
-        }
+        // Wait for audio to be ready before playing
+        const playWhenReady = () => {
+          if (isPlaying) {
+            audio.play().catch((err) => {
+              if (err.name !== 'AbortError') {
+                console.error('[AudioEngine] Play failed after load:', err);
+              }
+            });
+          }
+          audio.removeEventListener('canplay', playWhenReady);
+        };
+        audio.addEventListener('canplay', playWhenReady);
       }
 
       // Also preload buffer for crossfade capability
@@ -258,10 +267,20 @@ export function useAudioEngine() {
         audioContextRef.current.resume();
       }
 
-      audio.play().catch((err) => {
-        console.error('Play failed:', err);
-        setIsPlaying(false);
-      });
+      // Only try to play if we have a valid source loaded
+      // Check that src is set and not just the page URL (empty src defaults to current page)
+      const hasValidSource = audio.src && audio.src !== window.location.href && !audio.src.endsWith('/');
+
+      if (hasValidSource) {
+        audio.play().catch((err) => {
+          // Ignore AbortError - it's expected when source changes during play
+          if (err.name !== 'AbortError') {
+            console.error('Play failed:', err);
+            setIsPlaying(false);
+          }
+        });
+      }
+      // If no valid source yet, the track loading effect will call play() when ready
 
       // Update media session playback state
       if ('mediaSession' in navigator) {

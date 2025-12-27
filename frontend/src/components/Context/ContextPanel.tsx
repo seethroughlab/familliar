@@ -7,6 +7,9 @@ export function ContextPanel() {
   const items = useContextStore((state) => state.items);
   const clearItems = useContextStore((state) => state.clearItems);
 
+  // Debug: Log when component renders and what items it sees
+  console.log('[ContextPanel] Rendering with', items.length, 'items');
+
   if (items.length === 0) {
     return (
       <div className="px-4 py-6 text-zinc-500 text-center">

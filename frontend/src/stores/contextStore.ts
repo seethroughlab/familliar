@@ -68,17 +68,21 @@ interface ContextState {
 export const useContextStore = create<ContextState>((set) => ({
   items: [],
 
-  addItem: (item) =>
-    set((state) => ({
-      items: [
+  addItem: (item) => {
+    console.log('[ContextStore] addItem called:', item.type, item.title);
+    set((state) => {
+      const newItems = [
         {
           ...item,
           id: crypto.randomUUID(),
           timestamp: new Date(),
         },
         ...state.items,
-      ].slice(0, 10), // Keep last 10 items
-    })),
+      ].slice(0, 10);
+      console.log('[ContextStore] New items count:', newItems.length);
+      return { items: newItems };
+    });
+  },
 
   clearItems: () => set({ items: [] }),
 }));

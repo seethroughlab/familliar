@@ -57,6 +57,7 @@ FROM python-base AS production
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     ffmpeg \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python virtual environment from deps stage
@@ -68,12 +69,16 @@ COPY backend/app ./app
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./static
 
-# Create non-root user
+# Create non-root user and directories
 RUN useradd --create-home --shell /bin/bash familiar \
-    && mkdir -p /data/music /data/art /data/videos \
+    && mkdir -p /data/music /data/art /data/videos /app/data \
     && chown -R familiar:familiar /app /data
 
-USER familiar
+# Copy entrypoint script
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Ensure the virtual environment is in PATH
 ENV PATH="/app/.venv/bin:$PATH"
