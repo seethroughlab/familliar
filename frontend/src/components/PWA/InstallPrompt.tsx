@@ -33,13 +33,23 @@ export function InstallPrompt() {
   }, []);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) return;
+    if (!deferredPrompt) {
+      console.error('Install failed: deferredPrompt is null');
+      return;
+    }
 
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
+    try {
+      console.log('Calling deferredPrompt.prompt()...');
+      await deferredPrompt.prompt();
+      console.log('Waiting for user choice...');
+      const { outcome } = await deferredPrompt.userChoice;
+      console.log('User choice:', outcome);
 
-    if (outcome === 'accepted') {
-      setShowPrompt(false);
+      if (outcome === 'accepted') {
+        setShowPrompt(false);
+      }
+    } catch (err) {
+      console.error('Install error:', err);
     }
     setDeferredPrompt(null);
   };

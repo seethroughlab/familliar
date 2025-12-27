@@ -47,6 +47,7 @@ services:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
       - art_data:/data/art
       - videos_data:/data/videos
+      - app_data:/app/data  # Persists settings.json
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
@@ -106,6 +107,7 @@ volumes:
   redis_data:
   art_data:
   videos_data:
+  app_data:  # Persists settings.json
 
 networks:
   familiar-network:

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, DbSession
 from app.config import settings
+from app.services.app_settings import get_app_settings_service
 from app.services.llm import LLMService
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -66,10 +67,18 @@ async def chat_stream(
     - done: Stream complete
     - error: Error occurred
     """
-    if not settings.anthropic_api_key:
+    # Check for API key in app_settings (user-configured) or env settings
+    app_settings = get_app_settings_service().get()
+    has_api_key = app_settings.anthropic_api_key or settings.anthropic_api_key
+
+    # If using Ollama, we don't need an Anthropic key
+    if app_settings.llm_provider == "ollama":
+        has_api_key = True
+
+    if not has_api_key:
         raise HTTPException(
             status_code=503,
-            detail="Anthropic API key not configured"
+            detail="Anthropic API key not configured. Add it in Settings > AI Assistant."
         )
 
     # Convert history to format expected by LLM service
@@ -99,10 +108,18 @@ async def chat(
     Returns the complete response after all tool calls are processed.
     Useful for simpler integrations that don't need streaming.
     """
-    if not settings.anthropic_api_key:
+    # Check for API key in app_settings (user-configured) or env settings
+    app_settings = get_app_settings_service().get()
+    has_api_key = app_settings.anthropic_api_key or settings.anthropic_api_key
+
+    # If using Ollama, we don't need an Anthropic key
+    if app_settings.llm_provider == "ollama":
+        has_api_key = True
+
+    if not has_api_key:
         raise HTTPException(
             status_code=503,
-            detail="Anthropic API key not configured"
+            detail="Anthropic API key not configured. Add it in Settings > AI Assistant."
         )
 
     llm_service = LLMService()
