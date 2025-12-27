@@ -13,6 +13,7 @@ type InstallState =
   | 'ios-safari'        // iOS Safari - needs Add to Home Screen
   | 'macos-safari'      // macOS Safari - needs Add to Dock
   | 'needs-https'       // Chrome/Edge but not HTTPS
+  | 'waiting'           // Chrome/Edge on HTTPS, waiting for beforeinstallprompt
   | 'unsupported';      // Firefox or other browsers
 
 function detectInstallState(hasPromptEvent: boolean): InstallState {
@@ -49,6 +50,11 @@ function detectInstallState(hasPromptEvent: boolean): InstallState {
   // Chrome/Edge need HTTPS (except localhost) to show install prompt
   if ((isChrome || isEdge) && !isHTTPS && !isLocalhost) {
     return 'needs-https';
+  }
+
+  // Chrome/Edge on HTTPS - waiting for beforeinstallprompt event
+  if ((isChrome || isEdge) && (isHTTPS || isLocalhost)) {
+    return 'waiting';
   }
 
   // Firefox or other browsers that don't support PWA install
@@ -125,8 +131,8 @@ export function InstallPrompt() {
     sessionStorage.setItem('pwa-prompt-dismissed', 'true');
   };
 
-  // Don't show if checking, dismissed, or already installed
-  if (!showPrompt || dismissed || installState === 'checking' || installState === 'installed') {
+  // Don't show if checking, dismissed, already installed, or waiting for Chrome prompt
+  if (!showPrompt || dismissed || installState === 'checking' || installState === 'installed' || installState === 'waiting') {
     return null;
   }
 
@@ -342,6 +348,13 @@ export function InstallStatus() {
           <p className="text-sm text-zinc-500">
             To install as an app, access Familiar via HTTPS. You can set up a reverse proxy
             (like Caddy or nginx) with SSL, or use a service like Tailscale for automatic HTTPS.
+          </p>
+        </div>
+      ) : installState === 'waiting' ? (
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400">
+            Ready to install. Look for the install icon in your browser's address bar,
+            or use the browser menu to install Familiar as an app.
           </p>
         </div>
       ) : (

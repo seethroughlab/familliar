@@ -11,3 +11,4 @@ import './AlbumKaleidoscope';
 import './ColorFlow';
 import './TypographyWave';
 import './LyricPulse';
+import './LyricStorm';

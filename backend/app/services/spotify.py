@@ -28,8 +28,8 @@ class SpotifyService:
 
     def __init__(self) -> None:
         # Redirect to backend OAuth callback endpoint
-        # Using 127.0.0.1 instead of localhost for Spotify's security requirements
-        self.redirect_uri = "http://127.0.0.1:8000/api/v1/spotify/callback"
+        # Configurable via SPOTIFY_REDIRECT_URI env var for custom deployments
+        self.redirect_uri = settings.spotify_redirect_uri
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
         """Get Spotify credentials from app settings or env fallback."""

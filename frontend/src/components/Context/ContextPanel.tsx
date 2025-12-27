@@ -118,7 +118,7 @@ function TrackResults({ tracks }: { tracks: ContextTrack[] }) {
       >
         Play all ({tracks.length})
       </button>
-      <div className="max-h-64 overflow-y-auto space-y-1">
+      <div className="max-h-[50vh] overflow-y-auto space-y-1">
         {tracks.map((track, i) => (
           <div
             key={track.id}
@@ -145,7 +145,7 @@ function BandcampResults({ results }: { results: BandcampResult[] }) {
   }
 
   return (
-    <div className="space-y-2 max-h-64 overflow-y-auto">
+    <div className="space-y-2 max-h-[50vh] overflow-y-auto">
       {results.map((result, i) => (
         <a
           key={i}
@@ -216,7 +216,7 @@ function FavoriteResults({ favorites }: { favorites: SpotifyFavorite[] }) {
           >
             Play matched ({matched.length})
           </button>
-          <div className="max-h-48 overflow-y-auto space-y-1">
+          <div className="max-h-[40vh] overflow-y-auto space-y-1">
             {matched.map((fav) => (
               <div
                 key={fav.id || fav.spotify_id}

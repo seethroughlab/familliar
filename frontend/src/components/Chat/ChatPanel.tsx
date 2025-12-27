@@ -123,11 +123,13 @@ export function ChatPanel() {
     );
 
     try {
-      // Build history for API (exclude new messages)
-      const history = session.messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      // Build history for API (exclude empty messages)
+      const history = session.messages
+        .filter((m) => m.content && m.content.trim() !== '')
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
 
       const response = await fetch('/api/v1/chat/stream', {
         method: 'POST',

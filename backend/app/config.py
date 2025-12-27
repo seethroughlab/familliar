@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
+    spotify_redirect_uri: str = "http://127.0.0.1:4400/api/v1/spotify/callback"
     lastfm_api_key: str | None = None
     lastfm_api_secret: str | None = None
 

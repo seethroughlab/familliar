@@ -13,3 +13,4 @@
 [x] Add a note to the "Auto-organization" settings for users who have more than one music application - they might not want to enable auto-organization if it's going to break other apps that have stored paths to audio files. Actually, while we're at it, if a database reecord becomes "orphaned" (file no longer where familliar thinks it is), we should have a search feature that tries to find it before elevating it to an error. Another app might have moved it. 
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] DO we have a "favorites" flag for tracks, and play-count? These will be useful for smart playlists
+[ ] when I do a hard refresh, the conversation history reappears, but the context window is now blank
