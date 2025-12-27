@@ -5,6 +5,7 @@ import { Search, Library, MessageSquare, Settings, Zap } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
+import { ContextPanel } from './components/Context';
 import { SettingsPanel } from './components/Settings';
 import { FullPlayer } from './components/FullPlayer';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
@@ -180,10 +181,7 @@ function AppContent() {
               </div>
             )}
             {rightPanelTab === 'context' && (
-              <div className="px-4 py-6 text-zinc-500 text-center">
-                <p className="mt-12">Context panel shows results from your conversation.</p>
-                <p className="text-sm mt-2">Start a conversation in the chat to see results here.</p>
-              </div>
+              <ContextPanel />
             )}
             {rightPanelTab === 'playlists' && (
               <div className="px-4 py-6">

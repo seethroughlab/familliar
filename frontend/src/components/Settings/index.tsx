@@ -4,6 +4,7 @@ import { OfflineSettings } from './OfflineSettings';
 import { LibraryOrganizer } from './LibraryOrganizer';
 import { ThemeSettings } from './ThemeSettings';
 import { LLMSettings } from './LLMSettings';
+import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
   return (
@@ -14,6 +15,15 @@ export function SettingsPanel() {
       </div>
 
       <div className="space-y-6">
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
+            App
+          </h3>
+          <div className="space-y-4">
+            <InstallStatus />
+          </div>
+        </section>
+
         <section>
           <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
             Appearance

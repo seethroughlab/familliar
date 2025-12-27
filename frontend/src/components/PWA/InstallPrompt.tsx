@@ -1,15 +1,56 @@
 import { useState, useEffect } from 'react';
-import { Download, X } from 'lucide-react';
+import { Download, X, Share, CheckCircle, Monitor, Smartphone } from 'lucide-react';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+type InstallState =
+  | 'checking'
+  | 'installed'
+  | 'can-install'      // Chrome/Edge with beforeinstallprompt
+  | 'ios-safari'       // iOS Safari - needs Add to Home Screen
+  | 'macos-safari'     // macOS Safari - needs Add to Dock
+  | 'unsupported';     // Firefox or other browsers
+
+function detectInstallState(hasPromptEvent: boolean): InstallState {
+  // Check if already installed as PWA
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+    || (navigator as { standalone?: boolean }).standalone === true;
+
+  if (isStandalone) {
+    return 'installed';
+  }
+
+  // If we have the beforeinstallprompt event, we can install natively
+  if (hasPromptEvent) {
+    return 'can-install';
+  }
+
+  const ua = navigator.userAgent.toLowerCase();
+  const isIOS = /iphone|ipad|ipod/.test(ua);
+  const isMacOS = /macintosh/.test(ua) && navigator.maxTouchPoints === 0;
+  const isSafari = /safari/.test(ua) && !/chrome|chromium|edg/.test(ua);
+
+  if (isIOS && isSafari) {
+    return 'ios-safari';
+  }
+
+  if (isMacOS && isSafari) {
+    return 'macos-safari';
+  }
+
+  // Firefox or other browsers that don't support PWA install
+  return 'unsupported';
+}
+
 export function InstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installState, setInstallState] = useState<InstallState>('checking');
   const [showPrompt, setShowPrompt] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     // Check if already dismissed this session
@@ -18,40 +59,54 @@ export function InstallPrompt() {
       setDismissed(true);
     }
 
+    // Check initial state without prompt event
+    setInstallState(detectInstallState(false));
+
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
-      // Show prompt after a short delay
-      setTimeout(() => setShowPrompt(true), 3000);
+      setInstallState('can-install');
+    };
+
+    // Listen for app installed event
+    const handleAppInstalled = () => {
+      setInstallState('installed');
+      setShowPrompt(false);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    // Show prompt after delay (unless already installed)
+    const timer = setTimeout(() => {
+      setShowPrompt(true);
+    }, 3000);
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+      clearTimeout(timer);
     };
   }, []);
 
   const handleInstall = async () => {
-    if (!deferredPrompt) {
-      console.error('Install failed: deferredPrompt is null');
-      return;
-    }
+    if (!deferredPrompt) return;
 
+    setInstalling(true);
     try {
-      console.log('Calling deferredPrompt.prompt()...');
       await deferredPrompt.prompt();
-      console.log('Waiting for user choice...');
       const { outcome } = await deferredPrompt.userChoice;
-      console.log('User choice:', outcome);
 
       if (outcome === 'accepted') {
+        setInstallState('installed');
         setShowPrompt(false);
       }
     } catch (err) {
       console.error('Install error:', err);
+    } finally {
+      setInstalling(false);
+      setDeferredPrompt(null);
     }
-    setDeferredPrompt(null);
   };
 
   const handleDismiss = () => {
@@ -60,22 +115,31 @@ export function InstallPrompt() {
     sessionStorage.setItem('pwa-prompt-dismissed', 'true');
   };
 
-  if (!showPrompt || dismissed || !deferredPrompt) {
+  // Don't show if checking, dismissed, or already installed
+  if (!showPrompt || dismissed || installState === 'checking' || installState === 'installed') {
     return null;
   }
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-80 z-50 animate-slide-up">
+    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl p-4">
         <div className="flex items-start gap-3">
-          <div className="p-2 bg-green-500/20 rounded-lg shrink-0">
-            <Download className="w-5 h-5 text-green-500" />
+          <div className={`p-2 rounded-lg shrink-0 ${
+            installState === 'can-install'
+              ? 'bg-green-500/20'
+              : 'bg-blue-500/20'
+          }`}>
+            {installState === 'can-install' ? (
+              <Download className="w-5 h-5 text-green-500" />
+            ) : installState === 'ios-safari' ? (
+              <Smartphone className="w-5 h-5 text-blue-400" />
+            ) : (
+              <Monitor className="w-5 h-5 text-blue-400" />
+            )}
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-medium text-white text-sm">Install Familiar</h3>
-            <p className="text-xs text-zinc-400 mt-1">
-              Add to your home screen for the best experience
-            </p>
+            <InstallInstructions state={installState} />
           </div>
           <button
             onClick={handleDismiss}
@@ -84,21 +148,184 @@ export function InstallPrompt() {
             <X className="w-4 h-4 text-zinc-400" />
           </button>
         </div>
+
         <div className="flex gap-2 mt-3">
-          <button
-            onClick={handleInstall}
-            className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-500 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Install
-          </button>
-          <button
-            onClick={handleDismiss}
-            className="py-2 px-3 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg transition-colors"
-          >
-            Not now
-          </button>
+          {installState === 'can-install' ? (
+            <>
+              <button
+                onClick={handleInstall}
+                disabled={installing}
+                className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                {installing ? 'Installing...' : 'Install'}
+              </button>
+              <button
+                onClick={handleDismiss}
+                className="py-2 px-3 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg transition-colors"
+              >
+                Not now
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleDismiss}
+              className="flex-1 py-2 px-3 bg-zinc-700 hover:bg-zinc-600 text-white text-sm rounded-lg transition-colors"
+            >
+              Got it
+            </button>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function InstallInstructions({ state }: { state: InstallState }) {
+  switch (state) {
+    case 'can-install':
+      return (
+        <p className="text-xs text-zinc-400 mt-1">
+          Add to your home screen for the best experience
+        </p>
+      );
+
+    case 'ios-safari':
+      return (
+        <div className="text-xs text-zinc-400 mt-1 space-y-1">
+          <p>To install on your device:</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-zinc-300">
+            <li>Tap the <Share className="w-3 h-3 inline mx-0.5" /> Share button</li>
+            <li>Scroll and tap <span className="text-white">"Add to Home Screen"</span></li>
+          </ol>
+        </div>
+      );
+
+    case 'macos-safari':
+      return (
+        <div className="text-xs text-zinc-400 mt-1 space-y-1">
+          <p>To install on your Mac:</p>
+          <ol className="list-decimal list-inside space-y-0.5 text-zinc-300">
+            <li>Click <span className="text-white">File</span> in the menu bar</li>
+            <li>Click <span className="text-white">"Add to Dock"</span></li>
+          </ol>
+        </div>
+      );
+
+    case 'unsupported':
+      return (
+        <div className="text-xs text-zinc-400 mt-1">
+          <p>Your browser doesn't support app installation.</p>
+          <p className="mt-1">Try using Chrome, Edge, or Safari for the best experience.</p>
+        </div>
+      );
+
+    default:
+      return null;
+  }
+}
+
+// Separate component for Settings page to show install status
+export function InstallStatus() {
+  const [installState, setInstallState] = useState<InstallState>('checking');
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [installing, setInstalling] = useState(false);
+
+  useEffect(() => {
+    setInstallState(detectInstallState(false));
+
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setInstallState('can-install');
+    };
+
+    const handleAppInstalled = () => {
+      setInstallState('installed');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstall);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+
+    setInstalling(true);
+    try {
+      await deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setInstallState('installed');
+      }
+    } catch (err) {
+      console.error('Install error:', err);
+    } finally {
+      setInstalling(false);
+      setDeferredPrompt(null);
+    }
+  };
+
+  if (installState === 'checking') {
+    return null;
+  }
+
+  return (
+    <div className="bg-zinc-800/50 rounded-lg p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Download className="w-5 h-5 text-blue-400" />
+        <h4 className="font-medium text-white">App Installation</h4>
+      </div>
+
+      {installState === 'installed' ? (
+        <div className="flex items-center gap-2 text-green-400">
+          <CheckCircle className="w-4 h-4" />
+          <span className="text-sm">Familiar is installed</span>
+        </div>
+      ) : installState === 'can-install' ? (
+        <div className="space-y-3">
+          <p className="text-sm text-zinc-400">
+            Install Familiar as an app for quick access and offline use.
+          </p>
+          <button
+            onClick={handleInstall}
+            disabled={installing}
+            className="w-full py-2 px-3 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {installing ? 'Installing...' : 'Install App'}
+          </button>
+        </div>
+      ) : installState === 'ios-safari' ? (
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400">To install on your device:</p>
+          <ol className="list-decimal list-inside space-y-1 text-sm text-zinc-300">
+            <li>Tap the <Share className="w-3 h-3 inline mx-0.5" /> Share button in Safari</li>
+            <li>Scroll down and tap <span className="text-white">"Add to Home Screen"</span></li>
+            <li>Tap <span className="text-white">"Add"</span> to confirm</li>
+          </ol>
+        </div>
+      ) : installState === 'macos-safari' ? (
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400">To install on your Mac:</p>
+          <ol className="list-decimal list-inside space-y-1 text-sm text-zinc-300">
+            <li>Click <span className="text-white">File</span> in the menu bar</li>
+            <li>Click <span className="text-white">"Add to Dock"</span></li>
+          </ol>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm text-zinc-400">
+            Your browser doesn't support app installation.
+          </p>
+          <p className="text-sm text-zinc-500">
+            Try using Chrome, Edge, or Safari for the full PWA experience.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
