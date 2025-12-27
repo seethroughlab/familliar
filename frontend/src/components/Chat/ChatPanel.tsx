@@ -376,6 +376,25 @@ export function ChatPanel() {
         else if (action === 'previous') store.playPrevious();
         break;
       }
+
+      case 'error': {
+        const errorContent = event.content as string || event.message as string || 'An error occurred';
+        console.error('LLM error:', errorContent);
+        await chatService.updateLastMessage(sessionId, {
+          content: `**Error:** ${errorContent}`,
+        });
+        setCurrentSession((prev) => {
+          if (!prev) return null;
+          const messages = [...prev.messages];
+          const lastIdx = messages.length - 1;
+          messages[lastIdx] = {
+            ...messages[lastIdx],
+            content: `**Error:** ${errorContent}`,
+          };
+          return { ...prev, messages };
+        });
+        break;
+      }
     }
   };
 

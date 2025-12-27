@@ -959,13 +959,26 @@ class LLMService:
 
         while True:
             # Call Claude
-            response = self.claude_client.messages.create(
-                model="claude-sonnet-4-20250514",
-                max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                tools=cast(Any, MUSIC_TOOLS),
-                messages=cast(Any, messages),
-            )
+            try:
+                response = self.claude_client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT,
+                    tools=cast(Any, MUSIC_TOOLS),
+                    messages=cast(Any, messages),
+                )
+            except anthropic.BadRequestError as e:
+                logger.error(f"Anthropic BadRequestError: {e}")
+                yield {"type": "error", "content": f"API error: {e.message}"}
+                return
+            except anthropic.AuthenticationError as e:
+                logger.error(f"Anthropic AuthenticationError: {e}")
+                yield {"type": "error", "content": "Invalid API key. Check your Anthropic API key in Settings."}
+                return
+            except anthropic.APIError as e:
+                logger.error(f"Anthropic APIError: {e}")
+                yield {"type": "error", "content": f"API error: {e.message}"}
+                return
 
             # Process response content
             assistant_content: list[Any] = []

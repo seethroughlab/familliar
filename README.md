@@ -44,7 +44,7 @@ scan_library.delay()
 "
 ```
 
-Access the web UI at http://localhost:8000
+Access the web UI at http://localhost:4400
 
 ## Installation
 
@@ -87,8 +87,8 @@ Access the web UI at http://localhost:8000
    # LASTFM_API_KEY=your-key
    # LASTFM_API_SECRET=your-secret
 
-   # Optional: Custom port (default: 8000)
-   # API_PORT=8000
+   # Optional: Custom port (default: 4400)
+   # API_PORT=4400
 
    # Optional: Database password (default: familiar)
    # POSTGRES_PASSWORD=secure-password
@@ -169,7 +169,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
        container_name: familiar-api
        restart: unless-stopped
        ports:
-         - "8000:8000"
+         - "4400:8000"
        volumes:
          - /srv/dev-disk-by-uuid-xxx/music:/data/music:ro
          - /srv/dev-disk-by-uuid-xxx/familiar/art:/data/art
@@ -216,7 +216,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
    ```
 
 6. **Access Familiar:**
-   - Open `http://your-omv-ip:8000` in a browser
+   - Open `http://your-omv-ip:4400` in a browser
    - Go to Settings to configure integrations
 
 #### Updating on OpenMediaVault
@@ -347,7 +347,7 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 **Spotify:**
 1. Go to https://developer.spotify.com/dashboard
 2. Create a new app
-3. Set redirect URI to `http://localhost:8000/api/v1/spotify/callback`
+3. Set redirect URI to `http://localhost:4400/api/v1/spotify/callback`
 4. Copy Client ID and Client Secret
 
 **Last.fm:**
@@ -365,8 +365,8 @@ If you access Familiar over [Tailscale](https://tailscale.com/), you can enable 
 
 2. **Use `tailscale serve`** on your server (easiest method):
    ```bash
-   # Proxy HTTPS to Familiar on port 8000
-   tailscale serve --bg https / http://localhost:8000
+   # Proxy HTTPS to Familiar on port 4400
+   tailscale serve --bg https / http://localhost:4400
    ```
 
 3. **Access via HTTPS:**
