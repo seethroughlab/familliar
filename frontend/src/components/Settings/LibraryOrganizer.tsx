@@ -137,6 +137,11 @@ export function LibraryOrganizer() {
               Only tracks with complete metadata (title, artist, album) will be moved.
               Always preview changes first.
             </p>
+            <p className="text-amber-300/80 mt-2">
+              <strong>Note:</strong> If you use other music applications (iTunes, Plex, Roon, etc.),
+              reorganizing files may break their stored paths. Consider whether those apps can
+              handle file location changes before proceeding.
+            </p>
           </div>
         </div>
       </div>

@@ -37,6 +37,7 @@ class ScanProgress(BaseModel):
     files_total: int = 0
     new_tracks: int = 0
     updated_tracks: int = 0
+    relocated_tracks: int = 0
     deleted_tracks: int = 0
     unchanged_tracks: int = 0
     current_file: str | None = None

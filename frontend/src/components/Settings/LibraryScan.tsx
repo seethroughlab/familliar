@@ -8,6 +8,7 @@ interface ScanProgress {
   files_total: number;
   new_tracks: number;
   updated_tracks: number;
+  relocated_tracks: number;
   deleted_tracks: number;
   unchanged_tracks: number;
   current_file: string | null;
@@ -159,7 +160,7 @@ export function LibraryScan() {
             </p>
           )}
 
-          <div className="grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="grid grid-cols-5 gap-2 text-center text-xs">
             <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-green-400 font-medium">{progress.new_tracks}</div>
               <div className="text-zinc-500">New</div>
@@ -167,6 +168,10 @@ export function LibraryScan() {
             <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-blue-400 font-medium">{progress.updated_tracks}</div>
               <div className="text-zinc-500">Updated</div>
+            </div>
+            <div className="bg-zinc-700/50 rounded p-2">
+              <div className="text-purple-400 font-medium">{progress.relocated_tracks}</div>
+              <div className="text-zinc-500">Relocated</div>
             </div>
             <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-zinc-400 font-medium">{progress.unchanged_tracks}</div>
@@ -196,7 +201,7 @@ export function LibraryScan() {
 
       {/* Summary when completed */}
       {scanStatus?.status === 'completed' && progress && (
-        <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+        <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs">
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-green-400 font-medium">{progress.new_tracks}</div>
             <div className="text-zinc-500">New</div>
@@ -204,6 +209,10 @@ export function LibraryScan() {
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-blue-400 font-medium">{progress.updated_tracks}</div>
             <div className="text-zinc-500">Updated</div>
+          </div>
+          <div className="bg-zinc-700/50 rounded p-2">
+            <div className="text-purple-400 font-medium">{progress.relocated_tracks}</div>
+            <div className="text-zinc-500">Relocated</div>
           </div>
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-zinc-400 font-medium">{progress.unchanged_tracks}</div>

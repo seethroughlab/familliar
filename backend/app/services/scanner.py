@@ -180,20 +180,42 @@ class LibraryScanner:
             if processed % 50 == 0:
                 await asyncio.sleep(0)
 
-        # Handle deleted files - only delete files that were under this library_path
+        # Handle missing files - only check files that were under this library_path
         library_prefix = str(library_path)
-        deleted_paths = set(
+        missing_paths = set(
             p for p in existing_paths.keys()
             if p.startswith(library_prefix)
         ) - found_paths
 
-        if deleted_paths:
-            logger.info(f"Removing {len(deleted_paths)} deleted files from database...")
+        if missing_paths:
+            logger.info(f"Found {len(missing_paths)} missing files, searching for relocated files...")
             if self.scan_state:
-                self.scan_state.set_cleanup(len(deleted_paths))
+                self.scan_state.set_cleanup(len(missing_paths))
 
-        for path_str in deleted_paths:
+        # Build filename -> path map for relocated file search
+        filename_to_path: dict[str, str] = {}
+        for path_str in found_paths:
+            filename = Path(path_str).name.lower()
+            # Only use first occurrence to avoid ambiguity
+            if filename not in filename_to_path:
+                filename_to_path[filename] = path_str
+
+        results["relocated"] = 0
+        for path_str in missing_paths:
             track = existing_paths[path_str]
+            filename = Path(path_str).name.lower()
+
+            # Check if file exists at a new location
+            if filename in filename_to_path:
+                new_path = filename_to_path[filename]
+                # Verify it's not already tracked by another record
+                if new_path not in existing_paths:
+                    logger.info(f"RELOCATED: {Path(path_str).name} -> {new_path}")
+                    track.file_path = new_path
+                    results["relocated"] += 1
+                    continue
+
+            # File truly deleted
             logger.info(f"DELETED: {Path(path_str).name}")
             await self.db.delete(track)
             results["deleted"] += 1
@@ -204,7 +226,7 @@ class LibraryScanner:
 
         await self.db.commit()
 
-        logger.info(f"Scan complete: {results['new']} new, {results['updated']} updated, {results['deleted']} deleted, {results['unchanged']} unchanged")
+        logger.info(f"Scan complete: {results['new']} new, {results['updated']} updated, {results['relocated']} relocated, {results['deleted']} deleted, {results['unchanged']} unchanged")
 
         return results
 
