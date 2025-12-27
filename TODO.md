@@ -2,6 +2,6 @@
 [x] Why is there SpotifyFavoriteV2? What's with the v2? Is that a migration artifact? If so, let's optimize it. We're still in dev, so we shouldn'e be worrying about dataloss from migration.
 [x] Please make a github actions CI service, and a release action, with badges in the README. And add detailed install instructions for OpenMediaVault installation and upgrades.
 [x] Add instructions to README.md to get Anthropic key
-[ ] What's left in familliar-dev-plan.md? I want to move towards doing a test install on my personal OpenMediaVault? I have auto-login setup with root@openmediavault (tailscale)
+[x] CI is still failing. The new run is at job-logs.txt
+[x] What's left in familliar-dev-plan.md? I want to move towards doing a test install on my personal OpenMediaVault? I have auto-login setup with root@openmediavault (tailscale)
 [ ] Add a note to the "Auto-organization" settings for users who have more than one music application - they might not want to enable auto-organization if it's going to break other apps that have stored paths to audio files. Actually, while we're at it, if a database reecord becomes "orphaned" (file no longer where familliar thinks it is), we should have a search feature that tries to find it before elevating it to an error. Another app might have moved it. 
-[ ] CI is still failing. The new run is at job-logs.txt

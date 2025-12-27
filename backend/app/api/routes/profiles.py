@@ -51,7 +51,8 @@ async def register_profile(
         await db.commit()
         await db.refresh(profile)
 
-    # Check linked integrations
+    # Load relationships to check linked integrations
+    await db.refresh(profile, ["spotify_profile", "lastfm_profile"])
     has_spotify = profile.spotify_profile is not None
     has_lastfm = profile.lastfm_profile is not None
 
