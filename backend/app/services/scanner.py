@@ -7,6 +7,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -82,7 +83,7 @@ def _get_file_info_sync(file_path: Path) -> tuple[str, datetime]:
     return file_hash, file_mtime
 
 
-def _extract_metadata_sync(file_path: Path) -> dict:
+def _extract_metadata_sync(file_path: Path) -> dict[str, Any]:
     """Extract metadata from file (runs in thread pool)."""
     from app.services.metadata import extract_metadata
     return extract_metadata(file_path)
@@ -95,7 +96,7 @@ class LibraryScanner:
         self.db = db
         self.scan_state = scan_state  # Optional ScanState for progress updates
 
-    async def scan(self, library_path: Path, full_scan: bool = False) -> dict:
+    async def scan(self, library_path: Path, full_scan: bool = False) -> dict[str, Any]:
         """Scan library for new, changed, or deleted files.
 
         Args:

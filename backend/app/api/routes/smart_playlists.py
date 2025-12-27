@@ -54,7 +54,7 @@ class SmartPlaylistResponse(BaseModel):
     id: str
     name: str
     description: str | None
-    rules: list[dict]
+    rules: list[dict[str, Any]]
     match_mode: str
     order_by: str
     order_direction: str
@@ -85,7 +85,7 @@ class SmartPlaylistTracksResponse(BaseModel):
     total: int
 
 
-def playlist_to_response(playlist) -> SmartPlaylistResponse:
+def playlist_to_response(playlist: Any) -> SmartPlaylistResponse:
     """Convert SmartPlaylist model to response."""
     return SmartPlaylistResponse(
         id=str(playlist.id),
@@ -103,7 +103,7 @@ def playlist_to_response(playlist) -> SmartPlaylistResponse:
     )
 
 
-def track_to_response(track) -> TrackResponse:
+def track_to_response(track: Any) -> TrackResponse:
     """Convert Track model to response."""
     return TrackResponse(
         id=str(track.id),
@@ -120,7 +120,7 @@ def track_to_response(track) -> TrackResponse:
 async def list_smart_playlists(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> list[SmartPlaylistResponse]:
     """List all smart playlists for the current user."""
     service = SmartPlaylistService(db)
     playlists = await service.get_all_for_user(user.id)
@@ -132,7 +132,7 @@ async def create_smart_playlist(
     request: SmartPlaylistCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> SmartPlaylistResponse:
     """Create a new smart playlist."""
     service = SmartPlaylistService(db)
 
@@ -161,7 +161,7 @@ async def get_smart_playlist(
     playlist_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> SmartPlaylistResponse:
     """Get a smart playlist by ID."""
     service = SmartPlaylistService(db)
     playlist = await service.get_by_id(playlist_id, user.id)
@@ -181,7 +181,7 @@ async def update_smart_playlist(
     request: SmartPlaylistUpdate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> SmartPlaylistResponse:
     """Update a smart playlist."""
     service = SmartPlaylistService(db)
     playlist = await service.get_by_id(playlist_id, user.id)
@@ -212,7 +212,7 @@ async def delete_smart_playlist(
     playlist_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> None:
     """Delete a smart playlist."""
     service = SmartPlaylistService(db)
     playlist = await service.get_by_id(playlist_id, user.id)
@@ -233,7 +233,7 @@ async def get_smart_playlist_tracks(
     offset: int = 0,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> SmartPlaylistTracksResponse:
     """Get tracks matching a smart playlist's rules."""
     service = SmartPlaylistService(db)
     playlist = await service.get_by_id(playlist_id, user.id)
@@ -259,7 +259,7 @@ async def refresh_smart_playlist(
     playlist_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> SmartPlaylistResponse:
     """Refresh a smart playlist's cached track count."""
     service = SmartPlaylistService(db)
     playlist = await service.get_by_id(playlist_id, user.id)
@@ -275,7 +275,7 @@ async def refresh_smart_playlist(
 
 
 @router.get("/fields/available")
-async def get_available_fields():
+async def get_available_fields() -> dict[str, Any]:
     """Get list of available fields and operators for building rules."""
     return {
         "track_fields": [

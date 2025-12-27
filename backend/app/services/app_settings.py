@@ -72,7 +72,7 @@ class AppSettingsService:
         self._save(self._settings)
         return self._settings
 
-    def get_masked(self) -> dict:
+    def get_masked(self) -> dict[str, Any]:
         """Get settings with secrets masked for frontend display."""
         settings = self.get()
         data = settings.model_dump()

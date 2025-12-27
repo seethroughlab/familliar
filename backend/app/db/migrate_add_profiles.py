@@ -7,8 +7,9 @@ Usage: uv run python -m app.db.migrate_add_profiles
 """
 
 import asyncio
+from typing import cast
 
-from sqlalchemy import text
+from sqlalchemy import Table, text
 from sqlalchemy.schema import CreateTable
 
 from app.db.models import LastfmProfile, Profile, SpotifyFavorite, SpotifyProfile
@@ -43,7 +44,7 @@ async def migrate() -> None:
                 print(f"  Table '{table_name}' already exists, skipping.")
             else:
                 # Create the table
-                await conn.execute(CreateTable(model.__table__))
+                await conn.execute(CreateTable(cast(Table, model.__table__)))
                 print(f"  Created table '{table_name}'.")
 
     print("\nMigration complete!")

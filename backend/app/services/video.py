@@ -159,23 +159,24 @@ class VideoService:
             )
 
             # Read progress from stdout
-            while process.stdout:
-                line = await process.stdout.readline()
-                if not line:
-                    break
+            if process.stdout:
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
 
-                line_str = line.decode().strip()
-                # Parse progress from yt-dlp output
-                if '[download]' in line_str and '%' in line_str:
-                    try:
-                        # Extract percentage from output like "[download]  50.0% of ..."
-                        parts = line_str.split('%')[0].split()[-1]
-                        progress = float(parts)
-                        status.progress = progress
-                        if progress_callback:
-                            progress_callback(progress)
-                    except (ValueError, IndexError):
-                        pass
+                    line_str = line.decode().strip()
+                    # Parse progress from yt-dlp output
+                    if '[download]' in line_str and '%' in line_str:
+                        try:
+                            # Extract percentage from output like "[download]  50.0% of ..."
+                            parts = line_str.split('%')[0].split()[-1]
+                            progress = float(parts)
+                            status.progress = progress
+                            if progress_callback:
+                                progress_callback(progress)
+                        except (ValueError, IndexError):
+                            pass
 
             await process.wait()
 
@@ -214,7 +215,7 @@ class VideoService:
 _video_service: VideoService | None = None
 
 
-def get_video_service() -> VideoService:
+def get_video_service() -> VideoService:  # type: ignore[no-untyped-call]
     """Get or create the video service singleton."""
     global _video_service
     if _video_service is None:

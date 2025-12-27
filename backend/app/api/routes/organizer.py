@@ -90,7 +90,7 @@ def _stats_to_response(stats: OrganizeStats) -> OrganizeStatsResponse:
 
 
 @router.get("/templates", response_model=TemplatesResponse)
-async def list_templates():
+async def list_templates() -> TemplatesResponse:
     """List available organization templates."""
     templates = get_available_templates()
 
@@ -115,7 +115,7 @@ async def list_templates():
 async def preview_organization(
     request: PreviewRequest,
     db: AsyncSession = Depends(get_db),
-):
+) -> OrganizeStatsResponse:
     """Preview what organization would do without moving files.
 
     Returns a list of tracks and their proposed new paths.
@@ -133,7 +133,7 @@ async def preview_organization(
 async def run_organization(
     request: OrganizeRequest,
     db: AsyncSession = Depends(get_db),
-):
+) -> OrganizeStatsResponse:
     """Organize library files according to template.
 
     Set dry_run=true to preview without moving files.
@@ -152,7 +152,7 @@ async def organize_track(
     track_id: UUID,
     request: OrganizeTrackRequest,
     db: AsyncSession = Depends(get_db),
-):
+) -> OrganizeResultResponse:
     """Organize a single track."""
     organizer = LibraryOrganizer(db)
     result = await organizer.organize_track(
@@ -172,7 +172,7 @@ async def preview_track(
     track_id: UUID,
     template: str = TEMPLATES["artist-album"],
     db: AsyncSession = Depends(get_db),
-):
+) -> OrganizeResultResponse:
     """Preview organization for a single track."""
     organizer = LibraryOrganizer(db)
     result = await organizer.preview_track(track_id, template)

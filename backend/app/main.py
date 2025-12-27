@@ -4,6 +4,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -112,7 +113,7 @@ if STATIC_DIR.exists():
 
     # SPA fallback - serve index.html for all non-API routes
     @app.get("/{full_path:path}", response_model=None)
-    async def spa_fallback(full_path: str) -> FileResponse | dict[str, str]:
+    async def spa_fallback(full_path: str) -> FileResponse | dict[str, Any]:
         """Serve index.html for SPA routing (catches all non-API routes)."""
         # Don't catch API or docs routes
         if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "health")):
@@ -121,7 +122,7 @@ if STATIC_DIR.exists():
 else:
     # Development mode - just show API info
     @app.get("/")
-    async def root() -> dict[str, str]:
+    async def root() -> dict[str, Any]:
         """Root endpoint with API info."""
         return {
             "name": "Familiar",

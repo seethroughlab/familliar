@@ -1,5 +1,6 @@
 """Profile management endpoints for device-based multi-user support."""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter
@@ -97,7 +98,7 @@ async def get_current_profile_info(
 async def delete_profile(
     profile: CurrentProfile,
     db: DbSession,
-) -> dict:
+) -> dict[str, Any]:
     """Delete current profile and all associated data.
 
     Requires X-Profile-ID header.

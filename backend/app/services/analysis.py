@@ -55,7 +55,7 @@ def get_device() -> str:
 
 
 @lru_cache(maxsize=1)
-def load_clap_model():
+def load_clap_model() -> tuple[torch.nn.Module, object]:
     """Load the CLAP model (cached)."""
     global _clap_model, _clap_processor
 
@@ -125,7 +125,7 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
         return None
 
 
-def extract_features(file_path: Path) -> dict:
+def extract_features(file_path: Path) -> dict[str, float | str | None]:
     """Extract audio features using librosa.
 
     Args:
@@ -134,7 +134,7 @@ def extract_features(file_path: Path) -> dict:
     Returns:
         Dict with extracted features
     """
-    features = {
+    features: dict[str, float | str | None] = {
         "bpm": None,
         "key": None,
         "energy": None,

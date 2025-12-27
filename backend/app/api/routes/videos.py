@@ -1,5 +1,7 @@
 """Video endpoints for music video search and download."""
 
+from collections.abc import AsyncIterator
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
@@ -198,14 +200,14 @@ async def stream_video(
 
     file_size = video_path.stat().st_size
 
-    async def stream_video_file():
+    async def stream_video_file() -> AsyncIterator[bytes]:
         with open(video_path, "rb") as f:
             chunk_size = 64 * 1024  # 64KB chunks
             while chunk := f.read(chunk_size):
                 yield chunk
 
     return StreamingResponse(
-        stream_video_file(),
+        stream_video_file(),  # type: ignore[no-untyped-call]
         media_type="video/mp4",
         headers={
             "Accept-Ranges": "bytes",
@@ -218,7 +220,7 @@ async def stream_video(
 async def delete_video(
     db: DbSession,
     track_id: UUID,
-) -> dict:
+) -> dict[str, Any]:
     """Delete a downloaded video for a track."""
     # Verify track exists
     query = select(Track).where(Track.id == track_id)

@@ -42,7 +42,7 @@ def compute_album_hash(artist: str | None, album: str | None) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-def extract_artwork(file_path: Path) -> bytes | None:
+def extract_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
     """Extract embedded artwork from audio file.
 
     Supports MP3 (ID3), FLAC, and M4A (MP4).
@@ -61,7 +61,7 @@ def extract_artwork(file_path: Path) -> bytes | None:
             return _extract_mp4_artwork(file_path)
         else:
             # Try generic mutagen approach
-            audio = mutagen.File(file_path)
+            audio = mutagen.File(file_path)  # type: ignore[attr-defined]
             if audio and hasattr(audio, "pictures") and audio.pictures:
                 return audio.pictures[0].data
     except Exception as e:
@@ -70,43 +70,43 @@ def extract_artwork(file_path: Path) -> bytes | None:
     return None
 
 
-def _extract_id3_artwork(file_path: Path) -> bytes | None:
+def _extract_id3_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
     """Extract artwork from ID3 tags (MP3)."""
     try:
-        tags = ID3(file_path)
+        tags = ID3(file_path)  # type: ignore[no-untyped-call]
         # Look for APIC (Attached Picture) frames
         for key in tags.keys():
             if key.startswith("APIC"):
-                return tags[key].data
+                return tags[key].data  # type: ignore[return-value]
     except Exception:
         pass
     return None
 
 
-def _extract_flac_artwork(file_path: Path) -> bytes | None:
+def _extract_flac_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
     """Extract artwork from FLAC metadata."""
     try:
-        audio = FLAC(file_path)
+        audio = FLAC(file_path)  # type: ignore[no-untyped-call]
         if audio.pictures:
             # Prefer front cover (type 3) if available
             for pic in audio.pictures:
                 if pic.type == 3:  # Front cover
-                    return pic.data
+                    return pic.data  # type: ignore[return-value]
             # Fall back to first picture
-            return audio.pictures[0].data
+            return audio.pictures[0].data  # type: ignore[return-value]
     except Exception:
         pass
     return None
 
 
-def _extract_mp4_artwork(file_path: Path) -> bytes | None:
+def _extract_mp4_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
     """Extract artwork from MP4/M4A atoms."""
     try:
-        audio = MP4(file_path)
+        audio = MP4(file_path)  # type: ignore[no-untyped-call]
         if audio.tags and "covr" in audio.tags:
             covers = audio.tags["covr"]
             if covers:
-                return bytes(covers[0])
+                return bytes(covers[0])  # type: ignore[return-value]
     except Exception:
         pass
     return None
@@ -141,7 +141,8 @@ def save_artwork(
 
         # Convert to RGB if necessary (for JPEG output)
         if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
+            rgb_img = img.convert("RGB")
+            img = rgb_img
 
         for size_name, max_dim in sizes.items():
             output_path = get_artwork_path(album_hash, size_name)

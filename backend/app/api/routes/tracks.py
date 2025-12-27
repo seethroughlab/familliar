@@ -1,6 +1,8 @@
 """Track endpoints."""
 
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -41,7 +43,7 @@ class TrackResponse(BaseModel):
 class TrackDetailResponse(TrackResponse):
     """Track detail response with analysis features."""
 
-    features: dict | None = None
+    features: dict[str, Any] | None = None
 
 
 class TrackListResponse(BaseModel):
@@ -216,7 +218,7 @@ async def stream_track(
         end = max(start, min(end, file_size - 1))
         content_length = end - start + 1
 
-        async def stream_range():
+        async def stream_range() -> AsyncIterator[bytes]:
             with open(file_path, "rb") as f:
                 f.seek(start)
                 remaining = content_length
@@ -230,7 +232,7 @@ async def stream_track(
                     yield data
 
         return StreamingResponse(
-            stream_range(),
+            stream_range(),  # type: ignore[no-untyped-call]
             status_code=206,  # Partial Content
             media_type=mime_type,
             headers={
@@ -241,14 +243,14 @@ async def stream_track(
         )
     else:
         # Full file request
-        async def stream_full():
+        async def stream_full() -> AsyncIterator[bytes]:
             with open(file_path, "rb") as f:
                 chunk_size = 64 * 1024  # 64KB chunks
                 while chunk := f.read(chunk_size):
                     yield chunk
 
         return StreamingResponse(
-            stream_full(),
+            stream_full(),  # type: ignore[no-untyped-call]
             media_type=mime_type,
             headers={
                 "Accept-Ranges": "bytes",
@@ -292,12 +294,12 @@ async def get_track_artwork(
             raise HTTPException(status_code=404, detail="No artwork available")
 
     # Stream the artwork file
-    def stream_artwork():
+    def stream_artwork() -> AsyncIterator[bytes]:
         with open(artwork_path, "rb") as f:
             yield f.read()
 
     return StreamingResponse(
-        stream_artwork(),
+        stream_artwork(),  # type: ignore[no-untyped-call]
         media_type="image/jpeg",
         headers={
             "Cache-Control": "public, max-age=31536000",  # Cache for 1 year

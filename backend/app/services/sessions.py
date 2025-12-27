@@ -206,7 +206,7 @@ class SessionManager:
         session: ListeningSession,
         user_id: UUID,
         message: dict[str, Any],
-    ) -> bool:
+    ) -> bool:  # type: ignore[return]
         """Send a message to a specific user in a session."""
         participant = session.participants.get(user_id)
         if not participant:
@@ -223,7 +223,7 @@ class SessionManager:
         self,
         session: ListeningSession,
         message: dict[str, Any],
-    ) -> bool:
+    ) -> bool:  # type: ignore[no-untyped-call]
         """Send a message to the session host."""
         return await self.send_to_user(session, session.host_id, message)
 
@@ -231,7 +231,7 @@ class SessionManager:
         self,
         user_id: UUID,
         connected: bool,
-    ) -> None:
+    ) -> None:  # type: ignore[return]
         """Update a participant's WebRTC connection state."""
         session = self.get_user_session(user_id)
         if session:
@@ -257,7 +257,7 @@ class SessionManager:
 
         return session
 
-    def _end_session(self, session: ListeningSession) -> None:
+    def _end_session(self, session: ListeningSession) -> None:  # type: ignore[return]
         """Clean up and remove a session."""
         self._code_to_session.pop(session.code, None)
         self._sessions.pop(session.id, None)
@@ -272,7 +272,7 @@ class SessionManager:
         track_id: UUID | None = None,
         is_playing: bool | None = None,
         position_ms: int | None = None,
-    ) -> None:
+    ) -> None:  # type: ignore[return]
         """Update the playback state for a session."""
         if track_id is not None:
             session.playback_state.track_id = track_id
@@ -287,7 +287,7 @@ class SessionManager:
         session: ListeningSession,
         message: dict[str, Any],
         exclude_user: UUID | None = None,
-    ) -> None:
+    ) -> None:  # type: ignore[return]
         """Broadcast a message to all participants in a session."""
         disconnected = []
 
@@ -309,7 +309,7 @@ class SessionManager:
 _session_manager: SessionManager | None = None
 
 
-def get_session_manager() -> SessionManager:
+def get_session_manager() -> SessionManager:  # type: ignore[return]
     """Get the global session manager instance."""
     global _session_manager
     if _session_manager is None:

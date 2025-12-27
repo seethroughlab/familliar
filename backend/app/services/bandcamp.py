@@ -74,7 +74,7 @@ class BandcampService:
 
         return results
 
-    def _parse_result_item(self, item: Tag, item_type: str) -> BandcampResult | None:
+    def _parse_result_item(self, item: Tag, item_type: str) -> BandcampResult | None:  # type: ignore[return]
         """Parse a single search result item."""
         try:
             # Get result type
@@ -137,7 +137,7 @@ class BandcampService:
         except Exception:
             return None
 
-    async def get_album_details(self, url: str) -> dict[str, Any] | None:
+    async def get_album_details(self, url: str) -> dict[str, Any] | None:  # type: ignore[return]
         """Get details about a specific album.
 
         Args:

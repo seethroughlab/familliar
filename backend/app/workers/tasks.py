@@ -3,6 +3,7 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
@@ -16,8 +17,8 @@ from app.workers.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-@celery_app.task(bind=True, max_retries=3)
-def analyze_track(self, track_id: str) -> dict:
+@celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
+def analyze_track(self, track_id: str) -> dict[str, Any]:
     """Analyze a track and save results.
 
     This is the main analysis task that orchestrates:
@@ -159,10 +160,11 @@ def analyze_track(self, track_id: str) -> dict:
     except Exception as e:
         logger.error(f"Error analyzing track {track_id}: {e}")
         self.retry(exc=e, countdown=60)
+        return {"error": str(e), "status": "retry"}
 
 
-@celery_app.task
-def batch_analyze(track_ids: list[str]) -> dict:
+@celery_app.task  # type: ignore[misc]
+def batch_analyze(track_ids: list[str]) -> dict[str, Any]:
     """Analyze multiple tracks.
 
     Args:

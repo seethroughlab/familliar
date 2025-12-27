@@ -1,6 +1,7 @@
 """Smart playlist service for rule-based auto-updating playlists."""
 
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Float, and_, cast, func, or_, select
@@ -43,7 +44,7 @@ class SmartPlaylistService:
         self,
         user_id: UUID,
         name: str,
-        rules: list[dict],
+        rules: list[dict[str, Any]],
         description: str | None = None,
         match_mode: str = "all",
         order_by: str = "title",
@@ -77,7 +78,7 @@ class SmartPlaylistService:
     async def update(
         self,
         playlist: SmartPlaylist,
-        **kwargs,
+        **kwargs: Any,
     ) -> SmartPlaylist:
         """Update a smart playlist."""
         if "rules" in kwargs:
@@ -163,7 +164,7 @@ class SmartPlaylistService:
         await self.db.commit()
         return count
 
-    def _validate_rules(self, rules: list[dict]) -> None:
+    def _validate_rules(self, rules: list[dict[str, Any]]) -> None:
         """Validate rule structure."""
         for rule in rules:
             if "field" not in rule:
@@ -186,7 +187,7 @@ class SmartPlaylistService:
             if operator not in ("is_empty", "is_not_empty") and "value" not in rule:
                 raise ValueError(f"Rule with operator '{operator}' requires 'value'")
 
-    def _build_query(self, playlist: SmartPlaylist):
+    def _build_query(self, playlist: SmartPlaylist) -> Any:
         """Build SQLAlchemy query from playlist rules."""
         # Start with base query
         # Join with latest analysis for feature queries
@@ -238,7 +239,7 @@ class SmartPlaylistService:
 
         return query
 
-    def _build_condition(self, rule: dict, has_analysis_join: bool):
+    def _build_condition(self, rule: dict[str, Any], has_analysis_join: bool) -> Any:
         """Build a single condition from a rule."""
         field = rule["field"]
         operator = rule["operator"]
@@ -298,7 +299,7 @@ class SmartPlaylistService:
 
         return None
 
-    def _get_order_column(self, order_by: str):
+    def _get_order_column(self, order_by: str) -> Any:
         """Get the column to order by."""
         if order_by in TRACK_FIELDS:
             return getattr(Track, order_by)

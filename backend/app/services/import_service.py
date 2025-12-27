@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from app.config import AUDIO_EXTENSIONS, settings
 
@@ -70,7 +71,7 @@ class ImportService:
         logger.info(f"Extracted {len(extracted_audio)} audio files from zip")
         return extracted_audio
 
-    def process_upload(self, file_path: Path, original_filename: str) -> dict:
+    def process_upload(self, file_path: Path, original_filename: str) -> dict[str, Any]:
         """Process an uploaded file (zip or audio).
 
         Args:
@@ -111,7 +112,7 @@ class ImportService:
                 shutil.rmtree(import_dir, ignore_errors=True)
             raise ImportError(f"Import failed: {str(e)}") from e
 
-    def get_recent_imports(self, limit: int = 10) -> list[dict]:
+    def get_recent_imports(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get list of recent import directories."""
         if not self.imports_dir.exists():
             return []

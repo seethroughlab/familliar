@@ -1,5 +1,6 @@
 """Listening sessions WebSocket API with WebRTC signaling support."""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
@@ -8,7 +9,7 @@ from app.config import settings
 from app.services.sessions import SessionRole, get_session_manager
 
 
-def get_ice_servers() -> list[dict]:
+def get_ice_servers() -> list[dict[str, Any]]:
     """Get ICE servers configuration including optional TURN server."""
     servers = [
         {"urls": "stun:stun.l.google.com:19302"},
@@ -30,7 +31,7 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 
 
 @router.get("/by-code/{code}")
-async def get_session_by_code(code: str):
+async def get_session_by_code(code: str) -> dict[str, Any]:
     """Get session info by join code."""
     manager = get_session_manager()
     session = manager.get_session_by_code(code)
@@ -45,7 +46,7 @@ async def get_session_by_code(code: str):
 
 
 @router.websocket("/ws")
-async def session_websocket(websocket: WebSocket):
+async def session_websocket(websocket: WebSocket) -> None:
     """WebSocket endpoint for listening sessions with WebRTC signaling.
 
     Messages:
@@ -98,7 +99,7 @@ async def session_websocket(websocket: WebSocket):
                 username = data.get("username", "Anonymous")
 
                 session = manager.get_session_by_code(code)
-                if not session:
+                if session is None:
                     await websocket.send_json({
                         "type": "error",
                         "message": "Session not found",
@@ -140,7 +141,7 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 # Only host can control playback
@@ -180,7 +181,7 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 await websocket.send_json({
@@ -196,11 +197,11 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 participant = session.participants.get(current_user_id)
-                if not participant:
+                if participant is None:
                     continue
 
                 await manager.broadcast(
@@ -219,7 +220,7 @@ async def session_websocket(websocket: WebSocket):
                 guest_name = data.get("guest_name", "Guest")
 
                 session = manager.get_session_by_code(code)
-                if not session:
+                if session is None:
                     await websocket.send_json({
                         "type": "error",
                         "message": "Session not found",
@@ -282,11 +283,11 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 participant = session.participants.get(current_user_id)
-                if not participant:
+                if participant is None:
                     continue
 
                 # Tell host to create offer for this guest
@@ -305,7 +306,7 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session or session.host_id != current_user_id:
+                if session is None or session.host_id != current_user_id:
                     continue
 
                 target_user_id = UUID(data.get("target_user_id"))
@@ -325,7 +326,7 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 await manager.send_to_host(
@@ -343,7 +344,7 @@ async def session_websocket(websocket: WebSocket):
                     continue
 
                 session = manager.get_user_session(current_user_id)
-                if not session:
+                if session is None:
                     continue
 
                 target_user_id = data.get("target_user_id")
@@ -378,7 +379,7 @@ async def session_websocket(websocket: WebSocket):
                 manager.update_webrtc_state(current_user_id, connected)
 
                 session = manager.get_user_session(current_user_id)
-                if session:
+                if session is not None:
                     await manager.broadcast(
                         session,
                         {
@@ -393,7 +394,7 @@ async def session_websocket(websocket: WebSocket):
                 # Leave session
                 if current_user_id:
                     session = manager.remove_user(current_user_id)
-                    if session and session.participants:
+                    if session is not None and session.participants:
                         await manager.broadcast(
                             session,
                             {
@@ -412,7 +413,7 @@ async def session_websocket(websocket: WebSocket):
         # Clean up on disconnect
         if current_user_id:
             session = manager.remove_user(current_user_id)
-            if session and session.participants:
+            if session is not None and session.participants:
                 await manager.broadcast(
                     session,
                     {

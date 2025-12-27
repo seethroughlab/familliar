@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
 // Generate UUID that works in non-secure contexts (HTTP)
 function generateId(): string {
@@ -82,22 +83,38 @@ interface ContextState {
   clearItems: () => void;
 }
 
-export const useContextStore = create<ContextState>((set, get) => ({
-  items: [],
+export const useContextStore = create<ContextState>()(
+  persist(
+    (set, get) => ({
+      items: [],
 
-  addItem: (item) => {
-    console.log('[ContextStore] addItem called:', item.type, item.title, 'current items:', get().items.length);
-    const newItem: ContextItem = {
-      ...item,
-      id: generateId(),
-      timestamp: new Date(),
-    };
-    const currentItems = get().items;
-    const newItems = [newItem, ...currentItems].slice(0, 10);
-    console.log('[ContextStore] Setting new items count:', newItems.length);
-    set({ items: newItems });
-    console.log('[ContextStore] After set, items:', get().items.length);
-  },
+      addItem: (item) => {
+        console.log('[ContextStore] addItem called:', item.type, item.title, 'current items:', get().items.length);
+        const newItem: ContextItem = {
+          ...item,
+          id: generateId(),
+          timestamp: new Date(),
+        };
+        const currentItems = get().items;
+        const newItems = [newItem, ...currentItems].slice(0, 10);
+        console.log('[ContextStore] Setting new items count:', newItems.length);
+        set({ items: newItems });
+        console.log('[ContextStore] After set, items:', get().items.length);
+      },
 
-  clearItems: () => set({ items: [] }),
-}));
+      clearItems: () => set({ items: [] }),
+    }),
+    {
+      name: 'familiar-context',
+      // Convert Date objects on rehydration
+      onRehydrateStorage: () => (state) => {
+        if (state?.items) {
+          state.items = state.items.map((item) => ({
+            ...item,
+            timestamp: new Date(item.timestamp),
+          }));
+        }
+      },
+    }
+  )
+);

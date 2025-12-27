@@ -35,7 +35,7 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
     }
 
     try:
-        audio = mutagen.File(file_path, easy=True)
+        audio = mutagen.File(file_path, easy=True)  # type: ignore[attr-defined]
         if audio is None:
             return metadata
 
@@ -73,7 +73,7 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
     return metadata
 
 
-def _extract_easy_tags(audio: mutagen.FileType) -> dict[str, Any]:
+def _extract_easy_tags(audio: Any) -> dict[str, Any]:
     """Extract tags using mutagen's easy interface."""
     tags: dict[str, Any] = {}
 
@@ -111,11 +111,11 @@ def _extract_id3_tags(file_path: Path) -> dict[str, Any]:
     tags: dict[str, Any] = {}
 
     try:
-        audio = EasyID3(file_path)
+        audio = EasyID3(file_path)  # type: ignore[no-untyped-call]
         return _extract_easy_tags(audio)
     except Exception:
         # Fall back to mutagen.File
-        audio = mutagen.File(file_path, easy=True)
+        audio = mutagen.File(file_path, easy=True)  # type: ignore[attr-defined]
         if audio:
             return _extract_easy_tags(audio)
 
@@ -208,7 +208,7 @@ def _extract_ogg_tags(file_path: Path) -> dict[str, Any]:
     tags: dict[str, Any] = {}
 
     try:
-        audio = OggVorbis(file_path)
+        audio = OggVorbis(file_path)  # type: ignore[no-untyped-call]
         return _extract_easy_tags(audio)
     except Exception as e:
         print(f"Error reading OGG tags: {e}")

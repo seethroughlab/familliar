@@ -1,6 +1,7 @@
 """Last.fm endpoints for authentication and scrobbling."""
 
 import time
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
@@ -152,7 +153,7 @@ async def handle_callback(
 async def disconnect(
     db: DbSession,
     profile: CurrentProfile,
-) -> dict:
+) -> dict[str, Any]:
     """Disconnect from Last.fm.
 
     Requires X-Profile-ID header.

@@ -1,5 +1,7 @@
 """Spotify integration endpoints."""
 
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
@@ -18,14 +20,14 @@ class SpotifyStatusResponse(BaseModel):
     connected: bool
     spotify_user_id: str | None = None
     last_sync: str | None = None
-    stats: dict | None = None
+    stats: dict[str, Any] | None = None
 
 
 class SyncResponse(BaseModel):
     """Sync operation response."""
     status: str
     message: str
-    stats: dict | None = None
+    stats: dict[str, Any] | None = None
 
 
 class StoreSearchLink(BaseModel):
@@ -54,7 +56,7 @@ async def get_spotify_status(
 
     Requires X-Profile-ID header.
     """
-    spotify_service = SpotifyService()
+    spotify_service = SpotifyService()  # type: ignore[no-untyped-call]
 
     if not spotify_service.is_configured():
         return SpotifyStatusResponse(
@@ -87,7 +89,7 @@ async def get_spotify_status(
 
 
 @router.get("/auth")
-async def spotify_auth(profile: CurrentProfile) -> dict:
+async def spotify_auth(profile: CurrentProfile) -> dict[str, Any]:
     """Get Spotify OAuth authorization URL.
 
     Requires X-Profile-ID header.
@@ -98,7 +100,7 @@ async def spotify_auth(profile: CurrentProfile) -> dict:
             detail="Profile ID required - register at POST /profiles/register",
         )
 
-    spotify_service = SpotifyService()
+    spotify_service = SpotifyService()  # type: ignore[no-untyped-call]
 
     if not spotify_service.is_configured():
         raise HTTPException(
@@ -125,24 +127,31 @@ async def spotify_callback(
 
     The profile_id is encoded in the state parameter from the auth request.
     """
+    # Derive frontend URL from the configured redirect URI
+    # e.g., https://example.com/api/v1/spotify/callback -> https://example.com
+    from app.config import settings
+    redirect_uri = settings.spotify_redirect_uri
+    # Remove the /api/v1/spotify/callback path to get base URL
+    base_url = redirect_uri.rsplit("/api/", 1)[0] if "/api/" in redirect_uri else "http://localhost:3000"
+
     if error:
         # Redirect to frontend with error
         return RedirectResponse(
-            url=f"http://localhost:3000/settings?spotify_error={error}"
+            url=f"{base_url}/settings?spotify_error={error}"
         )
 
-    spotify_service = SpotifyService()
+    spotify_service = SpotifyService()  # type: ignore[no-untyped-call]
 
     try:
         spotify_profile = await spotify_service.handle_callback(db, code, state)
 
         # Redirect to frontend with success
         return RedirectResponse(
-            url=f"http://localhost:3000/settings?spotify_connected=true&spotify_user={spotify_profile.spotify_user_id}"
+            url=f"{base_url}/settings?spotify_connected=true&spotify_user={spotify_profile.spotify_user_id}"
         )
     except Exception as e:
         return RedirectResponse(
-            url=f"http://localhost:3000/settings?spotify_error={str(e)}"
+            url=f"{base_url}/settings?spotify_error={str(e)}"
         )
 
 
@@ -250,7 +259,7 @@ async def get_unmatched_tracks(
 async def disconnect_spotify(
     db: DbSession,
     profile: CurrentProfile,
-) -> dict:
+) -> dict[str, Any]:
     """Disconnect Spotify account.
 
     Requires X-Profile-ID header.

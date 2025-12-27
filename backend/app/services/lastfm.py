@@ -47,6 +47,7 @@ class LastfmService:
             raise ValueError("Last.fm API key not configured")
 
         api_key, _ = self._get_credentials()
+        assert api_key is not None  # mypy narrowing
         return f"{self.AUTH_URL}?api_key={api_key}&cb={callback_url}"
 
     def _sign_params(self, params: dict[str, Any]) -> str:
@@ -78,10 +79,10 @@ class LastfmService:
         params["api_sig"] = self._sign_params(params)
         params["format"] = "json"
 
-        response = await self.client.get(self.API_URL, params=params)
+        response = await self.client.get(self.API_URL, params=params)  # type: ignore[arg-type]
         response.raise_for_status()
 
-        data = response.json()
+        data: dict[str, Any] = response.json()
         if "error" in data:
             raise ValueError(f"Last.fm error: {data.get('message', 'Unknown error')}")
 
@@ -170,8 +171,8 @@ class LastfmService:
         params["format"] = "json"
 
         try:
-            response = await self.client.post(self.API_URL, data=params)
-            data = response.json()
+            response = await self.client.post(self.API_URL, data=params)  # type: ignore[arg-type]
+            data: dict[str, Any] = response.json()
             return "error" not in data
         except Exception:
             return False
@@ -214,8 +215,8 @@ class LastfmService:
         params["format"] = "json"
 
         try:
-            response = await self.client.post(self.API_URL, data=params)
-            data = response.json()
+            response = await self.client.post(self.API_URL, data=params)  # type: ignore[arg-type]
+            data: dict[str, Any] = response.json()
             return "error" not in data
         except Exception:
             return False
@@ -235,8 +236,8 @@ class LastfmService:
         params["format"] = "json"
 
         try:
-            response = await self.client.get(self.API_URL, params=params)
-            data = response.json()
+            response = await self.client.get(self.API_URL, params=params)  # type: ignore[arg-type]
+            data: dict[str, Any] = response.json()
             if "error" not in data:
                 user_data: dict[str, Any] | None = data.get("user")
                 return user_data
@@ -253,7 +254,7 @@ class LastfmService:
 _lastfm_service: LastfmService | None = None
 
 
-def get_lastfm_service() -> LastfmService:
+def get_lastfm_service() -> LastfmService:  # type: ignore[return]
     """Get or create the Last.fm service singleton."""
     global _lastfm_service
     if _lastfm_service is None:

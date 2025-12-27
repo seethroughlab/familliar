@@ -187,7 +187,7 @@ class SpotifyService:
 class SpotifySyncService:
     """Syncs Spotify favorites and matches to local library."""
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.spotify_service = SpotifyService()
 
@@ -427,9 +427,9 @@ class SpotifySyncService:
                 select(Track).where(
                     func.lower(Track.title) == track_name,
                     func.lower(Track.artist) == artist_name,
-                )
+                ).limit(1)
             )
-            match = result.scalar_one_or_none()
+            match = result.scalars().first()
             if match:
                 return match
 
@@ -440,7 +440,7 @@ class SpotifySyncService:
                     func.lower(Track.artist).contains(artist_name),
                 ).limit(1)
             )
-            match = result.scalar_one_or_none()
+            match = result.scalars().first()
             if match:
                 return match
 

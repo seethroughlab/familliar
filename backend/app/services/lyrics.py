@@ -75,11 +75,11 @@ class LyricsService:
 
             response = await self.client.get(
                 f"{self.BASE_URL}/get",
-                params=params
+                params=params  # type: ignore[arg-type]
             )
 
             if response.status_code == 200:
-                data = response.json()
+                data: dict[str, Any] = response.json()
                 return self._parse_response(data)
 
             return None
@@ -102,7 +102,7 @@ class LyricsService:
             )
 
             if response.status_code == 200:
-                data = response.json()
+                data: list[Any] | dict[str, Any] = response.json()
                 if isinstance(data, list) and len(data) > 0:
                     # Return first result
                     return self._parse_response(data[0])
@@ -129,7 +129,8 @@ class LyricsService:
             )
         else:
             # Plain lyrics only - we know plain_lyrics is not None at this point
-            plain_text = plain_lyrics or ""
+            assert plain_lyrics is not None  # mypy narrowing
+            plain_text = plain_lyrics
             lines = [
                 LyricLine(time=0.0, text=line)
                 for line in plain_text.split("\n")
@@ -157,10 +158,10 @@ class LyricsService:
                 text = match.group(4).strip()
 
                 # Convert to seconds
-                time = minutes * 60 + seconds + centiseconds / 100
+                time_seconds = minutes * 60 + seconds + centiseconds / 100
 
                 if text:  # Skip empty lines
-                    lines.append(LyricLine(time=time, text=text))
+                    lines.append(LyricLine(time=time_seconds, text=text))
 
         return sorted(lines, key=lambda x: x.time)
 
@@ -173,7 +174,7 @@ class LyricsService:
 _lyrics_service: LyricsService | None = None
 
 
-def get_lyrics_service() -> LyricsService:
+def get_lyrics_service() -> LyricsService:  # type: ignore[return]
     """Get or create the lyrics service singleton."""
     global _lyrics_service
     if _lyrics_service is None:

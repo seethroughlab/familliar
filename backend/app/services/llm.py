@@ -333,7 +333,7 @@ class ToolExecutor:
 
         return variations
 
-    async def _search_library(self, query: str, limit: int = 20) -> dict:
+    async def _search_library(self, query: str, limit: int = 20) -> dict[str, Any]:
         """Search tracks by text query."""
         from sqlalchemy import or_
 
@@ -365,7 +365,7 @@ class ToolExecutor:
             "count": len(tracks)
         }
 
-    async def _find_similar_tracks(self, track_id: str, limit: int = 10) -> dict:
+    async def _find_similar_tracks(self, track_id: str, limit: int = 10) -> dict[str, Any]:
         """Find similar tracks using embedding similarity."""
         # Get the source track's embedding
         stmt = (
@@ -409,7 +409,7 @@ class ToolExecutor:
         acousticness_min: float | None = None,
         instrumentalness_min: float | None = None,
         limit: int = 20,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Filter tracks by audio features stored in JSONB."""
         stmt = (
             select(Track)
@@ -449,7 +449,7 @@ class ToolExecutor:
             "count": len(tracks)
         }
 
-    async def _get_library_stats(self) -> dict:
+    async def _get_library_stats(self) -> dict[str, Any]:
         """Get library statistics."""
         # Total tracks
         total_result = await self.db.execute(select(func.count(Track.id)))
@@ -484,7 +484,7 @@ class ToolExecutor:
             "top_genres": top_genres
         }
 
-    async def _get_library_genres(self, limit: int = 50) -> dict:
+    async def _get_library_genres(self, limit: int = 50) -> dict[str, Any]:
         """Get all genres in the library with track counts."""
         genres_result = await self.db.execute(
             select(Track.genre, func.count(Track.id).label("count"))
@@ -502,7 +502,7 @@ class ToolExecutor:
             "hint": "Use these genre names in search_library to find tracks. For mood-based requests, try genres like 'ambient', 'electronic', 'jazz', 'classical' etc."
         }
 
-    async def _queue_tracks(self, track_ids: list[str], clear_existing: bool = False) -> dict:
+    async def _queue_tracks(self, track_ids: list[str], clear_existing: bool = False) -> dict[str, Any]:
         """Queue tracks for playback."""
         # Fetch track details
         stmt = select(Track).where(Track.id.in_([UUID(tid) for tid in track_ids]))
@@ -518,12 +518,12 @@ class ToolExecutor:
             "tracks": self._queued_tracks
         }
 
-    async def _control_playback(self, action: str) -> dict:
+    async def _control_playback(self, action: str) -> dict[str, Any]:
         """Control playback."""
         self._playback_action = action
         return {"action": action, "status": "ok"}
 
-    async def _get_track_details(self, track_id: str) -> dict:
+    async def _get_track_details(self, track_id: str) -> dict[str, Any]:
         """Get detailed track info including features."""
         stmt = select(Track).where(Track.id == UUID(track_id))
         result = await self.db.execute(stmt)
@@ -548,7 +548,7 @@ class ToolExecutor:
 
         return track_dict
 
-    async def _get_spotify_status(self) -> dict:
+    async def _get_spotify_status(self) -> dict[str, Any]:
         """Check if Spotify is connected."""
         if not self.profile_id:
             return {
@@ -573,7 +573,7 @@ class ToolExecutor:
             "last_sync": profile.last_sync_at.isoformat() if profile.last_sync_at else None
         }
 
-    async def _get_spotify_favorites(self, limit: int = 50) -> dict:
+    async def _get_spotify_favorites(self, limit: int = 50) -> dict[str, Any]:
         """Get Spotify favorites that are matched to local library."""
         if not self.profile_id:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
@@ -602,7 +602,7 @@ class ToolExecutor:
             "note": "These are Spotify favorites that match tracks in your local library"
         }
 
-    async def _get_unmatched_spotify_favorites(self, limit: int = 50) -> dict:
+    async def _get_unmatched_spotify_favorites(self, limit: int = 50) -> dict[str, Any]:
         """Get Spotify favorites that don't have local matches."""
         if not self.profile_id:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
@@ -636,7 +636,7 @@ class ToolExecutor:
             "note": "These are Spotify favorites you don't have in your local library"
         }
 
-    async def _get_spotify_sync_stats(self) -> dict:
+    async def _get_spotify_sync_stats(self) -> dict[str, Any]:
         """Get Spotify sync statistics."""
         if not self.profile_id:
             return {
@@ -683,7 +683,7 @@ class ToolExecutor:
         query: str,
         item_type: str = "album",
         limit: int = 10,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Search Bandcamp for albums/tracks."""
         from app.services.bandcamp import BandcampService
 
@@ -713,7 +713,7 @@ class ToolExecutor:
         finally:
             await bc.close()
 
-    async def _recommend_bandcamp_purchases(self, limit: int = 5) -> dict:
+    async def _recommend_bandcamp_purchases(self, limit: int = 5) -> dict[str, Any]:
         """Recommend Bandcamp albums based on unmatched Spotify favorites."""
         from app.services.bandcamp import BandcampService
 
@@ -782,7 +782,7 @@ class ToolExecutor:
             "note": "Albums recommended based on your Spotify favorites that aren't in your local library"
         }
 
-    def _track_to_dict(self, track: Track) -> dict:
+    def _track_to_dict(self, track: Track) -> dict[str, Any]:
         """Convert track to dictionary."""
         return {
             "id": str(track.id),
@@ -795,7 +795,7 @@ class ToolExecutor:
         }
 
 
-def convert_tools_to_ollama_format(tools: list[dict]) -> list[dict]:
+def convert_tools_to_ollama_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Convert Claude tool format to Ollama/OpenAI format."""
     ollama_tools = []
     for tool in tools:
@@ -818,16 +818,16 @@ class OllamaClient:
         self.model = model
         self.http_client = httpx.AsyncClient(timeout=120.0)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self.http_client.aclose()
 
     async def chat(
         self,
-        messages: list[dict],
+        messages: list[dict[str, Any]],
         system: str | None = None,
-        tools: list[dict] | None = None,
-    ) -> dict:
+        tools: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         """Send a chat request to Ollama."""
         # Prepare messages with system prompt
         ollama_messages = []

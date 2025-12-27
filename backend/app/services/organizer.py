@@ -347,14 +347,14 @@ class LibraryOrganizer:
         )
 
         for track in tracks:
-            result = await self.organize_track(track.id, template, dry_run)
-            stats.results.append(result)
+            organize_result = await self.organize_track(track.id, template, dry_run)
+            stats.results.append(organize_result)
 
-            if result.status == "moved":
+            if organize_result.status == "moved":
                 stats.moved += 1
-            elif result.status == "skipped":
+            elif organize_result.status == "skipped":
                 stats.skipped += 1
-            else:
+            elif organize_result.status == "error":
                 stats.errors += 1
 
         return stats
