@@ -104,6 +104,11 @@ export function useAudioEngine() {
     const audio = fallbackAudioRef.current;
     const handleEnded = () => playNext();
     const handleError = (e: Event) => {
+      // Ignore errors from empty src (happens on initial load or when clearing)
+      const target = e.target as HTMLAudioElement;
+      if (!target.src || target.src === window.location.href) {
+        return;
+      }
       console.error('Audio error:', e);
       setIsPlaying(false);
     };
