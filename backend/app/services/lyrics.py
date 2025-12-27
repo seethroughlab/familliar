@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 
@@ -27,7 +28,7 @@ class LyricsService:
 
     BASE_URL = "https://lrclib.net/api"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = httpx.AsyncClient(
             timeout=10.0,
             headers={"User-Agent": "Familiar/1.0"}
@@ -64,7 +65,7 @@ class LyricsService:
     ) -> LyricsResult | None:
         """Get lyrics using precise metadata matching."""
         try:
-            params = {
+            params: dict[str, str | int] = {
                 "track_name": track_name,
                 "artist_name": artist_name,
                 "duration": int(duration)
@@ -110,10 +111,10 @@ class LyricsService:
         except Exception:
             return None
 
-    def _parse_response(self, data: dict) -> LyricsResult | None:
+    def _parse_response(self, data: dict[str, Any]) -> LyricsResult | None:
         """Parse LRCLIB response into LyricsResult."""
-        synced_lyrics = data.get("syncedLyrics")
-        plain_lyrics = data.get("plainLyrics")
+        synced_lyrics: str | None = data.get("syncedLyrics")
+        plain_lyrics: str | None = data.get("plainLyrics")
 
         if not synced_lyrics and not plain_lyrics:
             return None
@@ -127,16 +128,17 @@ class LyricsService:
                 source="lrclib"
             )
         else:
-            # Plain lyrics only
+            # Plain lyrics only - we know plain_lyrics is not None at this point
+            plain_text = plain_lyrics or ""
             lines = [
                 LyricLine(time=0.0, text=line)
-                for line in plain_lyrics.split("\n")
+                for line in plain_text.split("\n")
                 if line.strip()
             ]
             return LyricsResult(
                 synced=False,
                 lines=lines,
-                plain_text=plain_lyrics,
+                plain_text=plain_text,
                 source="lrclib"
             )
 
@@ -162,7 +164,7 @@ class LyricsService:
 
         return sorted(lines, key=lambda x: x.time)
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
 

@@ -79,16 +79,6 @@ app.include_router(bandcamp.router, prefix="/api/v1")
 app.include_router(outputs.router, prefix="/api/v1")
 
 
-@app.get("/")
-async def root() -> dict:
-    """Root endpoint with API info."""
-    return {
-        "name": "Familiar",
-        "version": "0.1.0",
-        "docs": "/docs",
-    }
-
-
 # Serve frontend static files in production
 # The static folder is created during Docker build
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -99,26 +89,42 @@ if STATIC_DIR.exists():
 
     # Serve PWA files
     @app.get("/manifest.json")
-    async def manifest():
+    async def manifest() -> FileResponse:
         return FileResponse(STATIC_DIR / "manifest.json")
 
     @app.get("/sw.js")
-    async def service_worker():
+    async def service_worker() -> FileResponse:
         return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
 
     @app.get("/registerSW.js")
-    async def register_sw():
+    async def register_sw() -> FileResponse:
         return FileResponse(STATIC_DIR / "registerSW.js", media_type="application/javascript")
 
     @app.get("/workbox-{path:path}")
-    async def workbox(path: str):
+    async def workbox(path: str) -> FileResponse:
         return FileResponse(STATIC_DIR / f"workbox-{path}", media_type="application/javascript")
+
+    # Serve index.html for root
+    @app.get("/")
+    async def serve_root() -> FileResponse:
+        """Serve index.html for root path."""
+        return FileResponse(STATIC_DIR / "index.html")
 
     # SPA fallback - serve index.html for all non-API routes
     @app.get("/{full_path:path}")
-    async def spa_fallback(full_path: str):
+    async def spa_fallback(full_path: str) -> FileResponse | dict[str, str]:
         """Serve index.html for SPA routing (catches all non-API routes)."""
         # Don't catch API or docs routes
         if full_path.startswith(("api/", "docs", "redoc", "openapi.json", "health")):
             return {"detail": "Not found"}
         return FileResponse(STATIC_DIR / "index.html")
+else:
+    # Development mode - just show API info
+    @app.get("/")
+    async def root() -> dict[str, str]:
+        """Root endpoint with API info."""
+        return {
+            "name": "Familiar",
+            "version": "0.1.0",
+            "docs": "/docs",
+        }

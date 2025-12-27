@@ -1,9 +1,10 @@
 """Bandcamp search service for finding albums to purchase."""
 
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 
 @dataclass
@@ -25,7 +26,7 @@ class BandcampService:
     BASE_URL = "https://bandcamp.com"
     SEARCH_URL = "https://bandcamp.com/search"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = httpx.AsyncClient(
             timeout=30.0,
             headers={
@@ -73,11 +74,12 @@ class BandcampService:
 
         return results
 
-    def _parse_result_item(self, item, item_type: str) -> BandcampResult | None:
+    def _parse_result_item(self, item: Tag, item_type: str) -> BandcampResult | None:
         """Parse a single search result item."""
         try:
             # Get result type
-            result_class = item.get("class", [])
+            result_class_raw: str | list[str] | None = item.get("class")
+            result_class: list[str] = [result_class_raw] if isinstance(result_class_raw, str) else list(result_class_raw or [])
             if "album" in result_class:
                 rtype = "album"
             elif "track" in result_class:
@@ -90,7 +92,8 @@ class BandcampService:
             # Get name
             heading = item.select_one(".heading a")
             name = heading.get_text(strip=True) if heading else None
-            url = heading.get("href") if heading else None
+            url_attr = heading.get("href") if heading else None
+            url = str(url_attr) if url_attr else None
 
             if not name or not url:
                 return None
@@ -108,7 +111,8 @@ class BandcampService:
 
             # Get image
             art = item.select_one(".art img")
-            image_url = art.get("src") if art else None
+            image_url_attr = art.get("src") if art else None
+            image_url = str(image_url_attr) if image_url_attr else None
 
             # Get genre from tags
             genre = None
@@ -133,7 +137,7 @@ class BandcampService:
         except Exception:
             return None
 
-    async def get_album_details(self, url: str) -> dict | None:
+    async def get_album_details(self, url: str) -> dict[str, Any] | None:
         """Get details about a specific album.
 
         Args:
@@ -191,6 +195,6 @@ class BandcampService:
         except Exception:
             return None
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()

@@ -3,6 +3,7 @@
 import json
 import logging
 from collections.abc import AsyncIterator
+from typing import Any, cast
 from uuid import UUID
 
 import anthropic
@@ -253,13 +254,13 @@ Keep responses concise and music-focused."""
 class ToolExecutor:
     """Executes tools called by the LLM."""
 
-    def __init__(self, db: AsyncSession, profile_id: UUID | None = None):
+    def __init__(self, db: AsyncSession, profile_id: UUID | None = None) -> None:
         self.db = db
         self.profile_id = profile_id
-        self._queued_tracks: list[dict] = []
+        self._queued_tracks: list[dict[str, Any]] = []
         self._playback_action: str | None = None
 
-    async def execute(self, tool_name: str, tool_input: dict) -> dict:
+    async def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return the result."""
         if tool_name == "search_library":
             return await self._search_library(**tool_input)
@@ -290,7 +291,7 @@ class ToolExecutor:
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
-    def get_queued_tracks(self) -> list[dict]:
+    def get_queued_tracks(self) -> list[dict[str, Any]]:
         """Get tracks that were queued during this conversation turn."""
         return self._queued_tracks
 
@@ -831,7 +832,7 @@ class OllamaClient:
                                         "arguments": json.dumps(item.input),
                                     }
                                 })
-                    msg_dict = {"role": "assistant"}
+                    msg_dict: dict[str, Any] = {"role": "assistant"}
                     if text_parts:
                         msg_dict["content"] = "\n".join(text_parts)
                     if tool_calls:
@@ -862,14 +863,14 @@ class OllamaClient:
 class LLMService:
     """Service for conversational music discovery using Claude or Ollama."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.app_settings = get_app_settings_service().get()
         self.provider = self.app_settings.llm_provider
 
         if self.provider == "claude":
             api_key = self._get_api_key()
-            self.claude_client = anthropic.Anthropic(api_key=api_key)
-            self.ollama_client = None
+            self.claude_client: anthropic.Anthropic | None = anthropic.Anthropic(api_key=api_key)
+            self.ollama_client: OllamaClient | None = None
         else:
             self.claude_client = None
             self.ollama_client = OllamaClient(
@@ -884,10 +885,10 @@ class LLMService:
     async def chat(
         self,
         message: str,
-        conversation_history: list[dict],
+        conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """
         Process a chat message and stream the response.
 
@@ -909,13 +910,17 @@ class LLMService:
     async def _chat_claude(
         self,
         message: str,
-        conversation_history: list[dict],
+        conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """Chat using Claude API."""
+        if not self.claude_client:
+            yield {"type": "error", "content": "Claude client not configured"}
+            return
+
         tool_executor = ToolExecutor(db, profile_id)
-        messages = conversation_history + [{"role": "user", "content": message}]
+        messages: list[dict[str, Any]] = conversation_history + [{"role": "user", "content": message}]
 
         while True:
             # Call Claude
@@ -923,26 +928,27 @@ class LLMService:
                 model="claude-sonnet-4-20250514",
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,
-                tools=MUSIC_TOOLS,
-                messages=messages,
+                tools=cast(Any, MUSIC_TOOLS),
+                messages=cast(Any, messages),
             )
 
             # Process response content
-            assistant_content = []
+            assistant_content: list[Any] = []
             for block in response.content:
                 if block.type == "text":
                     yield {"type": "text", "content": block.text}
                     assistant_content.append(block)
                 elif block.type == "tool_use":
+                    tool_input = cast(dict[str, Any], block.input)
                     yield {
                         "type": "tool_call",
                         "id": block.id,
                         "name": block.name,
-                        "input": block.input
+                        "input": tool_input
                     }
 
                     # Execute the tool
-                    result = await tool_executor.execute(block.name, block.input)
+                    result = await tool_executor.execute(block.name, tool_input)
 
                     yield {
                         "type": "tool_result",
@@ -987,11 +993,15 @@ class LLMService:
     async def _chat_ollama(
         self,
         message: str,
-        conversation_history: list[dict],
+        conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
-    ) -> AsyncIterator[dict]:
+    ) -> AsyncIterator[dict[str, Any]]:
         """Chat using Ollama API with tool support."""
+        if not self.ollama_client:
+            yield {"type": "error", "content": "Ollama client not configured"}
+            return
+
         tool_executor = ToolExecutor(db, profile_id)
         messages = conversation_history + [{"role": "user", "content": message}]
 

@@ -1,11 +1,18 @@
 """Multi-room audio output API endpoints."""
 
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from app.services.outputs import BrowserOutput, OutputType, SonosOutput, get_output_manager
+from app.services.outputs import (
+    AudioOutput,
+    BrowserOutput,
+    OutputType,
+    SonosOutput,
+    get_output_manager,
+)
 
 router = APIRouter(prefix="/outputs", tags=["outputs"])
 
@@ -68,16 +75,17 @@ class SeekRequest(BaseModel):
 
 
 @router.get("", response_model=list[OutputResponse])
-async def list_outputs():
+async def list_outputs() -> list[dict[str, Any]]:
     """List all registered audio outputs."""
     manager = get_output_manager()
     return manager.list_outputs()
 
 
 @router.post("", response_model=OutputResponse, status_code=status.HTTP_201_CREATED)
-async def create_output(request: CreateOutputRequest):
+async def create_output(request: CreateOutputRequest) -> dict[str, Any]:
     """Register a new audio output."""
     manager = get_output_manager()
+    output: AudioOutput
 
     if request.type == OutputType.BROWSER:
         output = BrowserOutput(name=request.name)
@@ -99,7 +107,7 @@ async def create_output(request: CreateOutputRequest):
 
 
 @router.get("/discover/sonos", response_model=list[OutputResponse])
-async def discover_sonos():
+async def discover_sonos() -> list[dict[str, Any]]:
     """Discover Sonos speakers on the network."""
     manager = get_output_manager()
     discovered = manager.discover_sonos()
@@ -107,7 +115,7 @@ async def discover_sonos():
 
 
 @router.get("/{output_id}", response_model=OutputResponse)
-async def get_output(output_id: UUID):
+async def get_output(output_id: UUID) -> dict[str, Any]:
     """Get an audio output by ID."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -120,7 +128,7 @@ async def get_output(output_id: UUID):
 
 
 @router.delete("/{output_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_output(output_id: UUID):
+async def delete_output(output_id: UUID) -> None:
     """Unregister an audio output."""
     manager = get_output_manager()
     if not manager.unregister_output(output_id):
@@ -131,7 +139,7 @@ async def delete_output(output_id: UUID):
 
 
 @router.post("/{output_id}/play")
-async def play_to_output(output_id: UUID, request: PlayRequest):
+async def play_to_output(output_id: UUID, request: PlayRequest) -> dict[str, str]:
     """Play to a specific output."""
     manager = get_output_manager()
     track_id = UUID(request.track_id) if request.track_id else None
@@ -145,7 +153,7 @@ async def play_to_output(output_id: UUID, request: PlayRequest):
 
 
 @router.post("/{output_id}/pause")
-async def pause_output(output_id: UUID):
+async def pause_output(output_id: UUID) -> dict[str, str]:
     """Pause an output."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -156,7 +164,7 @@ async def pause_output(output_id: UUID):
 
 
 @router.post("/{output_id}/resume")
-async def resume_output(output_id: UUID):
+async def resume_output(output_id: UUID) -> dict[str, str]:
     """Resume an output."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -167,7 +175,7 @@ async def resume_output(output_id: UUID):
 
 
 @router.post("/{output_id}/stop")
-async def stop_output(output_id: UUID):
+async def stop_output(output_id: UUID) -> dict[str, str]:
     """Stop an output."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -178,7 +186,7 @@ async def stop_output(output_id: UUID):
 
 
 @router.post("/{output_id}/seek")
-async def seek_output(output_id: UUID, request: SeekRequest):
+async def seek_output(output_id: UUID, request: SeekRequest) -> dict[str, str | int]:
     """Seek an output to a position."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -189,7 +197,7 @@ async def seek_output(output_id: UUID, request: SeekRequest):
 
 
 @router.post("/{output_id}/volume")
-async def set_output_volume(output_id: UUID, request: VolumeRequest):
+async def set_output_volume(output_id: UUID, request: VolumeRequest) -> dict[str, str | int]:
     """Set output volume."""
     manager = get_output_manager()
     output = manager.get_output(output_id)
@@ -203,14 +211,14 @@ async def set_output_volume(output_id: UUID, request: VolumeRequest):
 
 
 @router.get("/zones", response_model=list[ZoneResponse])
-async def list_zones():
+async def list_zones() -> list[dict[str, Any]]:
     """List all zones."""
     manager = get_output_manager()
     return manager.list_zones()
 
 
 @router.post("/zones", response_model=ZoneResponse, status_code=status.HTTP_201_CREATED)
-async def create_zone(request: CreateZoneRequest):
+async def create_zone(request: CreateZoneRequest) -> dict[str, Any]:
     """Create a new zone."""
     manager = get_output_manager()
     output_ids = [UUID(oid) for oid in request.output_ids] if request.output_ids else None
@@ -219,7 +227,7 @@ async def create_zone(request: CreateZoneRequest):
 
 
 @router.get("/zones/{zone_id}", response_model=ZoneResponse)
-async def get_zone(zone_id: UUID):
+async def get_zone(zone_id: UUID) -> dict[str, Any]:
     """Get a zone by ID."""
     manager = get_output_manager()
     zone = manager.get_zone(zone_id)
@@ -229,7 +237,7 @@ async def get_zone(zone_id: UUID):
 
 
 @router.delete("/zones/{zone_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_zone(zone_id: UUID):
+async def delete_zone(zone_id: UUID) -> None:
     """Delete a zone."""
     manager = get_output_manager()
     if not manager.delete_zone(zone_id):
@@ -237,7 +245,7 @@ async def delete_zone(zone_id: UUID):
 
 
 @router.post("/zones/{zone_id}/play")
-async def play_to_zone(zone_id: UUID, request: PlayRequest):
+async def play_to_zone(zone_id: UUID, request: PlayRequest) -> dict[str, Any]:
     """Play to all outputs in a zone."""
     manager = get_output_manager()
     track_id = UUID(request.track_id) if request.track_id else None
@@ -248,7 +256,7 @@ async def play_to_zone(zone_id: UUID, request: PlayRequest):
 
 
 @router.post("/zones/{zone_id}/pause")
-async def pause_zone(zone_id: UUID):
+async def pause_zone(zone_id: UUID) -> dict[str, Any]:
     """Pause all outputs in a zone."""
     manager = get_output_manager()
     zone = manager.get_zone(zone_id)
@@ -259,7 +267,7 @@ async def pause_zone(zone_id: UUID):
 
 
 @router.post("/zones/{zone_id}/stop")
-async def stop_zone(zone_id: UUID):
+async def stop_zone(zone_id: UUID) -> dict[str, Any]:
     """Stop all outputs in a zone."""
     manager = get_output_manager()
     zone = manager.get_zone(zone_id)
@@ -270,7 +278,7 @@ async def stop_zone(zone_id: UUID):
 
 
 @router.post("/zones/{zone_id}/outputs/{output_id}")
-async def add_output_to_zone(zone_id: UUID, output_id: UUID):
+async def add_output_to_zone(zone_id: UUID, output_id: UUID) -> dict[str, Any]:
     """Add an output to a zone."""
     manager = get_output_manager()
     zone = manager.get_zone(zone_id)
@@ -284,7 +292,7 @@ async def add_output_to_zone(zone_id: UUID, output_id: UUID):
 
 
 @router.delete("/zones/{zone_id}/outputs/{output_id}")
-async def remove_output_from_zone(zone_id: UUID, output_id: UUID):
+async def remove_output_from_zone(zone_id: UUID, output_id: UUID) -> dict[str, Any]:
     """Remove an output from a zone."""
     manager = get_output_manager()
     zone = manager.get_zone(zone_id)

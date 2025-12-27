@@ -5,6 +5,7 @@
  * to have separate Spotify/Last.fm connections without requiring login.
  */
 import { db, type DeviceProfile } from '../db';
+import { generateUUID } from '../utils/uuid';
 
 interface ProfileRegistrationResponse {
   profile_id: string;
@@ -41,7 +42,7 @@ export async function getOrCreateDeviceProfile(): Promise<string> {
   }
 
   // Generate new device ID
-  const deviceId = crypto.randomUUID();
+  const deviceId = generateUUID();
 
   // Register with backend
   const response = await fetch('/api/v1/profiles/register', {

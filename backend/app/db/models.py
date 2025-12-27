@@ -139,7 +139,7 @@ class SpotifyFavorite(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("spotify_profiles.profile_id", ondelete="CASCADE"))
     spotify_track_id: Mapped[str] = mapped_column(String(255), nullable=False)
     matched_track_id: Mapped[UUID | None] = mapped_column(ForeignKey("tracks.id", ondelete="SET NULL"))
 

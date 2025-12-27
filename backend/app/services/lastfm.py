@@ -3,6 +3,7 @@
 import hashlib
 import time
 from dataclasses import dataclass
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -25,7 +26,7 @@ class LastfmService:
     API_URL = "https://ws.audioscrobbler.com/2.0/"
     AUTH_URL = "https://www.last.fm/api/auth/"
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = httpx.AsyncClient(timeout=10.0)
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
@@ -48,13 +49,13 @@ class LastfmService:
         api_key, _ = self._get_credentials()
         return f"{self.AUTH_URL}?api_key={api_key}&cb={callback_url}"
 
-    def _sign_params(self, params: dict) -> str:
+    def _sign_params(self, params: dict[str, Any]) -> str:
         """Generate API signature for authenticated requests."""
         _, api_secret = self._get_credentials()
         # Sort params alphabetically and concatenate key+value
         sorted_params = sorted(params.items())
         sig_string = "".join(f"{k}{v}" for k, v in sorted_params)
-        sig_string += api_secret
+        sig_string += api_secret or ""
 
         return hashlib.md5(sig_string.encode()).hexdigest()
 
@@ -219,13 +220,13 @@ class LastfmService:
         except Exception:
             return False
 
-    async def get_user_info(self, session_key: str) -> dict | None:
+    async def get_user_info(self, session_key: str) -> dict[str, Any] | None:
         """Get user info for a session."""
         if not self.is_configured():
             return None
 
         api_key, _ = self._get_credentials()
-        params = {
+        params: dict[str, Any] = {
             "method": "user.getInfo",
             "api_key": api_key,
             "sk": session_key,
@@ -237,12 +238,13 @@ class LastfmService:
             response = await self.client.get(self.API_URL, params=params)
             data = response.json()
             if "error" not in data:
-                return data.get("user")
+                user_data: dict[str, Any] | None = data.get("user")
+                return user_data
             return None
         except Exception:
             return None
 
-    async def close(self):
+    async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()
 

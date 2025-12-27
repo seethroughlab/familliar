@@ -52,7 +52,7 @@ def _discover_files_sync(library_path: Path) -> list[Path]:
     Much faster than multiple rglob calls, especially on network volumes.
     Logs progress every 500 directories scanned.
     """
-    files = []
+    files: list[Path] = []
     dirs_scanned = 0
 
     logger.info(f"Starting single-pass directory walk of {library_path}")

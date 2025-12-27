@@ -2,6 +2,7 @@
 
 import secrets
 from datetime import datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import spotipy
@@ -25,7 +26,7 @@ class SpotifyService:
         "playlist-read-private",   # User playlists
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         # Redirect to backend OAuth callback endpoint
         # Using 127.0.0.1 instead of localhost for Spotify's security requirements
         self.redirect_uri = "http://127.0.0.1:8000/api/v1/spotify/callback"
@@ -190,7 +191,7 @@ class SpotifySyncService:
         self.db = db
         self.spotify_service = SpotifyService()
 
-    async def sync_favorites(self, profile_id: UUID) -> dict:
+    async def sync_favorites(self, profile_id: UUID) -> dict[str, int]:
         """Sync profile's Spotify saved tracks to local database.
 
         Returns:
@@ -272,7 +273,7 @@ class SpotifySyncService:
         await self.db.commit()
         return stats
 
-    async def sync_top_tracks(self, profile_id: UUID, time_range: str = "medium_term") -> dict:
+    async def sync_top_tracks(self, profile_id: UUID, time_range: str = "medium_term") -> dict[str, int]:
         """Sync profile's top tracks.
 
         Args:
@@ -317,7 +318,7 @@ class SpotifySyncService:
         await self.db.commit()
         return stats
 
-    async def get_unmatched_favorites(self, profile_id: UUID, limit: int = 50) -> list[dict]:
+    async def get_unmatched_favorites(self, profile_id: UUID, limit: int = 50) -> list[dict[str, Any]]:
         """Get Spotify favorites that don't have local matches.
 
         Returns tracks with popularity score for preference-based sorting.
@@ -345,7 +346,7 @@ class SpotifySyncService:
             for f in favorites
         ]
 
-    async def get_sync_stats(self, profile_id: UUID) -> dict:
+    async def get_sync_stats(self, profile_id: UUID) -> dict[str, Any]:
         """Get sync statistics for a profile."""
         # Total favorites
         total = await self.db.scalar(
@@ -377,7 +378,7 @@ class SpotifySyncService:
             "spotify_user_id": spotify_profile.spotify_user_id if spotify_profile else None,
         }
 
-    async def _match_to_local(self, spotify_track: dict) -> Track | None:
+    async def _match_to_local(self, spotify_track: dict[str, Any]) -> Track | None:
         """Try to match a Spotify track to local library.
 
         Matching priority:
@@ -453,8 +454,8 @@ class SpotifySyncService:
             )
             candidates = result.scalars().all()
 
-            best_match = None
-            best_score = 0
+            best_match: Track | None = None
+            best_score: float = 0.0
             threshold = 85  # Minimum combined score to accept
 
             for track in candidates:
@@ -480,7 +481,7 @@ class SpotifySyncService:
 
         return None
 
-    def _extract_track_data(self, spotify_track: dict) -> dict:
+    def _extract_track_data(self, spotify_track: dict[str, Any]) -> dict[str, Any]:
         """Extract relevant data from Spotify track object."""
         artists = spotify_track.get("artists", [])
         album = spotify_track.get("album", {})

@@ -2,10 +2,13 @@
 
 import json
 from collections.abc import AsyncIterator
+from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, DbSession
 from app.config import settings
@@ -28,9 +31,9 @@ class ChatRequest(BaseModel):
 
 async def generate_sse_events(
     message: str,
-    history: list[dict],
-    db,
-    profile_id=None,
+    history: list[dict[str, Any]],
+    db: AsyncSession,
+    profile_id: UUID | None = None,
 ) -> AsyncIterator[str]:
     """Generate Server-Sent Events for streaming chat response."""
     llm_service = LLMService()
@@ -89,7 +92,7 @@ async def chat(
     request: ChatRequest,
     db: DbSession,
     profile: CurrentProfile,
-) -> dict:
+) -> dict[str, Any]:
     """
     Non-streaming chat endpoint.
 

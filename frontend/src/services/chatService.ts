@@ -2,13 +2,7 @@
  * Chat service for managing chat sessions in IndexedDB.
  */
 import { db, type ChatSession, type ChatMessage, type ChatToolCall } from '../db';
-
-/**
- * Generate a UUID v4.
- */
-function generateUUID(): string {
-  return crypto.randomUUID();
-}
+import { generateUUID } from '../utils/uuid';
 
 /**
  * Generate a title from the first user message.

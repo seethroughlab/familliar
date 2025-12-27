@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import async_session_maker
 
 if TYPE_CHECKING:
-    from app.db.models import Profile
+    from app.db.models import Profile, User
 
 # Default user ID for single-user mode (legacy, being replaced by profiles)
 DEFAULT_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -27,7 +27,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
-async def get_current_user(db: AsyncSession = Depends(get_db)):
+async def get_current_user(db: AsyncSession = Depends(get_db)) -> "User":
     """Get or create the default user for single-user mode (legacy)."""
     from app.db.models import User
 
@@ -55,7 +55,7 @@ async def get_current_user(db: AsyncSession = Depends(get_db)):
 async def get_current_profile(
     request: Request,
     db: AsyncSession = Depends(get_db),
-):
+) -> "Profile | None":
     """Get profile from X-Profile-ID header.
 
     The frontend must first register a profile via POST /profiles/register,
@@ -91,7 +91,7 @@ async def get_current_profile(
 async def require_profile(
     request: Request,
     db: AsyncSession = Depends(get_db),
-):
+) -> "Profile":
     """Require a valid profile from X-Profile-ID header.
 
     Unlike get_current_profile, this raises an error if no profile is provided.

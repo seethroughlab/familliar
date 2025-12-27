@@ -34,7 +34,7 @@ class VideoDownloadStatus:
 class VideoService:
     """Service for searching and downloading music videos from YouTube."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.videos_dir = settings.videos_path
         self.videos_dir.mkdir(parents=True, exist_ok=True)
         self._downloads: dict[str, VideoDownloadStatus] = {}
@@ -159,7 +159,7 @@ class VideoService:
             )
 
             # Read progress from stdout
-            while True:
+            while process.stdout:
                 line = await process.stdout.readline()
                 if not line:
                     break

@@ -200,7 +200,7 @@ class SonosOutput(AudioOutput):
     speaker_ip: str = ""
     _speaker: Any = field(default=None, repr=False)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialize Sonos speaker connection."""
         if self.speaker_ip:
             self._connect()
@@ -398,7 +398,7 @@ class OutputManager:
     methods for playing to specific outputs or zones.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.outputs: dict[UUID, AudioOutput] = {}
         self.zones: dict[UUID, Zone] = {}
         self._default_output_id: UUID | None = None

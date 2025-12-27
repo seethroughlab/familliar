@@ -52,7 +52,7 @@ class ListeningSession:
     # WebRTC streaming settings
     webrtc_enabled: bool = True  # Whether to offer WebRTC audio streaming
 
-    def to_dict(self, include_participants: bool = True) -> dict:
+    def to_dict(self, include_participants: bool = True) -> dict[str, Any]:
         """Convert to API response format."""
         result = {
             "id": self.id,
@@ -85,7 +85,7 @@ class ListeningSession:
 class SessionManager:
     """Manages active listening sessions in memory."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._sessions: dict[str, ListeningSession] = {}
         self._user_sessions: dict[UUID, str] = {}  # user_id -> session_id
         self._code_to_session: dict[str, str] = {}  # code -> session_id
@@ -257,7 +257,7 @@ class SessionManager:
 
         return session
 
-    def _end_session(self, session: ListeningSession):
+    def _end_session(self, session: ListeningSession) -> None:
         """Clean up and remove a session."""
         self._code_to_session.pop(session.code, None)
         self._sessions.pop(session.id, None)
@@ -272,7 +272,7 @@ class SessionManager:
         track_id: UUID | None = None,
         is_playing: bool | None = None,
         position_ms: int | None = None,
-    ):
+    ) -> None:
         """Update the playback state for a session."""
         if track_id is not None:
             session.playback_state.track_id = track_id
@@ -287,7 +287,7 @@ class SessionManager:
         session: ListeningSession,
         message: dict[str, Any],
         exclude_user: UUID | None = None,
-    ):
+    ) -> None:
         """Broadcast a message to all participants in a session."""
         disconnected = []
 
