@@ -16,6 +16,9 @@ class SettingsResponse(BaseModel):
     lastfm_api_key: str | None
     lastfm_api_secret: str | None
     anthropic_api_key: str | None
+    llm_provider: str
+    ollama_url: str
+    ollama_model: str
 
     # Computed status fields
     spotify_configured: bool
@@ -30,6 +33,9 @@ class SettingsUpdateRequest(BaseModel):
     lastfm_api_key: str | None = None
     lastfm_api_secret: str | None = None
     anthropic_api_key: str | None = None
+    llm_provider: str | None = None
+    ollama_url: str | None = None
+    ollama_model: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)

@@ -53,12 +53,13 @@ export function LLMSettings() {
 
     try {
       const response = await fetch('/api/v1/settings', {
-        method: 'PATCH',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           llm_provider: settings.llm_provider,
           ollama_url: settings.ollama_url,
           ollama_model: settings.ollama_model,
+          anthropic_api_key: settings.anthropic_api_key,
         }),
       });
 
@@ -116,10 +117,18 @@ export function LLMSettings() {
         {settings.llm_provider === 'claude' && (
           <div>
             <label className="block text-sm text-zinc-400 mb-2">Anthropic API Key</label>
-            <p className="text-xs text-zinc-500 mb-2">
-              {settings.anthropic_api_key
-                ? 'API key is configured'
-                : 'Configure in environment or settings.json'}
+            <input
+              type="password"
+              value={settings.anthropic_api_key || ''}
+              onChange={(e) => setSettings((s) => ({ ...s, anthropic_api_key: e.target.value || null }))}
+              placeholder={settings.anthropic_api_key ? '••••••••••••••••' : 'sk-ant-...'}
+              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              Get your API key from{' '}
+              <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
+                console.anthropic.com
+              </a>
             </p>
           </div>
         )}

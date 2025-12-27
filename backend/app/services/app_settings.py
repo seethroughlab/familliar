@@ -77,11 +77,18 @@ class AppSettingsService:
         settings = self.get()
         data = settings.model_dump()
 
-        # Mask secret values (show only if set or not)
-        for key in data:
-            if data[key]:
+        # Keys that contain secrets and should be masked
+        secret_keys = {
+            "spotify_client_id", "spotify_client_secret",
+            "lastfm_api_key", "lastfm_api_secret",
+            "anthropic_api_key", "acoustid_api_key"
+        }
+
+        # Mask only secret values
+        for key in secret_keys:
+            if key in data and data[key]:
                 # Show first 4 chars + masked remainder
-                val = data[key]
+                val = str(data[key])
                 if len(val) > 8:
                     data[key] = val[:4] + "•" * 8
                 else:

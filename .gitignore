@@ -75,3 +75,4 @@ logs/
 *.pem
 *.key
 job-logs-*.txt
+docker/.env
