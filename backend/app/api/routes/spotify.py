@@ -1,9 +1,12 @@
 """Spotify integration endpoints."""
 
+import logging
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import delete
 
@@ -127,12 +130,15 @@ async def spotify_callback(
 
     The profile_id is encoded in the state parameter from the auth request.
     """
-    # Derive frontend URL from the configured redirect URI
-    # e.g., https://example.com/api/v1/spotify/callback -> https://example.com
+    # Get frontend URL from settings, with fallback for development
     from app.config import settings
-    redirect_uri = settings.spotify_redirect_uri
-    # Remove the /api/v1/spotify/callback path to get base URL
-    base_url = redirect_uri.rsplit("/api/", 1)[0] if "/api/" in redirect_uri else "http://localhost:3000"
+    # Use configured frontend URL if available, otherwise derive from redirect URI
+    # In development, frontend runs on a different port than the API
+    base_url = getattr(settings, 'frontend_url', None)
+    if not base_url:
+        # Production: derive from redirect URI (same host)
+        redirect_uri = settings.spotify_redirect_uri
+        base_url = redirect_uri.rsplit("/api/", 1)[0] if "/api/" in redirect_uri else "http://localhost:3000"
 
     if error:
         # Redirect to frontend with error
@@ -143,16 +149,17 @@ async def spotify_callback(
     spotify_service = SpotifyService()  # type: ignore[no-untyped-call]
 
     try:
+        logger.info(f"Processing OAuth callback with state={state[:20]}...")
         spotify_profile = await spotify_service.handle_callback(db, code, state)
 
         # Redirect to frontend with success
-        return RedirectResponse(
-            url=f"{base_url}/settings?spotify_connected=true&spotify_user={spotify_profile.spotify_user_id}"
-        )
+        redirect_url = f"{base_url}/settings?spotify_connected=true&spotify_user={spotify_profile.spotify_user_id}"
+        logger.info(f"OAuth successful, redirecting to: {redirect_url}")
+        return RedirectResponse(url=redirect_url, status_code=302)
     except Exception as e:
-        return RedirectResponse(
-            url=f"{base_url}/settings?spotify_error={str(e)}"
-        )
+        error_redirect = f"{base_url}/settings?spotify_error={str(e)}"
+        logger.error(f"OAuth callback failed: {e}, redirecting to: {error_redirect}")
+        return RedirectResponse(url=error_redirect, status_code=302)
 
 
 @router.post("/sync", response_model=SyncResponse)

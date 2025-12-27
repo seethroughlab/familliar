@@ -15,8 +15,20 @@ export default defineConfig({
       workbox: {
         // Cache app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Don't serve SPA for API routes (especially OAuth callbacks)
+        navigateFallbackDenylist: [/^\/api\//],
         // Runtime caching strategies
         runtimeCaching: [
+          {
+            // Never cache OAuth callbacks - let browser handle redirects
+            urlPattern: /\/api\/v1\/spotify\/callback/,
+            handler: 'NetworkOnly',
+          },
+          {
+            // Never cache OAuth auth requests
+            urlPattern: /\/api\/v1\/spotify\/auth/,
+            handler: 'NetworkOnly',
+          },
           {
             // Cache album artwork
             urlPattern: /\/api\/v1\/tracks\/.*\/artwork/,
@@ -30,8 +42,8 @@ export default defineConfig({
             },
           },
           {
-            // Cache API responses (except streaming)
-            urlPattern: /\/api\/v1\/(?!tracks\/.*\/stream|tracks\/.*\/video)/,
+            // Cache API responses (except streaming and OAuth)
+            urlPattern: /\/api\/v1\/(?!tracks\/.*\/stream|tracks\/.*\/video|spotify\/callback|spotify\/auth)/,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',

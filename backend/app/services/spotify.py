@@ -1,5 +1,6 @@
 """Spotify integration service for OAuth and sync."""
 
+import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Any
@@ -13,6 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.db.models import SpotifyFavorite, SpotifyProfile, Track
 from app.services.app_settings import get_app_settings_service
+
+logger = logging.getLogger(__name__)
 
 
 class SpotifyService:
@@ -146,13 +149,21 @@ class SpotifyService:
         spotify_profile = result.scalar_one_or_none()
 
         if not spotify_profile or not spotify_profile.access_token:
+            logger.warning(f"No SpotifyProfile found for profile {profile_id}")
             return None
 
         # Check if token needs refresh
         if spotify_profile.token_expires_at and spotify_profile.token_expires_at < datetime.utcnow():
+            logger.info(f"Token expired for {profile_id}, refreshing...")
             if spotify_profile.refresh_token:
-                spotify_profile = await self._refresh_token(db, spotify_profile)
+                try:
+                    spotify_profile = await self._refresh_token(db, spotify_profile)
+                    logger.info(f"Token refreshed successfully for {profile_id}")
+                except Exception as e:
+                    logger.error(f"Token refresh failed for {profile_id}: {e}")
+                    return None
             else:
+                logger.error(f"No refresh token available for {profile_id}")
                 return None
 
         return spotipy.Spotify(auth=spotify_profile.access_token)
@@ -197,8 +208,10 @@ class SpotifySyncService:
         Returns:
             Dict with sync statistics
         """
+        logger.info(f"Starting Spotify sync for profile {profile_id}")
         client = await self.spotify_service.get_client(self.db, profile_id)
         if not client:
+            logger.error(f"No Spotify client available for profile {profile_id}")
             raise ValueError("Spotify not connected")
 
         stats = {"fetched": 0, "new": 0, "matched": 0, "unmatched": 0}
@@ -208,7 +221,13 @@ class SpotifySyncService:
         limit = 50
 
         while True:
-            results = client.current_user_saved_tracks(limit=limit, offset=offset)
+            try:
+                results = client.current_user_saved_tracks(limit=limit, offset=offset)
+                logger.info(f"Spotify API returned {len(results.get('items', []))} items at offset {offset}")
+            except Exception as e:
+                logger.error(f"Spotify API error: {e}")
+                raise ValueError(f"Spotify API error: {e}")
+
             tracks = results.get("items", [])
 
             if not tracks:
@@ -271,6 +290,7 @@ class SpotifySyncService:
             spotify_profile.last_sync_at = datetime.utcnow()
 
         await self.db.commit()
+        logger.info(f"Spotify sync completed for profile {profile_id}: {stats}")
         return stats
 
     async def sync_top_tracks(self, profile_id: UUID, time_range: str = "medium_term") -> dict[str, int]:

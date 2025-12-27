@@ -34,7 +34,21 @@ type RightPanelTab = 'context' | 'library' | 'playlists' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('library');
+  // Determine initial tab from URL path (e.g., /settings from OAuth callback)
+  const initialTab = (): RightPanelTab => {
+    const path = window.location.pathname;
+    const search = window.location.search;
+    console.log('[AppContent] initialTab called, path:', path, 'search:', search);
+    if (path === '/settings') return 'settings';
+    if (path === '/context') return 'context';
+    if (path === '/playlists') return 'playlists';
+    return 'library';
+  };
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>(() => {
+    const tab = initialTab();
+    console.log('[AppContent] Initial tab set to:', tab);
+    return tab;
+  });
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   const [showSessionPanel, setShowSessionPanel] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
