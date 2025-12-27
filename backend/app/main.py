@@ -111,7 +111,7 @@ if STATIC_DIR.exists():
         return FileResponse(STATIC_DIR / "index.html")
 
     # SPA fallback - serve index.html for all non-API routes
-    @app.get("/{full_path:path}")
+    @app.get("/{full_path:path}", response_model=None)
     async def spa_fallback(full_path: str) -> FileResponse | dict[str, str]:
         """Serve index.html for SPA routing (catches all non-API routes)."""
         # Don't catch API or docs routes

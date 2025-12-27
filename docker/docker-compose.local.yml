@@ -1,0 +1,112 @@
+# Local build Docker Compose for Familiar
+# Usage: docker compose -f docker-compose.local.yml up -d --build
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: familiar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: familiar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-familiar}
+      POSTGRES_DB: familiar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familiar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - familiar-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: familiar-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - familiar-network
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: familiar-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - art_data:/data/art
+      - videos_data:/data/videos
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
+      - REDIS_URL=redis://redis:6379/0
+      - MUSIC_LIBRARY_PATH=/data/music
+      - ART_PATH=/data/art
+      - VIDEOS_PATH=/data/videos
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
+      - TURN_SERVER_URL=${TURN_SERVER_URL:-}
+      - TURN_SERVER_USERNAME=${TURN_SERVER_USERNAME:-}
+      - TURN_SERVER_CREDENTIAL=${TURN_SERVER_CREDENTIAL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    networks:
+      - familiar-network
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: familiar-worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    volumes:
+      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - art_data:/data/art
+      - videos_data:/data/videos
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
+      - REDIS_URL=redis://redis:6379/0
+      - MUSIC_LIBRARY_PATH=/data/music
+      - ART_PATH=/data/art
+      - VIDEOS_PATH=/data/videos
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - familiar-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  art_data:
+  videos_data:
+
+networks:
+  familiar-network:
+    driver: bridge
