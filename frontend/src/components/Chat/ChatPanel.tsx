@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Music, Wrench, Plus, Trash2, MessageSquare } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
-import { useContextStore } from '../../stores/contextStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
 import type { ChatSession, ChatToolCall } from '../../db';
@@ -24,7 +23,6 @@ export function ChatPanel() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const { setQueue } = usePlayerStore();
-  const addContextItem = useContextStore((state) => state.addItem);
 
   // Load profile and sessions on mount
   useEffect(() => {
@@ -248,101 +246,6 @@ export function ChatPanel() {
           };
           return { ...prev, messages };
         });
-
-        // Push relevant results to context panel
-        const toolName = event.name as string;
-        const tracks = result.tracks as Track[] | undefined;
-
-        if (toolName === 'search_library' && tracks && tracks.length > 0) {
-          addContextItem({
-            type: 'tracks',
-            title: `Search results (${tracks.length})`,
-            data: tracks,
-          });
-        } else if (toolName === 'find_similar_tracks' && tracks && tracks.length > 0) {
-          addContextItem({
-            type: 'tracks',
-            title: `Similar tracks (${tracks.length})`,
-            data: tracks,
-          });
-        } else if (toolName === 'filter_tracks_by_features' && tracks && tracks.length > 0) {
-          addContextItem({
-            type: 'tracks',
-            title: `Filtered tracks (${tracks.length})`,
-            data: tracks,
-          });
-        } else if (toolName === 'get_spotify_favorites' && tracks && tracks.length > 0) {
-          addContextItem({
-            type: 'favorites',
-            title: `Spotify favorites (${tracks.length})`,
-            data: tracks,
-          });
-        } else if (toolName === 'get_unmatched_spotify_favorites') {
-          const unmatchedTracks = result.tracks as Track[] | undefined;
-          if (unmatchedTracks && unmatchedTracks.length > 0) {
-            addContextItem({
-              type: 'favorites',
-              title: `Unmatched favorites (${unmatchedTracks.length})`,
-              data: unmatchedTracks,
-            });
-          }
-        } else if (toolName === 'get_library_stats') {
-          addContextItem({
-            type: 'stats',
-            title: 'Library stats',
-            data: result as {
-              total_tracks: number;
-              total_artists: number;
-              total_albums: number;
-              top_genres: Array<{ genre: string; count: number }>;
-            },
-          });
-        } else if (toolName === 'get_spotify_sync_stats') {
-          addContextItem({
-            type: 'spotify_stats',
-            title: 'Spotify sync stats',
-            data: result as {
-              total_favorites: number;
-              matched: number;
-              unmatched: number;
-              match_rate: number;
-              last_sync: string | null;
-              connected: boolean;
-            },
-          });
-        } else if (toolName === 'search_bandcamp') {
-          const results = result.results as Array<{
-            type: string;
-            name: string;
-            artist: string;
-            url: string;
-            genre?: string;
-            release_date?: string;
-          }>;
-          if (results && results.length > 0) {
-            addContextItem({
-              type: 'bandcamp',
-              title: `Bandcamp results (${results.length})`,
-              data: results,
-            });
-          }
-        } else if (toolName === 'recommend_bandcamp_purchases') {
-          const recommendations = result.recommendations as Array<{
-            type: string;
-            name: string;
-            artist: string;
-            url: string;
-            genre?: string;
-            based_on?: { spotify_track?: string; spotify_artist?: string };
-          }>;
-          if (recommendations && recommendations.length > 0) {
-            addContextItem({
-              type: 'bandcamp',
-              title: `Bandcamp recommendations (${recommendations.length})`,
-              data: recommendations,
-            });
-          }
-        }
         break;
       }
 

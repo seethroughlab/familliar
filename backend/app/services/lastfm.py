@@ -245,6 +245,74 @@ class LastfmService:
         except Exception:
             return None
 
+    async def get_similar_artists(
+        self,
+        artist: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Get similar artists from Last.fm.
+
+        Returns list of artists with: name, mbid, match (0-1 similarity), url, image
+        This method does not require authentication (no session key needed).
+        """
+        if not self.is_configured():
+            return []
+
+        api_key, _ = self._get_credentials()
+        params = {
+            "method": "artist.getSimilar",
+            "artist": artist,
+            "api_key": api_key,
+            "limit": str(limit),
+            "autocorrect": "1",
+            "format": "json",
+        }
+
+        try:
+            response = await self.client.get(self.API_URL, params=params)
+            data: dict[str, Any] = response.json()
+            similar_artists = data.get("similarartists", {})
+            if isinstance(similar_artists, dict):
+                return similar_artists.get("artist", [])
+            return []
+        except Exception:
+            return []
+
+    async def get_similar_tracks(
+        self,
+        artist: str,
+        track: str,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Get similar tracks from Last.fm.
+
+        Returns list of tracks with: name, artist, match, url, image
+        This method does not require authentication (no session key needed).
+        """
+        if not self.is_configured():
+            return []
+
+        api_key, _ = self._get_credentials()
+        params = {
+            "method": "track.getSimilar",
+            "artist": artist,
+            "track": track,
+            "api_key": api_key,
+            "limit": str(limit),
+            "autocorrect": "1",
+            "format": "json",
+        }
+
+        try:
+            response = await self.client.get(self.API_URL, params=params)
+            data: dict[str, Any] = response.json()
+            similar_tracks = data.get("similartracks", {})
+            if isinstance(similar_tracks, dict):
+                return similar_tracks.get("track", [])
+            return []
+        except Exception:
+            return []
+
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()

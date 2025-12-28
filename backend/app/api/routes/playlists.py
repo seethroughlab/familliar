@@ -8,6 +8,7 @@ from sqlalchemy import delete, func, select
 
 from app.api.deps import DbSession, RequiredProfile
 from app.db.models import Playlist, PlaylistTrack, Track
+from app.services.recommendations import RecommendationsService
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
 
@@ -365,3 +366,95 @@ async def remove_track_from_playlist(
         )
     )
     await db.commit()
+
+
+class RecommendedArtistResponse(BaseModel):
+    """A recommended artist."""
+
+    name: str
+    source: str
+    match_score: float
+    image_url: str | None
+    external_url: str | None
+    local_track_count: int
+
+
+class RecommendedTrackResponse(BaseModel):
+    """A recommended track."""
+
+    title: str
+    artist: str
+    source: str
+    match_score: float
+    external_url: str | None
+    local_track_id: str | None
+
+
+class RecommendationsResponse(BaseModel):
+    """Recommendations response."""
+
+    artists: list[RecommendedArtistResponse]
+    tracks: list[RecommendedTrackResponse]
+    sources_used: list[str]
+
+
+@router.get("/{playlist_id}/recommendations", response_model=RecommendationsResponse)
+async def get_playlist_recommendations(
+    playlist_id: UUID,
+    db: DbSession,
+    profile: RequiredProfile,
+    artist_limit: int = Query(10, ge=1, le=50),
+    track_limit: int = Query(10, ge=1, le=50),
+) -> RecommendationsResponse:
+    """Get recommendations based on a playlist's content.
+
+    Only available for auto-generated (AI) playlists.
+    Uses Last.fm for similar artists/tracks, with Bandcamp as fallback.
+    """
+    playlist = await db.get(Playlist, playlist_id)
+
+    if not playlist or playlist.profile_id != profile.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Playlist not found",
+        )
+
+    if not playlist.is_auto_generated:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Recommendations only available for AI-generated playlists",
+        )
+
+    service = RecommendationsService(db)
+    try:
+        recs = await service.get_playlist_recommendations(
+            playlist_id, artist_limit, track_limit
+        )
+
+        return RecommendationsResponse(
+            artists=[
+                RecommendedArtistResponse(
+                    name=a.name,
+                    source=a.source,
+                    match_score=a.match_score,
+                    image_url=a.image_url,
+                    external_url=a.external_url,
+                    local_track_count=a.local_track_count,
+                )
+                for a in recs.artists
+            ],
+            tracks=[
+                RecommendedTrackResponse(
+                    title=t.title,
+                    artist=t.artist,
+                    source=t.source,
+                    match_score=t.match_score,
+                    external_url=t.external_url,
+                    local_track_id=t.local_track_id,
+                )
+                for t in recs.tracks
+            ],
+            sources_used=recs.sources_used,
+        )
+    finally:
+        await service.close()

@@ -562,6 +562,30 @@ export interface PlaylistCreate {
   generation_prompt?: string;
 }
 
+export interface RecommendedArtist {
+  name: string;
+  source: string;
+  match_score: number;
+  image_url: string | null;
+  external_url: string | null;
+  local_track_count: number;
+}
+
+export interface RecommendedTrack {
+  title: string;
+  artist: string;
+  source: string;
+  match_score: number;
+  external_url: string | null;
+  local_track_id: string | null;
+}
+
+export interface PlaylistRecommendations {
+  artists: RecommendedArtist[];
+  tracks: RecommendedTrack[];
+  sources_used: string[];
+}
+
 export const playlistsApi = {
   list: async (includeAuto = true): Promise<Playlist[]> => {
     const { data } = await api.get('/playlists', {
@@ -596,6 +620,14 @@ export const playlistsApi = {
 
   removeTrack: async (id: string, trackId: string): Promise<void> => {
     await api.delete(`/playlists/${id}/tracks/${trackId}`);
+  },
+
+  getRecommendations: async (
+    id: string,
+    params?: { artist_limit?: number; track_limit?: number }
+  ): Promise<PlaylistRecommendations> => {
+    const { data } = await api.get(`/playlists/${id}/recommendations`, { params });
+    return data;
   },
 };
 

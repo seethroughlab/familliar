@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { Search, Library, MessageSquare, Settings, Zap } from 'lucide-react';
+import { Search, Library, Settings, Zap } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
-import { ContextPanel } from './components/Context';
 import { SettingsPanel } from './components/Settings';
 import { FullPlayer } from './components/FullPlayer';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
 import { OfflineIndicator } from './components/PWA/OfflineIndicator';
 import { SessionPanel } from './components/Sessions';
-import { SmartPlaylistList } from './components/SmartPlaylists';
+import { PlaylistsView } from './components/Playlists';
 import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { useScrobbling } from './hooks/useScrobbling';
@@ -30,7 +29,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type RightPanelTab = 'context' | 'library' | 'playlists' | 'settings';
+type RightPanelTab = 'library' | 'playlists' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
@@ -40,7 +39,6 @@ function AppContent() {
     const search = window.location.search;
     console.log('[AppContent] initialTab called, path:', path, 'search:', search);
     if (path === '/settings') return 'settings';
-    if (path === '/context') return 'context';
     if (path === '/playlists') return 'playlists';
     return 'library';
   };
@@ -124,17 +122,6 @@ function AppContent() {
               {/* Tabs */}
               <div className="flex gap-1">
                 <button
-                  onClick={() => setRightPanelTab('context')}
-                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                    rightPanelTab === 'context'
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4 inline-block mr-1.5" />
-                  Context
-                </button>
-                <button
                   onClick={() => setRightPanelTab('library')}
                   className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                     rightPanelTab === 'library'
@@ -194,12 +181,9 @@ function AppContent() {
                 <TrackList search={search || undefined} />
               </div>
             )}
-            {rightPanelTab === 'context' && (
-              <ContextPanel />
-            )}
             {rightPanelTab === 'playlists' && (
               <div className="px-4 py-6">
-                <SmartPlaylistList />
+                <PlaylistsView />
               </div>
             )}
             {rightPanelTab === 'settings' && (
