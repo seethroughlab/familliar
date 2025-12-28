@@ -257,7 +257,7 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }
-    except (OSError, IOError, ConnectionError):
+    except (OSError, ConnectionError):
         # These are auto-retried by Celery, just re-raise
         raise
     except Exception as e:

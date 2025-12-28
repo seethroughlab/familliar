@@ -120,12 +120,13 @@ export function SystemStatus() {
   };
 
   const getStatusSummary = (services: ServiceStatus[], status: 'degraded' | 'unhealthy') => {
+    // Filter out 'analysis' from problem services - it's shown in Library Status now
     const problemServices = services.filter(s =>
-      status === 'unhealthy' ? s.status === 'unhealthy' : s.status !== 'healthy'
+      s.name !== 'analysis' && (status === 'unhealthy' ? s.status === 'unhealthy' : s.status !== 'healthy')
     );
 
     if (problemServices.length === 0) {
-      return status === 'unhealthy' ? 'Service issues detected' : 'Performance may be limited';
+      return status === 'unhealthy' ? 'Service issues detected' : 'All core services running';
     }
 
     const names = problemServices.map(s => {
@@ -133,17 +134,12 @@ export function SystemStatus() {
         case 'database': return 'Database';
         case 'redis': return 'Cache';
         case 'background_processing': return 'Background processing';
-        case 'analysis': return 'Track analysis';
         default: return s.name;
       }
     });
 
     if (names.length === 1) {
       const service = problemServices[0];
-      // For analysis, give more specific info
-      if (service.name === 'analysis' && service.details?.pending) {
-        return `${(service.details.pending as number).toLocaleString()} tracks awaiting analysis`;
-      }
       if (service.name === 'background_processing' && service.status === 'unhealthy') {
         return 'Background processing stopped';
       }
@@ -190,7 +186,6 @@ export function SystemStatus() {
   if (!health) return null;
 
   const hasWarnings = health.warnings.length > 0;
-  const analysisProgress = workerStatus?.analysis_progress;
 
   return (
     <div className={`rounded-lg p-4 border ${getStatusBgColor(health.status)}`}>
@@ -230,43 +225,26 @@ export function SystemStatus() {
         </div>
       </div>
 
-      {/* Service status badges (always visible) */}
+      {/* Service status badges (always visible) - filter out analysis (shown in Library Status) */}
       <div className="mt-3 flex flex-wrap gap-2">
-        {health.services.map((service) => (
-          <div
-            key={service.name}
-            className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
-              service.status === 'healthy'
-                ? 'bg-green-900/30 text-green-300'
-                : service.status === 'degraded'
-                ? 'bg-yellow-900/30 text-yellow-300'
-                : 'bg-red-900/30 text-red-300'
-            }`}
-          >
-            {getServiceIcon(service.name)}
-            <span>{getServiceDisplayName(service.name)}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Analysis progress bar (always visible if there's pending work) */}
-      {analysisProgress && analysisProgress.pending > 0 && (
-        <div className="mt-3">
-          <div className="flex items-center justify-between text-xs mb-1">
-            <span className="text-zinc-400">Analysis Progress</span>
-            <span className="text-zinc-300">
-              {analysisProgress.analyzed.toLocaleString()} / {analysisProgress.total.toLocaleString()}
-              {' '}({analysisProgress.percent}%)
-            </span>
-          </div>
-          <div className="w-full bg-zinc-700 rounded-full h-2">
+        {health.services
+          .filter((service) => service.name !== 'analysis')
+          .map((service) => (
             <div
-              className="bg-blue-500 h-2 rounded-full transition-all duration-500"
-              style={{ width: `${analysisProgress.percent}%` }}
-            />
-          </div>
-        </div>
-      )}
+              key={service.name}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
+                service.status === 'healthy'
+                  ? 'bg-green-900/30 text-green-300'
+                  : service.status === 'degraded'
+                  ? 'bg-yellow-900/30 text-yellow-300'
+                  : 'bg-red-900/30 text-red-300'
+              }`}
+            >
+              {getServiceIcon(service.name)}
+              <span>{getServiceDisplayName(service.name)}</span>
+            </div>
+          ))}
+      </div>
 
       {/* Warnings (always visible if present) */}
       {hasWarnings && (
@@ -286,14 +264,16 @@ export function SystemStatus() {
       {/* Expanded details */}
       {isExpanded && (
         <div className="mt-4 space-y-4">
-          {/* Services */}
+          {/* Services (filter out analysis - shown in Library Status) */}
           <div className="space-y-2">
             <h5 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
               Services
             </h5>
-            {health.services.map((service) => (
-              <ServiceStatusRow key={service.name} service={service} />
-            ))}
+            {health.services
+              .filter((service) => service.name !== 'analysis')
+              .map((service) => (
+                <ServiceStatusRow key={service.name} service={service} />
+              ))}
           </div>
 
           {/* Workers */}

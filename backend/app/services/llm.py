@@ -516,6 +516,7 @@ Respond with ONLY the playlist name, nothing else."""
     async def _search_library(self, query: str, limit: int = 20) -> dict[str, Any]:
         """Search tracks by text query with diversity across artists/albums."""
         import random
+
         from sqlalchemy import or_
 
         # Generate query variations for better matching

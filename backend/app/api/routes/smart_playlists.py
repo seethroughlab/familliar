@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import DbSession, RequiredProfile
-from app.db.models import Profile, Track
+from app.db.models import Track
 from app.services.smart_playlists import SmartPlaylistService
 
 router = APIRouter(prefix="/smart-playlists", tags=["smart-playlists"])

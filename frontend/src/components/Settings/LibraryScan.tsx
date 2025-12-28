@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle, AlertCircle, Loader2, FolderSearch } from 'lucide-react';
-import { libraryApi, type ScanStatus } from '../../api/client';
+import { RefreshCw, CheckCircle, AlertCircle, Loader2, FolderSearch, Music, Activity } from 'lucide-react';
+import { libraryApi, healthApi, type ScanStatus, type WorkerStatus } from '../../api/client';
 
 export function LibraryScan() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
+  const [workerStatus, setWorkerStatus] = useState<WorkerStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [isPending, setIsPending] = useState(false); // Waiting for worker to pick up task
@@ -11,16 +12,20 @@ export function LibraryScan() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const data = await libraryApi.getScanStatus();
-      setScanStatus(data);
-      return data.status === 'running';
+      const [scanData, workerData] = await Promise.all([
+        libraryApi.getScanStatus(),
+        healthApi.getWorkerStatus(),
+      ]);
+      setScanStatus(scanData);
+      setWorkerStatus(workerData);
+      return scanData.status === 'running';
     } catch (error) {
-      console.error('Failed to fetch scan status:', error);
+      console.error('Failed to fetch status:', error);
     }
     return false;
   }, []);
 
-  // Initial fetch - start polling if scan is already running
+  // Initial fetch - start polling if scan is running or analysis is pending
   useEffect(() => {
     const checkInitialStatus = async () => {
       const isRunning = await fetchStatus();
@@ -31,9 +36,14 @@ export function LibraryScan() {
     checkInitialStatus();
   }, [fetchStatus]);
 
-  // Poll while scan is running or pending
+  // Also poll when there's pending analysis work
+  const analysisProgress = workerStatus?.analysis_progress;
+  const hasAnalysisPending = analysisProgress && analysisProgress.pending > 0;
+
+  // Poll while scan is running, pending, or analysis in progress
   useEffect(() => {
-    if (!isPolling && !isPending) return;
+    const shouldPoll = isPolling || isPending || hasAnalysisPending;
+    if (!shouldPoll) return;
 
     const interval = setInterval(async () => {
       const stillRunning = await fetchStatus();
@@ -52,14 +62,14 @@ export function LibraryScan() {
           }
           return prev + 1;
         });
-      } else {
-        // Scan completed
+      } else if (!hasAnalysisPending) {
+        // Scan completed and no pending analysis
         setIsPolling(false);
       }
-    }, 1000);
+    }, hasAnalysisPending ? 5000 : 1000); // Slower polling for analysis-only
 
     return () => clearInterval(interval);
-  }, [isPolling, isPending, fetchStatus]);
+  }, [isPolling, isPending, hasAnalysisPending, fetchStatus]);
 
   const startScan = async (full: boolean = false) => {
     setIsStarting(true);
@@ -98,27 +108,49 @@ export function LibraryScan() {
     if (isPending) {
       return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
     }
-    if (!scanStatus) return null;
 
-    switch (scanStatus.status) {
-      case 'running':
-        return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
-      case 'queued':
-        return <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />;
-      case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-400" />;
-      case 'error':
-        return <AlertCircle className="w-5 h-5 text-red-400" />;
-      default:
-        return <FolderSearch className="w-5 h-5 text-zinc-400" />;
+    // Check scan status first
+    if (scanStatus?.status === 'running') {
+      return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
     }
+    if (scanStatus?.status === 'queued') {
+      return <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />;
+    }
+    if (scanStatus?.status === 'error') {
+      return <AlertCircle className="w-5 h-5 text-red-400" />;
+    }
+
+    // Then check analysis status
+    if (hasAnalysisPending) {
+      return <Activity className="w-5 h-5 text-purple-400 animate-pulse" />;
+    }
+
+    // All done
+    if (analysisProgress && analysisProgress.total > 0) {
+      return <CheckCircle className="w-5 h-5 text-green-400" />;
+    }
+
+    return <Music className="w-5 h-5 text-zinc-400" />;
   };
 
   const getStatusMessage = () => {
     if (isPending) {
       return 'Starting scan...';
     }
-    return scanStatus?.message || 'Check for new or changed files';
+
+    if (scanStatus?.status === 'running') {
+      return scanStatus.message || 'Scanning...';
+    }
+
+    if (hasAnalysisPending && analysisProgress) {
+      return `Analyzing ${analysisProgress.pending.toLocaleString()} tracks...`;
+    }
+
+    if (analysisProgress && analysisProgress.total > 0) {
+      return `${analysisProgress.total.toLocaleString()} tracks ready`;
+    }
+
+    return scanStatus?.message || 'Scan for new music';
   };
 
   const isQueued = scanStatus?.status === 'queued';
@@ -136,7 +168,7 @@ export function LibraryScan() {
         <div className="flex items-center gap-3">
           {getStatusIcon()}
           <div>
-            <h4 className="font-medium text-white">Library Scanner</h4>
+            <h4 className="font-medium text-white">Library Status</h4>
             <p className="text-sm text-zinc-400">
               {getStatusMessage()}
             </p>
@@ -295,6 +327,28 @@ export function LibraryScan() {
             <div className="text-red-400 font-medium">{progress.deleted_tracks}</div>
             <div className="text-zinc-500">Deleted</div>
           </div>
+        </div>
+      )}
+
+      {/* Analysis progress (shown whenever there's pending analysis work) */}
+      {hasAnalysisPending && analysisProgress && (
+        <div className="mt-4 space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-400">Processing audio...</span>
+            <span className="text-zinc-300">
+              {analysisProgress.analyzed.toLocaleString()} / {analysisProgress.total.toLocaleString()}
+              {' '}({analysisProgress.percent}%)
+            </span>
+          </div>
+          <div className="w-full bg-zinc-700 rounded-full h-2">
+            <div
+              className="bg-purple-500 h-2 rounded-full transition-all duration-500"
+              style={{ width: `${analysisProgress.percent}%` }}
+            />
+          </div>
+          <p className="text-xs text-zinc-500">
+            Extracting audio features for search and recommendations
+          </p>
         </div>
       )}
     </div>

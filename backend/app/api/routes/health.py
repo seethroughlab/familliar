@@ -42,7 +42,7 @@ def is_running_in_docker() -> bool:
         return True
     # Check cgroup (works on most Linux systems)
     try:
-        with open("/proc/1/cgroup", "r") as f:
+        with open("/proc/1/cgroup") as f:
             return "docker" in f.read()
     except (FileNotFoundError, PermissionError):
         pass
@@ -114,6 +114,7 @@ async def system_health_check(db: DbSession) -> SystemHealth:
     # Check Redis
     try:
         import redis
+
         from app.config import settings
         r = redis.from_url(settings.redis_url)
         r.ping()
@@ -166,6 +167,8 @@ async def system_health_check(db: DbSession) -> SystemHealth:
         )
 
     # Check Analysis Backlog
+    # Note: Analysis progress is informational, not a health concern.
+    # We only warn if workers are DOWN and tracks are pending.
     try:
         total_tracks = await db.scalar(select(func.count(Track.id))) or 0
         analyzed_tracks = await db.scalar(
@@ -173,62 +176,26 @@ async def system_health_check(db: DbSession) -> SystemHealth:
         ) or 0
         pending = total_tracks - analyzed_tracks
 
-        if pending == 0:
-            services.append(ServiceStatus(
-                name="analysis",
-                status="healthy",
-                message="All tracks analyzed",
-                details={"total": total_tracks, "analyzed": analyzed_tracks, "pending": 0},
-            ))
-        elif pending < 100:
-            services.append(ServiceStatus(
-                name="analysis",
-                status="healthy",
-                message=f"{pending} tracks pending analysis",
-                details={"total": total_tracks, "analyzed": analyzed_tracks, "pending": pending},
-            ))
-        elif pending < 1000:
-            services.append(ServiceStatus(
-                name="analysis",
-                status="degraded",
-                message=f"{pending} tracks pending analysis",
-                details={"total": total_tracks, "analyzed": analyzed_tracks, "pending": pending},
-            ))
-            # Check if processing is running
-            bg_healthy = any(
-                s.name == "background_processing" and s.status == "healthy"
-                for s in services
+        # Check if background processing is healthy
+        bg_healthy = any(
+            s.name == "background_processing" and s.status == "healthy"
+            for s in services
+        )
+
+        # Analysis status is always "healthy" - pending work is normal, not a problem
+        services.append(ServiceStatus(
+            name="analysis",
+            status="healthy",
+            message="All tracks analyzed" if pending == 0 else f"{pending:,} tracks pending",
+            details={"total": total_tracks, "analyzed": analyzed_tracks, "pending": pending},
+        ))
+
+        # Only warn if workers are DOWN and there's pending work
+        if pending > 0 and not bg_healthy:
+            warnings.append(
+                f"{pending:,} tracks waiting for analysis. "
+                "Background processing is not running."
             )
-            if bg_healthy:
-                warnings.append(
-                    f"{pending} tracks are being analyzed. This may take a while."
-                )
-            else:
-                warnings.append(
-                    f"{pending} tracks waiting for analysis. "
-                    "Background processing is not running."
-                )
-        else:
-            services.append(ServiceStatus(
-                name="analysis",
-                status="degraded",
-                message=f"{pending:,} tracks pending analysis",
-                details={"total": total_tracks, "analyzed": analyzed_tracks, "pending": pending},
-            ))
-            # Check if processing is running
-            bg_healthy = any(
-                s.name == "background_processing" and s.status == "healthy"
-                for s in services
-            )
-            if bg_healthy:
-                warnings.append(
-                    f"{pending:,} tracks are being analyzed. This may take a while."
-                )
-            else:
-                warnings.append(
-                    f"{pending:,} tracks waiting for analysis. "
-                    "Background processing is not running."
-                )
     except Exception as e:
         services.append(ServiceStatus(
             name="analysis",
@@ -306,6 +273,7 @@ class WorkerStatus(BaseModel):
 async def get_worker_status(db: DbSession) -> WorkerStatus:
     """Get detailed status of Celery workers and task queues."""
     import redis
+
     from app.config import ANALYSIS_VERSION, settings
     from app.workers.celery_app import celery_app
     from app.workers.tasks import get_recent_failures

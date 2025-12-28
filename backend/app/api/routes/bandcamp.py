@@ -4,7 +4,6 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from app.api.deps import RequiredProfile
-from app.db.models import Profile
 from app.services.bandcamp import BandcampService
 
 router = APIRouter(prefix="/bandcamp", tags=["bandcamp"])

@@ -31,8 +31,8 @@
 [x] Why does "Analysis Progress" have such a prominent position in the overall system status, design-wise? Isn't it kind of part of a library scan? Shouldn't it be shown there? The System Status view is still a bit confusing. 
 [x] Is analysis status included in the scan progress? 
 [x] Do scans currently happen automatically at all? 
+[x] We need the ability to rename profiles and choose a profile image (with auto-cropping/resize)
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] please read job-logs-*.txt and fix the CI issues.
-[ ] We need the ability to rename profiles, and choose a profile image
-[ ] Missing from Library should also appear in AI-generated playlists when relevant
+[ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
