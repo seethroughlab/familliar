@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Music, Wrench, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore } from '../../stores/playerStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
@@ -22,6 +23,7 @@ export function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
 
   // Load profile and sessions on mount
@@ -300,6 +302,12 @@ export function ChatPanel() {
         });
         break;
       }
+
+      case 'playlist_created': {
+        // Invalidate playlists query so the new playlist appears in the list
+        queryClient.invalidateQueries({ queryKey: ['playlists'] });
+        break;
+      }
     }
   };
 
@@ -447,6 +455,7 @@ function ToolCallBadge({ toolCall }: { toolCall: ChatToolCall }) {
     find_similar_tracks: 'Finding similar',
     filter_tracks_by_features: 'Filtering',
     get_library_stats: 'Getting stats',
+    get_library_genres: 'Getting genres',
     queue_tracks: 'Queueing',
     control_playback: 'Controlling',
     get_track_details: 'Getting details',
@@ -456,6 +465,8 @@ function ToolCallBadge({ toolCall }: { toolCall: ChatToolCall }) {
     get_spotify_sync_stats: 'Sync stats',
     search_bandcamp: 'Searching Bandcamp',
     recommend_bandcamp_purchases: 'Recommending',
+    save_as_playlist: 'Saving playlist',
+    select_diverse_tracks: 'Selecting diverse tracks',
   };
 
   const displayName = toolNames[toolCall.name] || toolCall.name;

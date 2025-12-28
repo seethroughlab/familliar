@@ -1242,6 +1242,15 @@ class LLMService:
                         "result": result
                     }
 
+                    # Emit playlist_created event when a playlist is saved
+                    if block.name == "save_as_playlist" and result.get("saved"):
+                        yield {
+                            "type": "playlist_created",
+                            "playlist_id": result.get("playlist_id"),
+                            "playlist_name": result.get("playlist_name"),
+                            "track_count": result.get("tracks_saved"),
+                        }
+
                     assistant_content.append(block)
 
                     # Add tool result to messages for next iteration
@@ -1341,6 +1350,15 @@ class LLMService:
                             "name": tool_name,
                             "result": result
                         }
+
+                        # Emit playlist_created event when a playlist is saved
+                        if tool_name == "save_as_playlist" and result.get("saved"):
+                            yield {
+                                "type": "playlist_created",
+                                "playlist_id": result.get("playlist_id"),
+                                "playlist_name": result.get("playlist_name"),
+                                "track_count": result.get("tracks_saved"),
+                            }
 
                         # Add to messages for next iteration
                         messages.append({
