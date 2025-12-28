@@ -12,7 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import SpotifyFavorite, SpotifyProfile, Track, TrackAnalysis
+from app.db.models import Playlist, PlaylistTrack, SpotifyFavorite, SpotifyProfile, Track, TrackAnalysis
 from app.services.app_settings import get_app_settings_service
 
 logger = logging.getLogger(__name__)
@@ -229,6 +229,29 @@ MUSIC_TOOLS = [
                 }
             }
         }
+    },
+    {
+        "name": "save_as_playlist",
+        "description": "Save a set of tracks as a named playlist. Use this after queuing tracks to save them for later. The playlist will be marked as AI-generated.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "A descriptive name for the playlist based on the user's request"
+                },
+                "track_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of track UUIDs to save in the playlist"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Optional description of the playlist"
+                }
+            },
+            "required": ["name", "track_ids"]
+        }
     }
 ]
 
@@ -245,6 +268,7 @@ Guidelines:
 - You can combine multiple searches: find similar to X, then filter by energy
 - Be conversational but efficient—the user wants to listen to music, not read essays
 - When you queue tracks, confirm what you've queued
+- IMPORTANT: After queueing tracks, always use save_as_playlist to save them. Generate a descriptive name based on the user's request (e.g., "Ambient Evening", "High Energy Workout", "Relaxing Jazz").
 
 Spotify integration:
 - Use get_spotify_favorites to find tracks the user has liked on Spotify that are in their local library
@@ -305,6 +329,8 @@ class ToolExecutor:
             return await self._search_bandcamp(**tool_input)
         elif tool_name == "recommend_bandcamp_purchases":
             return await self._recommend_bandcamp_purchases(**tool_input)
+        elif tool_name == "save_as_playlist":
+            return await self._save_as_playlist(**tool_input)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
@@ -780,6 +806,67 @@ class ToolExecutor:
             "recommendations": recommendations[:limit],
             "count": len(recommendations[:limit]),
             "note": "Albums recommended based on your Spotify favorites that aren't in your local library"
+        }
+
+    async def _save_as_playlist(
+        self,
+        name: str,
+        track_ids: list[str],
+        description: str | None = None,
+    ) -> dict[str, Any]:
+        """Save tracks as an AI-generated playlist."""
+        if not self.profile_id:
+            return {
+                "error": "No profile ID - cannot save playlist",
+                "saved": False
+            }
+
+        if not track_ids:
+            return {
+                "error": "No tracks provided",
+                "saved": False
+            }
+
+        # Create the playlist
+        playlist = Playlist(
+            profile_id=self.profile_id,
+            name=name,
+            description=description,
+            is_auto_generated=True,
+            generation_prompt=name,  # Use the name as the prompt summary
+        )
+        self.db.add(playlist)
+        await self.db.flush()  # Get the playlist ID
+
+        # Add tracks
+        tracks_added = 0
+        for position, track_id_str in enumerate(track_ids):
+            try:
+                track_id = UUID(track_id_str)
+            except ValueError:
+                continue
+
+            # Verify track exists
+            track = await self.db.get(Track, track_id)
+            if not track:
+                continue
+
+            playlist_track = PlaylistTrack(
+                playlist_id=playlist.id,
+                track_id=track_id,
+                position=position,
+            )
+            self.db.add(playlist_track)
+            tracks_added += 1
+
+        await self.db.commit()
+
+        return {
+            "saved": True,
+            "playlist_id": str(playlist.id),
+            "playlist_name": name,
+            "tracks_saved": tracks_added,
+            "message": f"Saved {tracks_added} tracks as '{name}'"
         }
 
     def _track_to_dict(self, track: Track) -> dict[str, Any]:

@@ -255,7 +255,9 @@ class LibraryScanner:
     async def _create_track(
         self, file_path: Path, file_hash: str, file_mtime: datetime
     ) -> Track:
-        """Create a new track record."""
+        """Create a new track record, or update if it already exists (upsert)."""
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
         loop = asyncio.get_event_loop()
 
         # Extract metadata from file (in thread pool)
@@ -263,27 +265,50 @@ class LibraryScanner:
             _file_executor, _extract_metadata_sync, file_path
         )
 
-        track = Track(
-            file_path=str(file_path),
-            file_hash=file_hash,
-            file_modified_at=file_mtime,
-            title=metadata.get("title"),
-            artist=metadata.get("artist"),
-            album=metadata.get("album"),
-            album_artist=metadata.get("album_artist"),
-            track_number=metadata.get("track_number"),
-            disc_number=metadata.get("disc_number"),
-            year=metadata.get("year"),
-            genre=metadata.get("genre"),
-            duration_seconds=metadata.get("duration_seconds"),
-            sample_rate=metadata.get("sample_rate"),
-            bit_depth=metadata.get("bit_depth"),
-            bitrate=metadata.get("bitrate"),
-            format=metadata.get("format"),
-        )
+        values = {
+            "file_path": str(file_path),
+            "file_hash": file_hash,
+            "file_modified_at": file_mtime,
+            "title": metadata.get("title"),
+            "artist": metadata.get("artist"),
+            "album": metadata.get("album"),
+            "album_artist": metadata.get("album_artist"),
+            "track_number": metadata.get("track_number"),
+            "disc_number": metadata.get("disc_number"),
+            "year": metadata.get("year"),
+            "genre": metadata.get("genre"),
+            "duration_seconds": metadata.get("duration_seconds"),
+            "sample_rate": metadata.get("sample_rate"),
+            "bit_depth": metadata.get("bit_depth"),
+            "bitrate": metadata.get("bitrate"),
+            "format": metadata.get("format"),
+        }
 
-        self.db.add(track)
-        await self.db.flush()  # Get the track ID
+        # Use upsert to handle race conditions (another process may have inserted this track)
+        stmt = pg_insert(Track).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["file_path"],
+            set_={
+                "file_hash": stmt.excluded.file_hash,
+                "file_modified_at": stmt.excluded.file_modified_at,
+                "title": stmt.excluded.title,
+                "artist": stmt.excluded.artist,
+                "album": stmt.excluded.album,
+                "album_artist": stmt.excluded.album_artist,
+                "track_number": stmt.excluded.track_number,
+                "disc_number": stmt.excluded.disc_number,
+                "year": stmt.excluded.year,
+                "genre": stmt.excluded.genre,
+                "duration_seconds": stmt.excluded.duration_seconds,
+                "sample_rate": stmt.excluded.sample_rate,
+                "bit_depth": stmt.excluded.bit_depth,
+                "bitrate": stmt.excluded.bitrate,
+                "format": stmt.excluded.format,
+            },
+        ).returning(Track)
+
+        result = await self.db.execute(stmt)
+        track = result.scalar_one()
 
         # Queue analysis task
         from app.workers.tasks import analyze_track

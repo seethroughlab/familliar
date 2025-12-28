@@ -82,6 +82,9 @@ class Profile(Base):
     lastfm_profile: Mapped["LastfmProfile | None"] = relationship(
         back_populates="profile", cascade="all, delete"
     )
+    playlists: Mapped[list["Playlist"]] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
 
 
 class LastfmProfile(Base):
@@ -239,7 +242,7 @@ class Playlist(Base):
     __tablename__ = "playlists"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -250,7 +253,7 @@ class Playlist(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="playlists")
+    profile: Mapped["Profile"] = relationship(back_populates="playlists")
     tracks: Mapped[list["PlaylistTrack"]] = relationship(
         back_populates="playlist", cascade="all, delete"
     )

@@ -524,6 +524,81 @@ export const smartPlaylistsApi = {
   },
 };
 
+// Playlists API (static playlists with track IDs)
+export interface Playlist {
+  id: string;
+  name: string;
+  description: string | null;
+  is_auto_generated: boolean;
+  generation_prompt: string | null;
+  track_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlaylistDetail {
+  id: string;
+  name: string;
+  description: string | null;
+  is_auto_generated: boolean;
+  generation_prompt: string | null;
+  tracks: Array<{
+    id: string;
+    title: string | null;
+    artist: string | null;
+    album: string | null;
+    duration_seconds: number | null;
+    position: number;
+  }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlaylistCreate {
+  name: string;
+  description?: string;
+  track_ids: string[];
+  is_auto_generated?: boolean;
+  generation_prompt?: string;
+}
+
+export const playlistsApi = {
+  list: async (includeAuto = true): Promise<Playlist[]> => {
+    const { data } = await api.get('/playlists', {
+      params: { include_auto: includeAuto },
+    });
+    return data;
+  },
+
+  get: async (id: string): Promise<PlaylistDetail> => {
+    const { data } = await api.get(`/playlists/${id}`);
+    return data;
+  },
+
+  create: async (playlist: PlaylistCreate): Promise<PlaylistDetail> => {
+    const { data } = await api.post('/playlists', playlist);
+    return data;
+  },
+
+  update: async (id: string, playlist: { name?: string; description?: string }): Promise<Playlist> => {
+    const { data } = await api.put(`/playlists/${id}`, playlist);
+    return data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/playlists/${id}`);
+  },
+
+  addTracks: async (id: string, trackIds: string[]): Promise<PlaylistDetail> => {
+    const { data } = await api.post(`/playlists/${id}/tracks`, trackIds);
+    return data;
+  },
+
+  removeTrack: async (id: string, trackId: string): Promise<void> => {
+    await api.delete(`/playlists/${id}/tracks/${trackId}`);
+  },
+};
+
 // Profile API
 export interface ProfileResponse {
   profile_id: string;

@@ -76,3 +76,4 @@ logs/
 *.key
 job-logs-*.txt
 docker/.env
+backend/.cache

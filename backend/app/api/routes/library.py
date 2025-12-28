@@ -144,14 +144,14 @@ async def get_scan_status() -> ScanStatus:
             progress=None,
         )
 
-    # Check if the scan is stale (no heartbeat for 2 minutes)
+    # Check if the scan is stale (no heartbeat for 5 minutes - network volumes can be slow)
     status = progress.get("status", "idle")
     if status == "running":
         last_heartbeat = progress.get("last_heartbeat")
         if last_heartbeat:
             try:
                 heartbeat_time = datetime.fromisoformat(last_heartbeat)
-                if datetime.now() - heartbeat_time > timedelta(minutes=2):
+                if datetime.now() - heartbeat_time > timedelta(minutes=5):
                     # Scan is stale - worker probably died
                     clear_scan_progress()
                     return ScanStatus(

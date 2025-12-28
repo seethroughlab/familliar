@@ -1,7 +1,9 @@
-import { Music, ExternalLink, BarChart3, Heart, Disc } from 'lucide-react';
+import { useState } from 'react';
+import { Music, ExternalLink, BarChart3, Heart, Disc, ListPlus, Check, X } from 'lucide-react';
 import { useContextStore } from '../../stores/contextStore';
 import type { ContextTrack, BandcampResult, SpotifyFavorite, LibraryStats, SpotifySyncStats } from '../../stores/contextStore';
 import { usePlayerStore } from '../../stores/playerStore';
+import { playlistsApi } from '../../api/client';
 
 export function ContextPanel() {
   const items = useContextStore((state) => state.items);
@@ -65,6 +67,10 @@ export function ContextPanel() {
 
 function TrackResults({ tracks }: { tracks: ContextTrack[] }) {
   const { setQueue } = usePlayerStore();
+  const [showSaveForm, setShowSaveForm] = useState(false);
+  const [playlistName, setPlaylistName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   if (tracks.length === 0) {
     return <p className="text-sm text-zinc-500">No tracks found</p>;
@@ -110,14 +116,77 @@ function TrackResults({ tracks }: { tracks: ContextTrack[] }) {
     setQueue(queueTracks, index);
   };
 
+  const saveAsPlaylist = async () => {
+    if (!playlistName.trim()) return;
+    setSaving(true);
+    try {
+      await playlistsApi.create({
+        name: playlistName.trim(),
+        track_ids: tracks.map(t => t.id),
+      });
+      setSaved(true);
+      setShowSaveForm(false);
+      setPlaylistName('');
+      // Reset saved state after a few seconds
+      setTimeout(() => setSaved(false), 3000);
+    } catch (error) {
+      console.error('Failed to save playlist:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-1">
-      <button
-        onClick={playAll}
-        className="text-xs text-green-500 hover:text-green-400 mb-2"
-      >
-        Play all ({tracks.length})
-      </button>
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          onClick={playAll}
+          className="text-xs text-green-500 hover:text-green-400"
+        >
+          Play all ({tracks.length})
+        </button>
+        <span className="text-zinc-600">·</span>
+        {saved ? (
+          <span className="text-xs text-green-500 flex items-center gap-1">
+            <Check className="w-3 h-3" /> Saved!
+          </span>
+        ) : showSaveForm ? (
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={playlistName}
+              onChange={(e) => setPlaylistName(e.target.value)}
+              placeholder="Playlist name..."
+              className="text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 w-32"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') saveAsPlaylist();
+                if (e.key === 'Escape') setShowSaveForm(false);
+              }}
+            />
+            <button
+              onClick={saveAsPlaylist}
+              disabled={saving || !playlistName.trim()}
+              className="text-xs text-green-500 hover:text-green-400 disabled:text-zinc-600 p-1"
+            >
+              <Check className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() => setShowSaveForm(false)}
+              className="text-xs text-zinc-500 hover:text-zinc-400 p-1"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowSaveForm(true)}
+            className="text-xs text-zinc-400 hover:text-zinc-300 flex items-center gap-1"
+          >
+            <ListPlus className="w-3 h-3" /> Save as playlist
+          </button>
+        )}
+      </div>
       <div className="max-h-[50vh] overflow-y-auto space-y-1">
         {tracks.map((track, i) => (
           <div

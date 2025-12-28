@@ -235,14 +235,14 @@ async def get_sync_status() -> SpotifySyncStatus:
             progress=None,
         )
 
-    # Check if the sync is stale (no heartbeat for 2 minutes)
+    # Check if the sync is stale (no heartbeat for 5 minutes)
     status = progress.get("status", "idle")
     if status == "running":
         last_heartbeat = progress.get("last_heartbeat")
         if last_heartbeat:
             try:
                 heartbeat_time = datetime.fromisoformat(last_heartbeat)
-                if datetime.now() - heartbeat_time > timedelta(minutes=2):
+                if datetime.now() - heartbeat_time > timedelta(minutes=5):
                     # Sync is stale - worker probably died
                     clear_spotify_sync_progress()
                     return SpotifySyncStatus(
