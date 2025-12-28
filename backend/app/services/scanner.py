@@ -285,29 +285,29 @@ class LibraryScanner:
         }
 
         # Use upsert to handle race conditions (another process may have inserted this track)
-        stmt = pg_insert(Track).values(**values)
-        stmt = stmt.on_conflict_do_update(
+        insert_stmt = pg_insert(Track).values(**values)
+        upsert_stmt = insert_stmt.on_conflict_do_update(
             index_elements=["file_path"],
             set_={
-                "file_hash": stmt.excluded.file_hash,
-                "file_modified_at": stmt.excluded.file_modified_at,
-                "title": stmt.excluded.title,
-                "artist": stmt.excluded.artist,
-                "album": stmt.excluded.album,
-                "album_artist": stmt.excluded.album_artist,
-                "track_number": stmt.excluded.track_number,
-                "disc_number": stmt.excluded.disc_number,
-                "year": stmt.excluded.year,
-                "genre": stmt.excluded.genre,
-                "duration_seconds": stmt.excluded.duration_seconds,
-                "sample_rate": stmt.excluded.sample_rate,
-                "bit_depth": stmt.excluded.bit_depth,
-                "bitrate": stmt.excluded.bitrate,
-                "format": stmt.excluded.format,
+                "file_hash": insert_stmt.excluded.file_hash,
+                "file_modified_at": insert_stmt.excluded.file_modified_at,
+                "title": insert_stmt.excluded.title,
+                "artist": insert_stmt.excluded.artist,
+                "album": insert_stmt.excluded.album,
+                "album_artist": insert_stmt.excluded.album_artist,
+                "track_number": insert_stmt.excluded.track_number,
+                "disc_number": insert_stmt.excluded.disc_number,
+                "year": insert_stmt.excluded.year,
+                "genre": insert_stmt.excluded.genre,
+                "duration_seconds": insert_stmt.excluded.duration_seconds,
+                "sample_rate": insert_stmt.excluded.sample_rate,
+                "bit_depth": insert_stmt.excluded.bit_depth,
+                "bitrate": insert_stmt.excluded.bitrate,
+                "format": insert_stmt.excluded.format,
             },
         ).returning(Track)
 
-        result = await self.db.execute(stmt)
+        result = await self.db.execute(upsert_stmt)
         track = result.scalar_one()
 
         # Queue analysis task

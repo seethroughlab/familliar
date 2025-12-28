@@ -31,7 +31,7 @@ class LibraryStats(BaseModel):
 class ScanProgress(BaseModel):
     """Detailed scan progress."""
 
-    phase: str  # "discovery", "processing", "cleanup", "complete"
+    phase: str = "idle"  # "discovery", "processing", "cleanup", "complete"
     files_discovered: int = 0
     files_processed: int = 0
     files_total: int = 0

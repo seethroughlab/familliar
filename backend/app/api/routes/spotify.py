@@ -36,7 +36,7 @@ class SyncResponse(BaseModel):
 
 class SpotifySyncProgress(BaseModel):
     """Detailed Spotify sync progress."""
-    phase: str  # "connecting", "fetching", "matching", "complete"
+    phase: str = "idle"  # "connecting", "fetching", "matching", "complete"
     tracks_fetched: int = 0
     tracks_processed: int = 0
     tracks_total: int = 0
