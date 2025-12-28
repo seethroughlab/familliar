@@ -112,10 +112,18 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
             className="group flex flex-col items-center gap-3 p-4 rounded-lg hover:bg-zinc-800/50 transition-colors"
           >
             <div
-              className="w-24 h-24 rounded-lg flex items-center justify-center text-3xl font-bold text-white shadow-lg group-hover:ring-4 ring-white/20 transition-all"
+              className="w-24 h-24 rounded-lg flex items-center justify-center text-3xl font-bold text-white shadow-lg group-hover:ring-4 ring-white/20 transition-all overflow-hidden"
               style={{ backgroundColor: profile.color || PROFILE_COLORS[0] }}
             >
-              {profile.name.charAt(0).toUpperCase()}
+              {profile.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt={profile.name}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                profile.name.charAt(0).toUpperCase()
+              )}
             </div>
             <span className="text-zinc-300 group-hover:text-white transition-colors">
               {profile.name}

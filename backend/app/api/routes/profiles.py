@@ -1,15 +1,29 @@
 """Profile management endpoints for Netflix-style multi-user support."""
 
+import io
+import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
+from PIL import Image
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import DbSession, RequiredProfile
+from app.config import settings
 from app.db.models import Profile
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/profiles", tags=["profiles"])
+
+# Ensure profiles directory exists
+PROFILES_DIR = settings.profiles_path
+PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+
+MAX_AVATAR_SIZE = 5 * 1024 * 1024  # 5MB
+AVATAR_SIZE = 256  # Output size in pixels
 
 
 class ProfileCreate(BaseModel):
@@ -32,6 +46,7 @@ class ProfileResponse(BaseModel):
     id: UUID
     name: str
     color: str | None
+    avatar_url: str | None
     created_at: str
     has_spotify: bool
     has_lastfm: bool
@@ -39,10 +54,15 @@ class ProfileResponse(BaseModel):
 
 def profile_to_response(profile: Profile, has_spotify: bool, has_lastfm: bool) -> ProfileResponse:
     """Convert Profile model to response."""
+    avatar_url = None
+    if profile.avatar_path:
+        avatar_url = f"/api/v1/profiles/{profile.id}/avatar"
+
     return ProfileResponse(
         id=profile.id,
         name=profile.name,
         color=profile.color,
+        avatar_url=avatar_url,
         created_at=profile.created_at.isoformat(),
         has_spotify=has_spotify,
         has_lastfm=has_lastfm,
@@ -167,5 +187,151 @@ async def delete_profile(
             detail="Profile not found",
         )
 
+    # Delete avatar file if it exists
+    if profile.avatar_path:
+        avatar_file = PROFILES_DIR / f"{profile.id}.jpg"
+        if avatar_file.exists():
+            avatar_file.unlink()
+
     await db.delete(profile)
     await db.commit()
+
+
+def crop_to_square(img: Image.Image) -> Image.Image:
+    """Center-crop image to square."""
+    width, height = img.size
+    size = min(width, height)
+    left = (width - size) // 2
+    top = (height - size) // 2
+    return img.crop((left, top, left + size, top + size))
+
+
+@router.post("/{profile_id}/avatar", response_model=ProfileResponse)
+async def upload_avatar(
+    profile_id: UUID,
+    file: UploadFile,
+    db: DbSession,
+) -> ProfileResponse:
+    """Upload a profile avatar image.
+
+    The image will be center-cropped to a square and resized to 256x256.
+    Accepts JPEG, PNG, WebP, or GIF formats.
+    """
+    profile = await db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found",
+        )
+
+    # Validate file size
+    contents = await file.read()
+    if len(contents) > MAX_AVATAR_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image too large. Maximum size is 5MB.",
+        )
+
+    # Validate and process image
+    try:
+        img = Image.open(io.BytesIO(contents))
+
+        # Convert to RGB (handles RGBA, palette, etc.)
+        if img.mode in ("RGBA", "LA", "P"):
+            # Create white background for transparent images
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            if img.mode == "P":
+                img = img.convert("RGBA")
+            background.paste(img, mask=img.split()[-1] if img.mode in ("RGBA", "LA") else None)
+            img = background
+        elif img.mode != "RGB":
+            img = img.convert("RGB")
+
+        # Center-crop to square
+        img = crop_to_square(img)
+
+        # Resize to target size
+        img = img.resize((AVATAR_SIZE, AVATAR_SIZE), Image.Resampling.LANCZOS)
+
+        # Save as JPEG
+        avatar_path = PROFILES_DIR / f"{profile_id}.jpg"
+        img.save(avatar_path, "JPEG", quality=85)
+
+        # Update profile
+        profile.avatar_path = f"profiles/{profile_id}.jpg"
+        await db.commit()
+
+        logger.info(f"Avatar uploaded for profile {profile_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to process avatar: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid image file. Please upload a JPEG, PNG, WebP, or GIF.",
+        )
+
+    await db.refresh(profile, ["spotify_profile", "lastfm_profile"])
+    has_spotify = profile.spotify_profile is not None
+    has_lastfm = profile.lastfm_profile is not None
+
+    return profile_to_response(profile, has_spotify, has_lastfm)
+
+
+@router.get("/{profile_id}/avatar")
+async def get_avatar(
+    profile_id: UUID,
+    db: DbSession,
+) -> FileResponse:
+    """Get a profile's avatar image."""
+    profile = await db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found",
+        )
+
+    if not profile.avatar_path:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile has no avatar",
+        )
+
+    avatar_file = PROFILES_DIR / f"{profile_id}.jpg"
+    if not avatar_file.exists():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Avatar file not found",
+        )
+
+    return FileResponse(
+        avatar_file,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},  # Cache for 1 day
+    )
+
+
+@router.delete("/{profile_id}/avatar", response_model=ProfileResponse)
+async def delete_avatar(
+    profile_id: UUID,
+    db: DbSession,
+) -> ProfileResponse:
+    """Delete a profile's avatar image."""
+    profile = await db.get(Profile, profile_id)
+    if not profile:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Profile not found",
+        )
+
+    if profile.avatar_path:
+        avatar_file = PROFILES_DIR / f"{profile_id}.jpg"
+        if avatar_file.exists():
+            avatar_file.unlink()
+        profile.avatar_path = None
+        await db.commit()
+
+    await db.refresh(profile, ["spotify_profile", "lastfm_profile"])
+    has_spotify = profile.spotify_profile is not None
+    has_lastfm = profile.lastfm_profile is not None
+
+    return profile_to_response(profile, has_spotify, has_lastfm)

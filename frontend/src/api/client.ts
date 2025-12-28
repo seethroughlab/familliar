@@ -636,6 +636,7 @@ export interface ProfileResponse {
   id: string;
   name: string;
   color: string | null;
+  avatar_url: string | null;
   created_at: string;
   has_spotify: boolean;
   has_lastfm: boolean;
@@ -674,6 +675,24 @@ export const profilesApi = {
 
   delete: async (id: string): Promise<void> => {
     await api.delete(`/profiles/${id}`);
+  },
+
+  uploadAvatar: async (id: string, file: File): Promise<ProfileResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post(`/profiles/${id}/avatar`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  deleteAvatar: async (id: string): Promise<ProfileResponse> => {
+    const { data } = await api.delete(`/profiles/${id}/avatar`);
+    return data;
+  },
+
+  getAvatarUrl: (id: string): string => {
+    return `/api/v1/profiles/${id}/avatar`;
   },
 };
 

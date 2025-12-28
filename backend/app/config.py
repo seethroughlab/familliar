@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     # Data paths
     art_path: Path = Path("data/art")
     videos_path: Path = Path("data/videos")
+    profiles_path: Path = Path("data/profiles")
 
     # Analysis
     analysis_version: int = 1

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { Search, Library, Settings, Zap } from 'lucide-react';
+import { Search, Library, Settings, Zap, Activity } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
@@ -11,6 +11,7 @@ import { InstallPrompt } from './components/PWA/InstallPrompt';
 import { OfflineIndicator } from './components/PWA/OfflineIndicator';
 import { SessionPanel } from './components/Sessions';
 import { PlaylistsView } from './components/Playlists';
+import { VisualizerView } from './components/Visualizer';
 import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
@@ -32,7 +33,7 @@ const queryClient = new QueryClient({
   },
 });
 
-type RightPanelTab = 'library' | 'playlists' | 'settings';
+type RightPanelTab = 'library' | 'playlists' | 'visualizer' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
@@ -156,6 +157,17 @@ function AppContent() {
                   Playlists
                 </button>
                 <button
+                  onClick={() => setRightPanelTab('visualizer')}
+                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                    rightPanelTab === 'visualizer'
+                      ? 'bg-zinc-800 text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                  }`}
+                >
+                  <Activity className="w-4 h-4 inline-block mr-1.5" />
+                  Visualizer
+                </button>
+                <button
                   onClick={() => setRightPanelTab('settings')}
                   className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
                     rightPanelTab === 'settings'
@@ -203,6 +215,9 @@ function AppContent() {
               <div className="px-4 py-6">
                 <PlaylistsView />
               </div>
+            )}
+            {rightPanelTab === 'visualizer' && (
+              <VisualizerView />
             )}
             {rightPanelTab === 'settings' && (
               <SettingsPanel />

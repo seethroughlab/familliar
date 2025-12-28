@@ -227,7 +227,9 @@ export function useAudioEngine() {
 
         // Wait for audio to be ready before playing
         const playWhenReady = () => {
-          if (isPlaying) {
+          // Get the CURRENT isPlaying state from the store, not the stale closure value
+          const currentIsPlaying = usePlayerStore.getState().isPlaying;
+          if (currentIsPlaying) {
             audio.play().catch((err) => {
               if (err.name !== 'AbortError') {
                 console.error('[AudioEngine] Play failed after load:', err);
@@ -252,7 +254,7 @@ export function useAudioEngine() {
     updateMediaSession();
     pausedAtRef.current = 0;
     startTimeRef.current = 0;
-  }, [currentTrack?.id, loadAudioBuffer, setDuration, updateMediaSession, isPlaying]);
+  }, [currentTrack?.id, loadAudioBuffer, setDuration, updateMediaSession]);
 
   // Handle play/pause
   useEffect(() => {
@@ -271,16 +273,24 @@ export function useAudioEngine() {
       // Check that src is set and not just the page URL (empty src defaults to current page)
       const hasValidSource = audio.src && audio.src !== window.location.href && !audio.src.endsWith('/');
 
-      if (hasValidSource) {
+      // Also check if audio has enough data to play
+      // HAVE_FUTURE_DATA (3) or HAVE_ENOUGH_DATA (4) means we can play
+      const isReadyToPlay = audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+
+      if (hasValidSource && isReadyToPlay) {
         audio.play().catch((err) => {
           // Ignore AbortError - it's expected when source changes during play
           if (err.name !== 'AbortError') {
             console.error('Play failed:', err);
-            setIsPlaying(false);
+            // Only reset isPlaying for real errors, not timing issues
+            // NotAllowedError typically means autoplay was blocked
+            if (err.name === 'NotAllowedError') {
+              setIsPlaying(false);
+            }
           }
         });
       }
-      // If no valid source yet, the track loading effect will call play() when ready
+      // If audio not ready yet, the track loading effect's canplay handler will start playback
 
       // Update media session playback state
       if ('mediaSession' in navigator) {
