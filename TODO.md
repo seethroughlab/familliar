@@ -20,3 +20,7 @@
 [ ] PLAN: We need to re-think the context view. It's not doing what I thought it was going to do. Currently, it seems to just keep a history of all of the searches that the LLM does. It should be more like the CURRENT list of songs that the LLM has returned, as well as recommendations of albums to buy based on Spotify missing tracks. I'd also like to add recommendaayions of NEW albums to add to the library. The idea here is that users will want a "discovery" mechanism similar to what Spotify provides. Where can we get these recommendations? Let's make a full plan for the context view redesign. Please ask any clarifying questions you need to.
 [ ] Can you explain how the LLM currently chooses tracks to play? It seems to be almost completely genre-based. I was hoping it would use much more information to make a track selection. 
 [ ] When the LLM makes a playlist, it should be saved as a playlist, with an appropriate name. It should be somehow distinguished from a manually-created playlist. 
+[ ] for a better UX (especially with large libraries), we should move the spotify sync task to Celery with progress reporting. It should:
+  - Show real-time progress ("Fetching tracks... 500/1700")
+  - Not block API restarts
+  - Allow you to navigate away without interrupting

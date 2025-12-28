@@ -47,11 +47,15 @@ def compute_file_hash(path: Path, chunk_size: int = 8192) -> str:
     return hasher.hexdigest()
 
 
-def _discover_files_sync(library_path: Path) -> list[Path]:
+def _discover_files_sync(library_path: Path, progress_callback=None) -> list[Path]:
     """Synchronous file discovery using single-pass os.walk (runs in thread pool).
 
     Much faster than multiple rglob calls, especially on network volumes.
     Logs progress every 500 directories scanned.
+
+    Args:
+        library_path: Root directory to scan
+        progress_callback: Optional callable(dirs_scanned, files_found) for progress updates
     """
     files: list[Path] = []
     dirs_scanned = 0
@@ -61,9 +65,11 @@ def _discover_files_sync(library_path: Path) -> list[Path]:
     for root, dirs, filenames in os.walk(library_path):
         dirs_scanned += 1
 
-        # Log progress every 500 directories
-        if dirs_scanned % 500 == 0:
+        # Log and report progress every 25 directories (more frequent for slow network mounts)
+        if dirs_scanned % 25 == 0:
             logger.info(f"Discovery progress: scanned {dirs_scanned} directories, found {len(files)} audio files so far...")
+            if progress_callback:
+                progress_callback(dirs_scanned, len(files))
 
         # Check each file in this directory
         for filename in filenames:
@@ -73,6 +79,9 @@ def _discover_files_sync(library_path: Path) -> list[Path]:
                 files.append(Path(root) / filename)
 
     logger.info(f"Discovery complete: scanned {dirs_scanned} directories, found {len(files)} audio files")
+    # Final progress update
+    if progress_callback:
+        progress_callback(dirs_scanned, len(files))
     return sorted(files)
 
 
@@ -119,8 +128,14 @@ class LibraryScanner:
 
         # Find all audio files (in thread pool to not block)
         logger.info(f"Discovering audio files in {library_path}...")
+
+        # Create progress callback that updates scan_state
+        def discovery_progress(dirs_scanned: int, files_found: int):
+            if self.scan_state:
+                self.scan_state.set_discovery(dirs_scanned, files_found)
+
         found_files = await loop.run_in_executor(
-            _file_executor, _discover_files_sync, library_path
+            _file_executor, _discover_files_sync, library_path, discovery_progress
         )
         found_paths = {str(p) for p in found_files}
         logger.info(f"Discovered {len(found_files)} audio files")

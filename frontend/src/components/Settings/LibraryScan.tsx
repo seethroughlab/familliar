@@ -1,26 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RefreshCw, CheckCircle, AlertCircle, Loader2, FolderSearch } from 'lucide-react';
-
-interface ScanProgress {
-  phase: string;
-  files_discovered: number;
-  files_processed: number;
-  files_total: number;
-  new_tracks: number;
-  updated_tracks: number;
-  relocated_tracks: number;
-  deleted_tracks: number;
-  unchanged_tracks: number;
-  current_file: string | null;
-  started_at: string | null;
-  errors: string[];
-}
-
-interface ScanStatus {
-  status: string;
-  message: string;
-  progress: ScanProgress | null;
-}
+import { libraryApi, type ScanStatus } from '../../api/client';
 
 export function LibraryScan() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
@@ -29,23 +9,27 @@ export function LibraryScan() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/v1/library/scan/status');
-      if (response.ok) {
-        const data = await response.json();
-        setScanStatus(data);
-        return data.status === 'running';
-      }
+      const data = await libraryApi.getScanStatus();
+      setScanStatus(data);
+      return data.status === 'running';
     } catch (error) {
       console.error('Failed to fetch scan status:', error);
     }
     return false;
   }, []);
 
-  // Initial fetch and polling
+  // Initial fetch - start polling if scan is already running
   useEffect(() => {
-    fetchStatus();
+    const checkInitialStatus = async () => {
+      const isRunning = await fetchStatus();
+      if (isRunning) {
+        setIsPolling(true);
+      }
+    };
+    checkInitialStatus();
   }, [fetchStatus]);
 
+  // Poll while scan is running
   useEffect(() => {
     if (!isPolling) return;
 
@@ -62,13 +46,9 @@ export function LibraryScan() {
   const startScan = async (full: boolean = false) => {
     setIsStarting(true);
     try {
-      const response = await fetch(`/api/v1/library/scan?full=${full}`, {
-        method: 'POST',
-      });
-      if (response.ok) {
-        setIsPolling(true);
-        await fetchStatus();
-      }
+      await libraryApi.scan(full);
+      setIsPolling(true);
+      await fetchStatus();
     } catch (error) {
       console.error('Failed to start scan:', error);
     } finally {
@@ -103,6 +83,7 @@ export function LibraryScan() {
 
   const progress = scanStatus?.progress;
   const isRunning = scanStatus?.status === 'running';
+  const isDiscovering = progress?.phase === 'discovery';
   const progressPercent = progress && progress.files_total > 0
     ? Math.round((progress.files_processed / progress.files_total) * 100)
     : 0;
@@ -144,14 +125,25 @@ export function LibraryScan() {
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-zinc-400">{getPhaseLabel(progress.phase)}</span>
-            <span className="text-zinc-300">{progressPercent}%</span>
+            {isDiscovering ? (
+              <span className="text-zinc-300">
+                {progress.files_discovered.toLocaleString()} files found
+              </span>
+            ) : (
+              <span className="text-zinc-300">{progressPercent}%</span>
+            )}
           </div>
 
           <div className="w-full bg-zinc-700 rounded-full h-2">
-            <div
-              className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${progressPercent}%` }}
-            />
+            {isDiscovering ? (
+              /* Animated indeterminate progress bar during discovery */
+              <div className="bg-blue-500 h-2 rounded-full w-1/3 animate-pulse" />
+            ) : (
+              <div
+                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            )}
           </div>
 
           {progress.current_file && (

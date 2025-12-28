@@ -1,6 +1,6 @@
 import axios from 'axios';
 import type { Track, TrackListResponse, LibraryStats } from '../types';
-import { getOrCreateDeviceProfile } from '../services/profileService';
+import { getOrCreateDeviceProfile, clearDeviceProfile } from '../services/profileService';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -17,6 +17,35 @@ api.interceptors.request.use(async (config) => {
   }
   return config;
 });
+
+// Handle 401 "please re-register" errors by clearing cached profile and retrying
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config;
+
+    // Check if this is a "please re-register" error and we haven't retried yet
+    if (
+      error.response?.status === 401 &&
+      error.response?.data?.detail?.includes('re-register') &&
+      !originalRequest._retry
+    ) {
+      originalRequest._retry = true;
+
+      // Clear the cached profile to force re-registration
+      await clearDeviceProfile();
+
+      // Get a new profile (will register with backend)
+      const newProfileId = await getOrCreateDeviceProfile();
+      originalRequest.headers['X-Profile-ID'] = newProfileId;
+
+      // Retry the request
+      return api(originalRequest);
+    }
+
+    return Promise.reject(error);
+  }
+);
 
 export const tracksApi = {
   list: async (params?: {
@@ -91,6 +120,20 @@ export interface SpotifySyncResponse {
     matched: number;
     unmatched: number;
   };
+  progress?: SpotifySyncProgress | null;
+}
+
+export interface SpotifySyncProgress {
+  phase: string;
+  tracks_fetched: number;
+  tracks_processed: number;
+  tracks_total: number;
+  new_favorites: number;
+  matched: number;
+  unmatched: number;
+  current_track: string | null;
+  started_at: string | null;
+  errors: string[];
 }
 
 export interface StoreSearchLink {
@@ -122,12 +165,18 @@ export const spotifyApi = {
   sync: async (includeTopTracks = true): Promise<SpotifySyncResponse> => {
     const { data } = await api.post('/spotify/sync', null, {
       params: { include_top_tracks: includeTopTracks },
+      timeout: 300000, // 5 minute timeout for large libraries
     });
     return data;
   },
 
   disconnect: async (): Promise<{ status: string }> => {
     const { data } = await api.post('/spotify/disconnect');
+    return data;
+  },
+
+  getSyncStatus: async (): Promise<SpotifySyncResponse> => {
+    const { data } = await api.get('/spotify/sync/status');
     return data;
   },
 
@@ -284,20 +333,41 @@ export interface RecentImport {
   created_at: string | null;
 }
 
+export interface ScanProgress {
+  phase: string;
+  files_discovered: number;
+  files_processed: number;
+  files_total: number;
+  new_tracks: number;
+  updated_tracks: number;
+  relocated_tracks: number;
+  deleted_tracks: number;
+  unchanged_tracks: number;
+  current_file: string | null;
+  started_at: string | null;
+  errors: string[];
+}
+
+export interface ScanStatus {
+  status: string;
+  message: string;
+  progress: ScanProgress | null;
+}
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
     return data;
   },
 
-  scan: async (full = false): Promise<{ status: string; message: string }> => {
+  scan: async (full = false): Promise<ScanStatus> => {
     const { data } = await api.post('/library/scan', null, {
       params: { full },
     });
     return data;
   },
 
-  getScanStatus: async (): Promise<{ status: string; message: string }> => {
+  getScanStatus: async (): Promise<ScanStatus> => {
     const { data } = await api.get('/library/scan/status');
     return data;
   },

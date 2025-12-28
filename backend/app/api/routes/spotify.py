@@ -13,6 +13,7 @@ from sqlalchemy import delete
 from app.api.deps import CurrentProfile, DbSession
 from app.db.models import SpotifyFavorite, SpotifyProfile
 from app.services.spotify import SpotifyService, SpotifySyncService
+from app.workers.tasks import get_spotify_sync_progress, sync_spotify
 
 router = APIRouter(prefix="/spotify", tags=["spotify"])
 
@@ -31,6 +32,27 @@ class SyncResponse(BaseModel):
     status: str
     message: str
     stats: dict[str, Any] | None = None
+
+
+class SpotifySyncProgress(BaseModel):
+    """Detailed Spotify sync progress."""
+    phase: str  # "connecting", "fetching", "matching", "complete"
+    tracks_fetched: int = 0
+    tracks_processed: int = 0
+    tracks_total: int = 0
+    new_favorites: int = 0
+    matched: int = 0
+    unmatched: int = 0
+    current_track: str | None = None
+    started_at: str | None = None
+    errors: list[str] = []
+
+
+class SpotifySyncStatus(BaseModel):
+    """Spotify sync status response."""
+    status: str  # "idle", "running", "completed", "error"
+    message: str
+    progress: SpotifySyncProgress | None = None
 
 
 class StoreSearchLink(BaseModel):
@@ -162,13 +184,15 @@ async def spotify_callback(
         return RedirectResponse(url=error_redirect, status_code=302)
 
 
-@router.post("/sync", response_model=SyncResponse)
-async def sync_spotify(
-    db: DbSession,
+@router.post("/sync", response_model=SpotifySyncStatus)
+async def start_spotify_sync(
     profile: CurrentProfile,
     include_top_tracks: bool = Query(True),
-) -> SyncResponse:
-    """Sync Spotify favorites to local database.
+) -> SpotifySyncStatus:
+    """Start Spotify sync using Celery worker.
+
+    The sync runs in a separate worker process, so it won't block the API.
+    Progress is stored in Redis and can be retrieved via GET /spotify/sync/status.
 
     Requires X-Profile-ID header.
     """
@@ -178,27 +202,76 @@ async def sync_spotify(
             detail="Profile ID required",
         )
 
-    sync_service = SpotifySyncService(db)
-
-    try:
-        # Sync saved tracks
-        stats = await sync_service.sync_favorites(profile.id)
-
-        # Optionally sync top tracks
-        if include_top_tracks:
-            top_stats = await sync_service.sync_top_tracks(profile.id)
-            stats["top_tracks_fetched"] = top_stats["fetched"]
-            stats["top_tracks_new"] = top_stats["new"]
-
-        return SyncResponse(
-            status="success",
-            message=f"Synced {stats['fetched']} tracks, {stats['matched']} matched to local library",
-            stats=stats,
+    # Check if a sync is already running
+    progress = get_spotify_sync_progress()
+    if progress and progress.get("status") == "running":
+        return SpotifySyncStatus(
+            status="already_running",
+            message="A sync is already in progress",
+            progress=SpotifySyncProgress(**{k: progress.get(k, v) for k, v in SpotifySyncProgress().model_dump().items()}),
         )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+    # Dispatch to Celery worker
+    sync_spotify.delay(profile_id=str(profile.id), include_top_tracks=include_top_tracks)
+
+    return SpotifySyncStatus(
+        status="started",
+        message="Sync started in Celery worker",
+    )
+
+
+@router.get("/sync/status", response_model=SpotifySyncStatus)
+async def get_sync_status() -> SpotifySyncStatus:
+    """Get current Spotify sync status with detailed progress from Redis."""
+    from datetime import datetime, timedelta
+    from app.workers.tasks import clear_spotify_sync_progress
+
+    progress = get_spotify_sync_progress()
+
+    if not progress:
+        return SpotifySyncStatus(
+            status="idle",
+            message="No sync running",
+            progress=None,
+        )
+
+    # Check if the sync is stale (no heartbeat for 2 minutes)
+    status = progress.get("status", "idle")
+    if status == "running":
+        last_heartbeat = progress.get("last_heartbeat")
+        if last_heartbeat:
+            try:
+                heartbeat_time = datetime.fromisoformat(last_heartbeat)
+                if datetime.now() - heartbeat_time > timedelta(minutes=2):
+                    # Sync is stale - worker probably died
+                    clear_spotify_sync_progress()
+                    return SpotifySyncStatus(
+                        status="interrupted",
+                        message="Sync was interrupted (worker stopped responding)",
+                        progress=None,
+                    )
+            except (ValueError, TypeError):
+                pass
+
+    # Convert Redis progress to SpotifySyncProgress model
+    sync_progress = SpotifySyncProgress(
+        phase=progress.get("phase", "idle"),
+        tracks_fetched=progress.get("tracks_fetched", 0),
+        tracks_processed=progress.get("tracks_processed", 0),
+        tracks_total=progress.get("tracks_total", 0),
+        new_favorites=progress.get("new_favorites", 0),
+        matched=progress.get("matched", 0),
+        unmatched=progress.get("unmatched", 0),
+        current_track=progress.get("current_track"),
+        started_at=progress.get("started_at"),
+        errors=progress.get("errors", []),
+    )
+
+    return SpotifySyncStatus(
+        status=status,
+        message=progress.get("message", ""),
+        progress=sync_progress if status != "idle" else None,
+    )
 
 
 @router.get("/unmatched", response_model=list[UnmatchedTrack])

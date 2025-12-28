@@ -1,9 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { spotifyApi, appSettingsApi } from '../../api/client';
 import type { SpotifyStatus } from '../../api/client';
 import { Music2, RefreshCw, LogOut, ExternalLink, CheckCircle, XCircle, Loader2, Settings, Save } from 'lucide-react';
 import { MissingTracks } from '../Library/MissingTracks';
+
+interface SyncProgress {
+  phase: string;
+  tracks_fetched: number;
+  tracks_processed: number;
+  tracks_total: number;
+  new_favorites: number;
+  matched: number;
+  unmatched: number;
+  current_track: string | null;
+  started_at: string | null;
+  errors: string[];
+}
+
+interface SyncStatus {
+  status: string;
+  message: string;
+  progress: SyncProgress | null;
+}
 
 export function SpotifySettings() {
   const queryClient = useQueryClient();
@@ -11,6 +30,8 @@ export function SpotifySettings() {
   const [showSetup, setShowSetup] = useState(false);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
   // Check URL params for OAuth callback status
   useEffect(() => {
@@ -29,6 +50,45 @@ export function SpotifySettings() {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [queryClient]);
+
+  // Fetch sync status
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const response = await spotifyApi.getSyncStatus();
+      setSyncStatus(response);
+      return response.status === 'running';
+    } catch (error) {
+      console.error('Failed to fetch sync status:', error);
+    }
+    return false;
+  }, []);
+
+  // Initial fetch - start polling if sync is already running
+  useEffect(() => {
+    const checkInitialStatus = async () => {
+      const isRunning = await fetchSyncStatus();
+      if (isRunning) {
+        setIsPolling(true);
+      }
+    };
+    checkInitialStatus();
+  }, [fetchSyncStatus]);
+
+  // Poll while sync is running
+  useEffect(() => {
+    if (!isPolling) return;
+
+    const interval = setInterval(async () => {
+      const stillRunning = await fetchSyncStatus();
+      if (!stillRunning) {
+        setIsPolling(false);
+        // Sync completed - refresh stats
+        queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isPolling, fetchSyncStatus, queryClient]);
 
   const { data: status, isLoading } = useQuery<SpotifyStatus>({
     queryKey: ['spotify-status'],
@@ -75,8 +135,13 @@ export function SpotifySettings() {
   const syncMutation = useMutation({
     mutationFn: () => spotifyApi.sync(true),
     onSuccess: (data) => {
-      setSyncMessage(data.message);
-      queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
+      if (data.status === 'started' || data.status === 'already_running') {
+        setIsPolling(true);
+        setSyncMessage(null);
+      } else {
+        setSyncMessage(data.message);
+        queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
+      }
     },
     onError: (error: Error) => {
       setSyncMessage(`Sync failed: ${error.message}`);
@@ -215,15 +280,15 @@ export function SpotifySettings() {
               <>
                 <button
                   onClick={() => syncMutation.mutate()}
-                  disabled={syncMutation.isPending}
+                  disabled={syncMutation.isPending || isPolling}
                   className="flex items-center gap-2 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 text-white rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  {syncMutation.isPending ? (
+                  {(syncMutation.isPending || isPolling) ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (
                     <RefreshCw className="w-4 h-4" />
                   )}
-                  Sync
+                  {isPolling ? 'Syncing...' : 'Sync'}
                 </button>
                 <button
                   onClick={() => disconnectMutation.mutate()}
@@ -277,6 +342,75 @@ export function SpotifySettings() {
         {syncMessage && (
           <div className="mt-4 p-3 bg-zinc-700/50 rounded-md text-sm text-zinc-300">
             {syncMessage}
+          </div>
+        )}
+
+        {/* Sync progress when running */}
+        {isPolling && syncStatus?.progress && (
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-zinc-400">
+                {syncStatus.progress.phase === 'connecting' && 'Connecting to Spotify...'}
+                {syncStatus.progress.phase === 'fetching' && 'Fetching tracks from Spotify...'}
+                {syncStatus.progress.phase === 'matching' && 'Matching to local library...'}
+                {syncStatus.progress.phase === 'complete' && 'Complete'}
+              </span>
+              <span className="text-zinc-300">
+                {syncStatus.progress.phase === 'fetching' ? (
+                  `${syncStatus.progress.tracks_fetched} tracks fetched`
+                ) : syncStatus.progress.tracks_total > 0 ? (
+                  `${Math.round((syncStatus.progress.tracks_processed / syncStatus.progress.tracks_total) * 100)}%`
+                ) : null}
+              </span>
+            </div>
+
+            <div className="w-full bg-zinc-700 rounded-full h-2">
+              {syncStatus.progress.phase === 'fetching' ? (
+                <div className="bg-green-500 h-2 rounded-full w-1/3 animate-pulse" />
+              ) : syncStatus.progress.tracks_total > 0 ? (
+                <div
+                  className="bg-green-500 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${(syncStatus.progress.tracks_processed / syncStatus.progress.tracks_total) * 100}%` }}
+                />
+              ) : (
+                <div className="bg-green-500 h-2 rounded-full w-1/4 animate-pulse" />
+              )}
+            </div>
+
+            {syncStatus.progress.current_track && (
+              <p className="text-xs text-zinc-500 truncate">
+                {syncStatus.progress.current_track}
+              </p>
+            )}
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-zinc-700/50 rounded p-2">
+                <div className="text-green-400 font-medium">{syncStatus.progress.new_favorites}</div>
+                <div className="text-zinc-500">New</div>
+              </div>
+              <div className="bg-zinc-700/50 rounded p-2">
+                <div className="text-blue-400 font-medium">{syncStatus.progress.matched}</div>
+                <div className="text-zinc-500">Matched</div>
+              </div>
+              <div className="bg-zinc-700/50 rounded p-2">
+                <div className="text-orange-400 font-medium">{syncStatus.progress.unmatched}</div>
+                <div className="text-zinc-500">Unmatched</div>
+              </div>
+            </div>
+
+            {syncStatus.progress.errors.length > 0 && (
+              <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">
+                <p className="font-medium mb-1">Errors ({syncStatus.progress.errors.length}):</p>
+                <ul className="list-disc list-inside">
+                  {syncStatus.progress.errors.slice(0, 3).map((err, i) => (
+                    <li key={i} className="truncate">{err}</li>
+                  ))}
+                  {syncStatus.progress.errors.length > 3 && (
+                    <li>...and {syncStatus.progress.errors.length - 3} more</li>
+                  )}
+                </ul>
+              </div>
+            )}
           </div>
         )}
       </div>

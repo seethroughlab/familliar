@@ -72,6 +72,7 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:4400',
         changeOrigin: true,
+        timeout: 300000, // 5 minute timeout for long operations like Spotify sync
       },
     },
   },
