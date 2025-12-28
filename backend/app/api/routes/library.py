@@ -1,14 +1,12 @@
 """Library management endpoints."""
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
-from app.config import settings
 from app.db.models import AlbumType, Track
 from app.services.import_service import ImportError, ImportService, save_upload_to_temp
 from app.services.scanner import LibraryScanner
@@ -133,6 +131,7 @@ async def start_scan(
 async def get_scan_status() -> ScanStatus:
     """Get current scan status with detailed progress from Redis."""
     from datetime import datetime, timedelta
+
     from app.workers.tasks import clear_scan_progress
 
     progress = get_scan_progress()

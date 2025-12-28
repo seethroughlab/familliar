@@ -5,8 +5,6 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy import delete
 
@@ -14,6 +12,8 @@ from app.api.deps import CurrentProfile, DbSession
 from app.db.models import SpotifyFavorite, SpotifyProfile
 from app.services.spotify import SpotifyService, SpotifySyncService
 from app.workers.tasks import get_spotify_sync_progress, sync_spotify
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/spotify", tags=["spotify"])
 
@@ -224,6 +224,7 @@ async def start_spotify_sync(
 async def get_sync_status() -> SpotifySyncStatus:
     """Get current Spotify sync status with detailed progress from Redis."""
     from datetime import datetime, timedelta
+
     from app.workers.tasks import clear_spotify_sync_progress
 
     progress = get_spotify_sync_progress()

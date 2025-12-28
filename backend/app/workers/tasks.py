@@ -570,12 +570,12 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
     import asyncio
     from datetime import datetime as dt
 
-    from sqlalchemy import func, select
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
     from spotipy.exceptions import SpotifyException
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.config import settings
-    from app.db.models import SpotifyFavorite, SpotifyProfile, Track
+    from app.db.models import SpotifyFavorite, SpotifyProfile
     from app.services.spotify import SpotifyService
 
     progress = SpotifySyncProgressReporter(profile_id)

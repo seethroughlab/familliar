@@ -1,12 +1,10 @@
 """Playlist management endpoints."""
 
-from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import selectinload
 
 from app.api.deps import DbSession, RequiredProfile
 from app.db.models import Playlist, PlaylistTrack, Track
@@ -78,7 +76,7 @@ async def list_playlists(
     query = select(Playlist).where(Playlist.profile_id == profile.id)
 
     if not include_auto:
-        query = query.where(Playlist.is_auto_generated == False)
+        query = query.where(Playlist.is_auto_generated.is_(False))
 
     query = query.order_by(Playlist.updated_at.desc())
 

@@ -21,7 +21,7 @@ interface SyncProgress {
 interface SyncStatus {
   status: string;
   message: string;
-  progress: SyncProgress | null;
+  progress?: SyncProgress | null;
 }
 
 export function SpotifySettings() {

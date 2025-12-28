@@ -12,7 +12,14 @@ from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import Playlist, PlaylistTrack, SpotifyFavorite, SpotifyProfile, Track, TrackAnalysis
+from app.db.models import (
+    Playlist,
+    PlaylistTrack,
+    SpotifyFavorite,
+    SpotifyProfile,
+    Track,
+    TrackAnalysis,
+)
 from app.services.app_settings import get_app_settings_service
 
 logger = logging.getLogger(__name__)
