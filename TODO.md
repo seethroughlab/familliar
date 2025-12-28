@@ -5,7 +5,6 @@
 [x] CI is still failing. The new run is at job-logs.txt
 [x] What's left in familliar-dev-plan.md? I want to move towards doing a test install on my personal OpenMediaVault? I have auto-login setup with root@openmediavault (tailscale)
 [x] The Context window never shows anything. 
-[ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [x] I get an error when I try to save anthopic API key: "Failed to save settings"
 [x] Is there a way to tell if a scan is currently running in the UI? I'd like to be able to access fairly detailed info about the status of scans from the UI.
 [x] Is the database wiped out every time the docker container is updated?
@@ -21,6 +20,7 @@
   - Allow you to navigate away without interrupting
 [x] please read job-logs-*.txt and fix the CI issue
 [x] PLAN: We need to re-think the context view. It's not doing what I thought it was going to do. Currently, it seems to just keep a history of all of the searches that the LLM does. It should be more like the CURRENT list of songs that the LLM has returned, as well as recommendations of albums to buy based on Spotify missing tracks. I'd also like to add recommendaayions of NEW albums to add to the library. The idea here is that users will want a "discovery" mechanism similar to what Spotify provides. Where can we get these recommendations? Let's make a full plan for the context view redesign. Please ask any clarifying questions you need to.
-[ ] Do we have a "favorites" flag for tracks, and play-count? These will be useful for smart playlists
+[x] Can you explain how the LLM currently chooses tracks to play? It seems to be almost completely genre-based. I was hoping it would use much more information to make a track selection. It seems to tend to just pick tracks from one album. It should try to avoid picking tracks from only one album/artist.
+[x] Do we have a "favorites" flag for tracks, and play-count? These will be useful for smart playlists
+[ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
-[ ] Can you explain how the LLM currently chooses tracks to play? It seems to be almost completely genre-based. I was hoping it would use much more information to make a track selection. It seems to tend to just pick tracks from one album. It should try to avoid picking tracks from only one album/artist.

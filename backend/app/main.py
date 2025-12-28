@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.routes import (
     bandcamp,
     chat,
+    favorites,
     health,
     lastfm,
     library,
@@ -77,6 +78,7 @@ app.include_router(sessions.router, prefix="/api/v1")
 app.include_router(smart_playlists.router, prefix="/api/v1")
 app.include_router(playlists.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
+app.include_router(favorites.router, prefix="/api/v1")
 app.include_router(organizer.router, prefix="/api/v1")
 app.include_router(bandcamp.router, prefix="/api/v1")
 app.include_router(outputs.router, prefix="/api/v1")

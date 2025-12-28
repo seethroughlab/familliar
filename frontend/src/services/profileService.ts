@@ -1,81 +1,32 @@
 /**
- * Device profile service for multi-user support.
+ * Profile service for Netflix-style multi-user support.
  *
- * Manages device-based profiles that allow multiple family members
- * to have separate Spotify/Last.fm connections without requiring login.
+ * Manages selectable profiles that work across devices.
+ * No passwords needed - protected by Tailscale.
  */
 import { db, type DeviceProfile } from '../db';
-import { generateUUID } from '../utils/uuid';
 
-interface ProfileRegistrationResponse {
-  profile_id: string;
-  device_id: string;
+export interface Profile {
+  id: string;
+  name: string;
+  color: string | null;
   created_at: string;
   has_spotify: boolean;
   has_lastfm: boolean;
 }
 
+export interface ProfileCreate {
+  name: string;
+  color?: string;
+}
+
 let cachedProfileId: string | null = null;
 
 /**
- * Get or create a device profile.
- *
- * On first call:
- * 1. Generates a unique device ID
- * 2. Registers with the backend to get a profile_id
- * 3. Stores both in IndexedDB
- *
- * On subsequent calls:
- * Returns the cached profile_id from IndexedDB.
+ * Get the currently selected profile ID.
+ * Returns null if no profile is selected.
  */
-export async function getOrCreateDeviceProfile(): Promise<string> {
-  // Return cached value if available
-  if (cachedProfileId) {
-    return cachedProfileId;
-  }
-
-  // Check IndexedDB for existing profile
-  const existing = await db.deviceProfile.get('device-profile');
-  if (existing) {
-    cachedProfileId = existing.profileId;
-    return existing.profileId;
-  }
-
-  // Generate new device ID
-  const deviceId = generateUUID();
-
-  // Register with backend
-  const response = await fetch('/api/v1/profiles/register', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ device_id: deviceId }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to register profile: ${response.statusText}`);
-  }
-
-  const data: ProfileRegistrationResponse = await response.json();
-
-  // Store in IndexedDB
-  const profile: DeviceProfile = {
-    id: 'device-profile',
-    profileId: data.profile_id,
-    deviceId: deviceId,
-    createdAt: new Date(),
-  };
-  await db.deviceProfile.put(profile);
-
-  cachedProfileId = data.profile_id;
-  return data.profile_id;
-}
-
-/**
- * Get the current profile ID if one exists (without creating).
- */
-export async function getCurrentProfileId(): Promise<string | null> {
+export async function getSelectedProfileId(): Promise<string | null> {
   if (cachedProfileId) {
     return cachedProfileId;
   }
@@ -90,17 +41,140 @@ export async function getCurrentProfileId(): Promise<string | null> {
 }
 
 /**
- * Clear the device profile (for testing/debugging).
+ * Select a profile (store in IndexedDB).
+ * Call this after user picks a profile from the selector.
  */
-export async function clearDeviceProfile(): Promise<void> {
+export async function selectProfile(profileId: string): Promise<void> {
+  const profile: DeviceProfile = {
+    id: 'device-profile',
+    profileId: profileId,
+    deviceId: '', // No longer used
+    createdAt: new Date(),
+  };
+  await db.deviceProfile.put(profile);
+  cachedProfileId = profileId;
+}
+
+/**
+ * Clear the selected profile.
+ * Use this to show the profile selector again.
+ */
+export async function clearSelectedProfile(): Promise<void> {
   await db.deviceProfile.delete('device-profile');
   cachedProfileId = null;
 }
 
 /**
- * Ensure profile is initialized.
- * Call this early in app startup.
+ * List all available profiles from the server.
  */
-export async function initializeProfile(): Promise<void> {
-  await getOrCreateDeviceProfile();
+export async function listProfiles(): Promise<Profile[]> {
+  const response = await fetch('/api/v1/profiles');
+  if (!response.ok) {
+    throw new Error(`Failed to list profiles: ${response.statusText}`);
+  }
+  return response.json();
 }
+
+/**
+ * Create a new profile.
+ */
+export async function createProfile(data: ProfileCreate): Promise<Profile> {
+  const response = await fetch('/api/v1/profiles', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to create profile: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Get profile by ID.
+ */
+export async function getProfile(profileId: string): Promise<Profile | null> {
+  const response = await fetch(`/api/v1/profiles/${profileId}`);
+  if (response.status === 404) {
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`Failed to get profile: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+/**
+ * Update a profile.
+ */
+export async function updateProfile(profileId: string, data: Partial<ProfileCreate>): Promise<Profile> {
+  const response = await fetch(`/api/v1/profiles/${profileId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update profile: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete a profile.
+ */
+export async function deleteProfile(profileId: string): Promise<void> {
+  const response = await fetch(`/api/v1/profiles/${profileId}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to delete profile: ${response.statusText}`);
+  }
+
+  // If this was the selected profile, clear it
+  const selectedId = await getSelectedProfileId();
+  if (selectedId === profileId) {
+    await clearSelectedProfile();
+  }
+}
+
+/**
+ * Validate that the selected profile still exists.
+ * Returns the profile if valid, null otherwise.
+ */
+export async function validateSelectedProfile(): Promise<Profile | null> {
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    return null;
+  }
+
+  const profile = await getProfile(profileId);
+  if (!profile) {
+    // Profile was deleted, clear the selection
+    await clearSelectedProfile();
+    return null;
+  }
+
+  return profile;
+}
+
+/**
+ * Initialize profile on app startup.
+ * Returns the selected profile if valid, null if profile selector should be shown.
+ */
+export async function initializeProfile(): Promise<Profile | null> {
+  return validateSelectedProfile();
+}
+
+// Legacy exports for backwards compatibility during migration
+export const getOrCreateDeviceProfile = getSelectedProfileId;
+export const clearDeviceProfile = clearSelectedProfile;
+export const getCurrentProfileId = getSelectedProfileId;

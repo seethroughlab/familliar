@@ -259,6 +259,36 @@ MUSIC_TOOLS = [
             },
             "required": ["name", "track_ids"]
         }
+    },
+    {
+        "name": "select_diverse_tracks",
+        "description": "From a list of track IDs, select a diverse subset with variety across different artists and albums. Use this before queueing to ensure the playlist has good variety.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of track UUIDs to select from"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max tracks to return (default 20)",
+                    "default": 20
+                },
+                "max_per_artist": {
+                    "type": "integer",
+                    "description": "Maximum tracks from any single artist (default 2)",
+                    "default": 2
+                },
+                "max_per_album": {
+                    "type": "integer",
+                    "description": "Maximum tracks from any single album (default 2)",
+                    "default": 2
+                }
+            },
+            "required": ["track_ids"]
+        }
     }
 ]
 
@@ -266,8 +296,13 @@ SYSTEM_PROMPT = """You are Familiar, an AI music assistant helping users discove
 
 You have access to tools that let you search the library, find similar tracks, filter by audio features, and control playback. You can also access the user's Spotify favorites if they've connected their account.
 
+CRITICAL - ALWAYS SAVE PLAYLISTS:
+After calling queue_tracks, you MUST ALWAYS call save_as_playlist with the same track_ids.
+This is required for every music request. Generate a descriptive name based on what the user asked for.
+Example workflow: search → queue_tracks([ids]) → save_as_playlist("Indie Rock Mix", [ids])
+
 Guidelines:
-- IMPORTANT: For mood-based requests (e.g., "sleepy music", "something chill", "upbeat"), first call get_library_genres to see what genres are available, then search for matching genre names
+- For mood-based requests (e.g., "sleepy music", "something chill", "upbeat"), first call get_library_genres to see what genres are available, then search for matching genre names
 - When the user asks for music, use tools to search and find matching tracks, then queue them
 - Search by genre names that exist in their library (e.g., "ambient", "electronic", "jazz"), not mood words like "sleepy" or "relaxing"
 - Explain your choices briefly—why these tracks fit what they asked for
@@ -275,7 +310,13 @@ Guidelines:
 - You can combine multiple searches: find similar to X, then filter by energy
 - Be conversational but efficient—the user wants to listen to music, not read essays
 - When you queue tracks, confirm what you've queued
-- IMPORTANT: After queueing tracks, always use save_as_playlist to save them. Generate a descriptive name based on the user's request (e.g., "Ambient Evening", "High Energy Workout", "Relaxing Jazz").
+
+VARIETY IS ESSENTIAL:
+- NEVER queue multiple tracks from the same album unless the user specifically requests that album
+- Aim for variety across different artists—a good playlist has tracks from many different artists
+- When selecting tracks, prioritize diversity: pick from various artists, albums, and years
+- The tools automatically provide diverse results, but when curating manually, ensure you're not overrepresenting any single artist or album
+- If the user wants 10 tracks, aim for at least 6-8 different artists
 
 Spotify integration:
 - Use get_spotify_favorites to find tracks the user has liked on Spotify that are in their local library
@@ -338,6 +379,8 @@ class ToolExecutor:
             return await self._recommend_bandcamp_purchases(**tool_input)
         elif tool_name == "save_as_playlist":
             return await self._save_as_playlist(**tool_input)
+        elif tool_name == "select_diverse_tracks":
+            return await self._select_diverse_tracks(**tool_input)
         else:
             return {"error": f"Unknown tool: {tool_name}"}
 
@@ -366,8 +409,47 @@ class ToolExecutor:
 
         return variations
 
+    def _apply_diversity(
+        self,
+        tracks: list[Track],
+        max_per_artist: int = 2,
+        max_per_album: int = 3,
+    ) -> list[Track]:
+        """Filter tracks to ensure diversity across artists and albums.
+
+        Iterates through tracks and keeps only up to max_per_artist tracks
+        from each artist and max_per_album tracks from each album.
+        """
+        import random
+
+        # Shuffle input first to randomize which tracks get picked per artist/album
+        shuffled = list(tracks)
+        random.shuffle(shuffled)
+
+        artist_counts: dict[str, int] = {}
+        album_counts: dict[str, int] = {}
+        diverse: list[Track] = []
+
+        for track in shuffled:
+            artist_key = (track.artist or "").lower().strip()
+            album_key = f"{artist_key}:{(track.album or '').lower().strip()}"
+
+            artist_count = artist_counts.get(artist_key, 0)
+            album_count = album_counts.get(album_key, 0)
+
+            # Skip if we already have enough from this artist or album
+            if artist_count >= max_per_artist or album_count >= max_per_album:
+                continue
+
+            diverse.append(track)
+            artist_counts[artist_key] = artist_count + 1
+            album_counts[album_key] = album_count + 1
+
+        return diverse
+
     async def _search_library(self, query: str, limit: int = 20) -> dict[str, Any]:
-        """Search tracks by text query."""
+        """Search tracks by text query with diversity across artists/albums."""
+        import random
         from sqlalchemy import or_
 
         # Generate query variations for better matching
@@ -384,18 +466,28 @@ class ToolExecutor:
                 Track.genre.ilike(search_filter),
             ])
 
+        # Fetch more tracks than needed to allow for diversity filtering
         stmt = (
             select(Track)
             .where(or_(*conditions))
-            .order_by(Track.artist, Track.album, Track.track_number)
-            .limit(limit)
+            .limit(limit * 5)  # Get extra for diversity selection
         )
         result = await self.db.execute(stmt)
-        tracks = result.scalars().all()
+        all_tracks = list(result.scalars().all())
+
+        # Apply diversity: max 2 tracks per artist, max 3 per album
+        diverse_tracks = self._apply_diversity(all_tracks, max_per_artist=2, max_per_album=3)
+
+        # Shuffle to avoid predictable ordering
+        random.shuffle(diverse_tracks)
+
+        # Take the requested limit
+        selected = diverse_tracks[:limit]
 
         return {
-            "tracks": [self._track_to_dict(t) for t in tracks],
-            "count": len(tracks)
+            "tracks": [self._track_to_dict(t) for t in selected],
+            "count": len(selected),
+            "note": f"Selected from {len(all_tracks)} matches with artist/album diversity"
         }
 
     async def _find_similar_tracks(self, track_id: str, limit: int = 10) -> dict[str, Any]:
@@ -413,21 +505,26 @@ class ToolExecutor:
         if embedding is None:
             return {"error": "Track not analyzed yet", "tracks": []}
 
-        # Find similar tracks
+        # Find similar tracks - get more for diversity filtering
         similar_stmt = (
             select(Track)
             .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
             .where(Track.id != UUID(track_id))
             .where(TrackAnalysis.embedding.isnot(None))
             .order_by(TrackAnalysis.embedding.cosine_distance(embedding))
-            .limit(limit)
+            .limit(limit * 4)  # Get extra for diversity
         )
         result = await self.db.execute(similar_stmt)
-        tracks = result.scalars().all()
+        all_tracks = list(result.scalars().all())
+
+        # Apply diversity (keep order mostly since similarity matters, but limit per artist)
+        diverse_tracks = self._apply_diversity(all_tracks, max_per_artist=2, max_per_album=2)
+        selected = diverse_tracks[:limit]
 
         return {
-            "tracks": [self._track_to_dict(t) for t in tracks],
-            "count": len(tracks)
+            "tracks": [self._track_to_dict(t) for t in selected],
+            "count": len(selected),
+            "note": f"Similar tracks from {len(set(t.artist for t in selected))} different artists"
         }
 
     async def _filter_tracks_by_features(
@@ -473,13 +570,21 @@ class ToolExecutor:
         for condition in conditions:
             stmt = stmt.where(condition)
 
-        stmt = stmt.limit(limit)
+        # Fetch more tracks for diversity filtering
+        stmt = stmt.limit(limit * 5)
         result = await self.db.execute(stmt)
-        tracks = result.scalars().all()
+        all_tracks = list(result.scalars().all())
+
+        # Apply diversity and shuffle
+        import random
+        diverse_tracks = self._apply_diversity(all_tracks, max_per_artist=2, max_per_album=3)
+        random.shuffle(diverse_tracks)
+        selected = diverse_tracks[:limit]
 
         return {
-            "tracks": [self._track_to_dict(t) for t in tracks],
-            "count": len(tracks)
+            "tracks": [self._track_to_dict(t) for t in selected],
+            "count": len(selected),
+            "note": f"Selected from {len(all_tracks)} matches with artist/album diversity"
         }
 
     async def _get_library_stats(self) -> dict[str, Any]:
@@ -874,6 +979,45 @@ class ToolExecutor:
             "playlist_name": name,
             "tracks_saved": tracks_added,
             "message": f"Saved {tracks_added} tracks as '{name}'"
+        }
+
+    async def _select_diverse_tracks(
+        self,
+        track_ids: list[str],
+        limit: int = 20,
+        max_per_artist: int = 2,
+        max_per_album: int = 2,
+    ) -> dict[str, Any]:
+        """Select a diverse subset from given track IDs."""
+        if not track_ids:
+            return {"tracks": [], "count": 0, "note": "No tracks provided"}
+
+        # Fetch all tracks
+        stmt = select(Track).where(Track.id.in_([UUID(tid) for tid in track_ids]))
+        result = await self.db.execute(stmt)
+        tracks = list(result.scalars().all())
+
+        if not tracks:
+            return {"tracks": [], "count": 0, "note": "No matching tracks found"}
+
+        # Apply diversity filtering
+        diverse_tracks = self._apply_diversity(
+            tracks,
+            max_per_artist=max_per_artist,
+            max_per_album=max_per_album,
+        )
+
+        # Take the requested limit
+        selected = diverse_tracks[:limit]
+
+        # Count unique artists for feedback
+        unique_artists = len(set(t.artist for t in selected if t.artist))
+
+        return {
+            "tracks": [self._track_to_dict(t) for t in selected],
+            "count": len(selected),
+            "unique_artists": unique_artists,
+            "note": f"Selected {len(selected)} tracks from {unique_artists} different artists"
         }
 
     def _track_to_dict(self, track: Track) -> dict[str, Any]:

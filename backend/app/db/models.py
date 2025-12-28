@@ -40,37 +40,19 @@ class AlbumType(enum.Enum):
     LIVE = "live"
 
 
-class User(Base):
-    """User account for multi-user support (legacy, being replaced by Profile)."""
-
-    __tablename__ = "users"
-
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    username: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), unique=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
-
-    # Relationships
-    playlists: Mapped[list["Playlist"]] = relationship(back_populates="user", cascade="all, delete")
-    listening_history: Mapped[list["ListeningHistory"]] = relationship(
-        back_populates="user", cascade="all, delete"
-    )
-
-
 class Profile(Base):
-    """Device-based profile for multi-user support without login.
+    """Selectable profile for multi-user support (Netflix-style).
 
-    Each device automatically gets a unique profile identified by device_id.
-    This replaces the need for user authentication while still supporting
-    per-user features like Spotify/Last.fm connections.
+    Profiles can be selected from any device. No authentication required.
+    Each profile has its own playlists, favorites, play history, and service connections.
     """
 
     __tablename__ = "profiles"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    device_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    color: Mapped[str | None] = mapped_column(String(7))  # Hex color like "#3B82F6"
+    device_id: Mapped[str | None] = mapped_column(String(64))  # Legacy, no longer required
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
@@ -83,6 +65,15 @@ class Profile(Base):
         back_populates="profile", cascade="all, delete"
     )
     playlists: Mapped[list["Playlist"]] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+    smart_playlists: Mapped[list["SmartPlaylist"]] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+    favorites: Mapped[list["ProfileFavorite"]] = relationship(
+        back_populates="profile", cascade="all, delete"
+    )
+    play_history: Mapped[list["ProfilePlayHistory"]] = relationship(
         back_populates="profile", cascade="all, delete"
     )
 
@@ -278,21 +269,41 @@ class PlaylistTrack(Base):
     track: Mapped["Track"] = relationship(back_populates="playlist_entries")
 
 
-class ListeningHistory(Base):
-    """Per-user listening history for recommendations."""
+class ProfileFavorite(Base):
+    """Track favorites per profile (local, not Spotify)."""
 
-    __tablename__ = "listening_history"
+    __tablename__ = "profile_favorites"
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
-    played_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    play_duration_seconds: Mapped[float | None] = mapped_column(Float)
-    source: Mapped[str | None] = mapped_column(String(50))  # 'local', 'spotify', etc.
-    context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)  # playlist_id, search query, etc.
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    track_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
+    )
+    favorited_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="listening_history")
+    profile: Mapped["Profile"] = relationship(back_populates="favorites")
+    track: Mapped["Track"] = relationship()
+
+
+class ProfilePlayHistory(Base):
+    """Aggregated play history per profile with counts."""
+
+    __tablename__ = "profile_play_history"
+
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey("profiles.id", ondelete="CASCADE"), primary_key=True
+    )
+    track_id: Mapped[UUID] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
+    )
+    play_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_played_at: Mapped[datetime | None] = mapped_column(DateTime)
+    total_play_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Relationships
+    profile: Mapped["Profile"] = relationship(back_populates="play_history")
     track: Mapped["Track"] = relationship()
 
 
@@ -302,7 +313,7 @@ class SmartPlaylist(Base):
     __tablename__ = "smart_playlists"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
 
@@ -310,7 +321,9 @@ class SmartPlaylist(Base):
     # Example: [
     #   {"field": "genre", "operator": "contains", "value": "electronic"},
     #   {"field": "bpm", "operator": "between", "value": [120, 140]},
-    #   {"field": "energy", "operator": ">=", "value": 0.7}
+    #   {"field": "energy", "operator": ">=", "value": 0.7},
+    #   {"field": "is_favorite", "operator": "=", "value": true},
+    #   {"field": "play_count", "operator": ">=", "value": 5}
     # ]
     rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list)
 
@@ -334,7 +347,7 @@ class SmartPlaylist(Base):
     )
 
     # Relationships
-    user: Mapped["User"] = relationship()
+    profile: Mapped["Profile"] = relationship(back_populates="smart_playlists")
 
 
 class TrackVideo(Base):
@@ -361,7 +374,7 @@ class TrackVideo(Base):
     video_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     # User interaction
-    match_confirmed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"))
+    match_confirmed_by: Mapped[UUID | None] = mapped_column()  # Profile ID who confirmed the match
     downloaded_at: Mapped[datetime | None] = mapped_column(DateTime)
     last_played_at: Mapped[datetime | None] = mapped_column(DateTime)
 

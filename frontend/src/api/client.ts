@@ -1,51 +1,49 @@
 import axios from 'axios';
 import type { Track, TrackListResponse, LibraryStats } from '../types';
-import { getOrCreateDeviceProfile, clearDeviceProfile } from '../services/profileService';
+import { getSelectedProfileId, clearSelectedProfile } from '../services/profileService';
 
 const api = axios.create({
   baseURL: '/api/v1',
 });
 
-// Add X-Profile-ID header to all requests
+// Add X-Profile-ID header to all requests (if a profile is selected)
 api.interceptors.request.use(async (config) => {
   try {
-    const profileId = await getOrCreateDeviceProfile();
-    config.headers['X-Profile-ID'] = profileId;
+    const profileId = await getSelectedProfileId();
+    if (profileId) {
+      config.headers['X-Profile-ID'] = profileId;
+    }
   } catch (error) {
-    // Log but don't block requests if profile fails
+    // Log but don't block requests if profile check fails
     console.error('Failed to get profile ID:', error);
   }
   return config;
 });
 
-// Handle 401 "please re-register" errors by clearing cached profile and retrying
+// Handle 401 errors - profile may have been deleted
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
-    const originalRequest = error.config;
-
-    // Check if this is a "please re-register" error and we haven't retried yet
+    // Check if this is an "invalid profile" error
     if (
       error.response?.status === 401 &&
-      error.response?.data?.detail?.includes('re-register') &&
-      !originalRequest._retry
+      (error.response?.data?.detail?.includes('re-register') ||
+       error.response?.data?.detail?.includes('Invalid profile'))
     ) {
-      originalRequest._retry = true;
-
-      // Clear the cached profile to force re-registration
-      await clearDeviceProfile();
-
-      // Get a new profile (will register with backend)
-      const newProfileId = await getOrCreateDeviceProfile();
-      originalRequest.headers['X-Profile-ID'] = newProfileId;
-
-      // Retry the request
-      return api(originalRequest);
+      // Clear the invalid profile selection
+      await clearSelectedProfile();
+      // The app should redirect to profile selector
+      // Dispatch a custom event that App.tsx can listen for
+      window.dispatchEvent(new CustomEvent('profile-invalidated'));
     }
 
     return Promise.reject(error);
   }
 );
+
+// Legacy aliases for backwards compatibility
+export const getOrCreateDeviceProfile = getSelectedProfileId;
+export const clearDeviceProfile = clearSelectedProfile;
 
 export const tracksApi = {
   list: async (params?: {
@@ -633,16 +631,32 @@ export const playlistsApi = {
 
 // Profile API
 export interface ProfileResponse {
-  profile_id: string;
-  device_id: string;
+  id: string;
+  name: string;
+  color: string | null;
   created_at: string;
   has_spotify: boolean;
   has_lastfm: boolean;
 }
 
+export interface ProfileCreate {
+  name: string;
+  color?: string;
+}
+
 export const profilesApi = {
-  register: async (deviceId: string): Promise<ProfileResponse> => {
-    const { data } = await api.post('/profiles/register', { device_id: deviceId });
+  list: async (): Promise<ProfileResponse[]> => {
+    const { data } = await api.get('/profiles');
+    return data;
+  },
+
+  create: async (profile: ProfileCreate): Promise<ProfileResponse> => {
+    const { data } = await api.post('/profiles', profile);
+    return data;
+  },
+
+  get: async (id: string): Promise<ProfileResponse> => {
+    const { data } = await api.get(`/profiles/${id}`);
     return data;
   },
 
@@ -651,8 +665,96 @@ export const profilesApi = {
     return data;
   },
 
-  deleteMe: async (): Promise<{ status: string }> => {
-    const { data } = await api.delete('/profiles/me');
+  update: async (id: string, profile: Partial<ProfileCreate>): Promise<ProfileResponse> => {
+    const { data } = await api.put(`/profiles/${id}`, profile);
+    return data;
+  },
+
+  delete: async (id: string): Promise<void> => {
+    await api.delete(`/profiles/${id}`);
+  },
+};
+
+// Favorites API
+export interface FavoriteTrack {
+  id: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  duration_seconds: number | null;
+  genre: string | null;
+  year: number | null;
+  favorited_at: string;
+}
+
+export interface FavoritesListResponse {
+  favorites: FavoriteTrack[];
+  total: number;
+}
+
+export interface FavoriteStatusResponse {
+  track_id: string;
+  is_favorite: boolean;
+}
+
+export const favoritesApi = {
+  list: async (limit = 100, offset = 0): Promise<FavoritesListResponse> => {
+    const { data } = await api.get('/favorites', { params: { limit, offset } });
+    return data;
+  },
+
+  add: async (trackId: string): Promise<FavoriteStatusResponse> => {
+    const { data } = await api.post(`/favorites/${trackId}`);
+    return data;
+  },
+
+  remove: async (trackId: string): Promise<FavoriteStatusResponse> => {
+    const { data } = await api.delete(`/favorites/${trackId}`);
+    return data;
+  },
+
+  check: async (trackId: string): Promise<FavoriteStatusResponse> => {
+    const { data } = await api.get(`/favorites/${trackId}`);
+    return data;
+  },
+
+  toggle: async (trackId: string): Promise<FavoriteStatusResponse> => {
+    const { data } = await api.post(`/favorites/${trackId}/toggle`);
+    return data;
+  },
+};
+
+// Play Tracking API
+export interface PlayRecordResponse {
+  track_id: string;
+  play_count: number;
+  total_play_seconds: number;
+}
+
+export interface PlayStatsResponse {
+  total_plays: number;
+  total_play_seconds: number;
+  unique_tracks: number;
+  top_tracks: Array<{
+    id: string;
+    title: string | null;
+    artist: string | null;
+    play_count: number;
+    total_play_seconds: number;
+    last_played_at: string | null;
+  }>;
+}
+
+export const playTrackingApi = {
+  recordPlay: async (trackId: string, durationSeconds?: number): Promise<PlayRecordResponse> => {
+    const { data } = await api.post(`/tracks/${trackId}/played`, {
+      duration_seconds: durationSeconds,
+    });
+    return data;
+  },
+
+  getStats: async (limit = 10): Promise<PlayStatsResponse> => {
+    const { data } = await api.get('/tracks/stats/plays', { params: { limit } });
     return data;
   },
 };

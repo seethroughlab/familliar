@@ -4,13 +4,12 @@ import json
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, get_db
-from app.db.models import Track, User
+from app.api.deps import DbSession, RequiredProfile
+from app.db.models import Profile, Track
 from app.services.smart_playlists import SmartPlaylistService
 
 router = APIRouter(prefix="/smart-playlists", tags=["smart-playlists"])
@@ -118,27 +117,27 @@ def track_to_response(track: Any) -> TrackResponse:
 
 @router.get("", response_model=list[SmartPlaylistResponse])
 async def list_smart_playlists(
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> list[SmartPlaylistResponse]:
-    """List all smart playlists for the current user."""
+    """List all smart playlists for the current profile."""
     service = SmartPlaylistService(db)
-    playlists = await service.get_all_for_user(user.id)
+    playlists = await service.get_all_for_profile(profile.id)
     return [playlist_to_response(p) for p in playlists]
 
 
 @router.post("", response_model=SmartPlaylistResponse, status_code=status.HTTP_201_CREATED)
 async def create_smart_playlist(
     request: SmartPlaylistCreate,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> SmartPlaylistResponse:
     """Create a new smart playlist."""
     service = SmartPlaylistService(db)
 
     try:
         playlist = await service.create(
-            user_id=user.id,
+            profile_id=profile.id,
             name=request.name,
             description=request.description,
             rules=[r.model_dump() for r in request.rules],
@@ -159,12 +158,12 @@ async def create_smart_playlist(
 @router.get("/{playlist_id}", response_model=SmartPlaylistResponse)
 async def get_smart_playlist(
     playlist_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> SmartPlaylistResponse:
     """Get a smart playlist by ID."""
     service = SmartPlaylistService(db)
-    playlist = await service.get_by_id(playlist_id, user.id)
+    playlist = await service.get_by_id(playlist_id, profile.id)
 
     if not playlist:
         raise HTTPException(
@@ -179,12 +178,12 @@ async def get_smart_playlist(
 async def update_smart_playlist(
     playlist_id: UUID,
     request: SmartPlaylistUpdate,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> SmartPlaylistResponse:
     """Update a smart playlist."""
     service = SmartPlaylistService(db)
-    playlist = await service.get_by_id(playlist_id, user.id)
+    playlist = await service.get_by_id(playlist_id, profile.id)
 
     if not playlist:
         raise HTTPException(
@@ -210,12 +209,12 @@ async def update_smart_playlist(
 @router.delete("/{playlist_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_smart_playlist(
     playlist_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> None:
     """Delete a smart playlist."""
     service = SmartPlaylistService(db)
-    playlist = await service.get_by_id(playlist_id, user.id)
+    playlist = await service.get_by_id(playlist_id, profile.id)
 
     if not playlist:
         raise HTTPException(
@@ -229,14 +228,14 @@ async def delete_smart_playlist(
 @router.get("/{playlist_id}/tracks", response_model=SmartPlaylistTracksResponse)
 async def get_smart_playlist_tracks(
     playlist_id: UUID,
+    db: DbSession,
+    profile: RequiredProfile,
     limit: int = 100,
     offset: int = 0,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
 ) -> SmartPlaylistTracksResponse:
     """Get tracks matching a smart playlist's rules."""
     service = SmartPlaylistService(db)
-    playlist = await service.get_by_id(playlist_id, user.id)
+    playlist = await service.get_by_id(playlist_id, profile.id)
 
     if not playlist:
         raise HTTPException(
@@ -257,12 +256,12 @@ async def get_smart_playlist_tracks(
 @router.post("/{playlist_id}/refresh", response_model=SmartPlaylistResponse)
 async def refresh_smart_playlist(
     playlist_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    db: DbSession,
+    profile: RequiredProfile,
 ) -> SmartPlaylistResponse:
     """Refresh a smart playlist's cached track count."""
     service = SmartPlaylistService(db)
-    playlist = await service.get_by_id(playlist_id, user.id)
+    playlist = await service.get_by_id(playlist_id, profile.id)
 
     if not playlist:
         raise HTTPException(
@@ -320,9 +319,9 @@ class PlaylistImportResult(BaseModel):
 
 @router.post("/import", response_model=PlaylistImportResult)
 async def import_playlist(
+    db: DbSession,
+    profile: RequiredProfile,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
 ):
     """Import a .familiar playlist file.
 
@@ -394,7 +393,7 @@ async def import_playlist(
     # Otherwise, create rules based on the track metadata
     if playlist_type == "smart" and rules:
         playlist = await service.create(
-            user_id=user.id,
+            profile_id=profile.id,
             name=name,
             description=description,
             rules=rules,
@@ -413,7 +412,7 @@ async def import_playlist(
                 for artist in unique_artists
             ]
             playlist = await service.create(
-                user_id=user.id,
+                profile_id=profile.id,
                 name=name,
                 description=description or f"Imported playlist with {len(imported_tracks)} tracks",
                 rules=artist_rules,
@@ -422,7 +421,7 @@ async def import_playlist(
         else:
             # Fallback: create empty playlist
             playlist = await service.create(
-                user_id=user.id,
+                profile_id=profile.id,
                 name=name,
                 description=description,
                 rules=[],

@@ -42,7 +42,7 @@ class SmartPlaylistService:
 
     async def create(
         self,
-        user_id: UUID,
+        profile_id: UUID,
         name: str,
         rules: list[dict[str, Any]],
         description: str | None = None,
@@ -56,7 +56,7 @@ class SmartPlaylistService:
         self._validate_rules(rules)
 
         playlist = SmartPlaylist(
-            user_id=user_id,
+            profile_id=profile_id,
             name=name,
             description=description,
             rules=rules,
@@ -101,21 +101,21 @@ class SmartPlaylistService:
         await self.db.delete(playlist)
         await self.db.commit()
 
-    async def get_by_id(self, playlist_id: UUID, user_id: UUID) -> SmartPlaylist | None:
+    async def get_by_id(self, playlist_id: UUID, profile_id: UUID) -> SmartPlaylist | None:
         """Get a smart playlist by ID."""
         result = await self.db.execute(
             select(SmartPlaylist).where(
                 SmartPlaylist.id == playlist_id,
-                SmartPlaylist.user_id == user_id,
+                SmartPlaylist.profile_id == profile_id,
             )
         )
         return result.scalar_one_or_none()
 
-    async def get_all_for_user(self, user_id: UUID) -> list[SmartPlaylist]:
-        """Get all smart playlists for a user."""
+    async def get_all_for_profile(self, profile_id: UUID) -> list[SmartPlaylist]:
+        """Get all smart playlists for a profile."""
         result = await self.db.execute(
             select(SmartPlaylist)
-            .where(SmartPlaylist.user_id == user_id)
+            .where(SmartPlaylist.profile_id == profile_id)
             .order_by(SmartPlaylist.name)
         )
         return list(result.scalars().all())

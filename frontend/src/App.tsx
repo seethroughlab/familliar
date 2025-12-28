@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, Settings, Zap } from 'lucide-react';
@@ -13,12 +13,14 @@ import { SessionPanel } from './components/Sessions';
 import { PlaylistsView } from './components/Playlists';
 import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
+import { ProfileSelector } from './components/Profiles';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
 import { usePlayerStore } from './stores/playerStore';
 import { useThemeStore } from './stores/themeStore';
+import { initializeProfile, type Profile } from './services/profileService';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -237,6 +239,56 @@ function AppContent() {
 }
 
 function App() {
+  const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
+  const [checkingProfile, setCheckingProfile] = useState(true);
+
+  const checkProfile = useCallback(async () => {
+    setCheckingProfile(true);
+    try {
+      const p = await initializeProfile();
+      setProfile(p);
+    } catch (err) {
+      console.error('Failed to check profile:', err);
+      setProfile(null);
+    } finally {
+      setCheckingProfile(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkProfile();
+
+    // Listen for profile invalidation events (from API client)
+    const handleInvalidated = () => {
+      setProfile(null);
+    };
+    window.addEventListener('profile-invalidated', handleInvalidated);
+
+    return () => {
+      window.removeEventListener('profile-invalidated', handleInvalidated);
+    };
+  }, [checkProfile]);
+
+  // Show loading spinner while checking profile
+  if (checkingProfile) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  // Show profile selector if no profile selected
+  if (profile === null) {
+    return (
+      <ProfileSelector
+        onProfileSelected={(p) => {
+          setProfile(p);
+        }}
+      />
+    );
+  }
+
   return (
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>

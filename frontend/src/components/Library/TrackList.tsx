@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Pause, Download, Check, Loader2 } from 'lucide-react';
-import { tracksApi } from '../../api/client';
+import { Play, Pause, Download, Check, Loader2, Heart } from 'lucide-react';
+import { tracksApi, favoritesApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useOfflineTrack } from '../../hooks/useOfflineTrack';
 import type { Track } from '../../types';
@@ -64,10 +65,61 @@ function OfflineButton({ trackId }: { trackId: string }) {
   );
 }
 
+function FavoriteButton({ trackId }: { trackId: string }) {
+  const [isFavorite, setIsFavorite] = useState<boolean | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Check favorite status on first render
+  const checkStatus = async () => {
+    if (isFavorite !== null) return;
+    try {
+      const status = await favoritesApi.check(trackId);
+      setIsFavorite(status.is_favorite);
+    } catch {
+      // Silently fail - user may not be logged in
+    }
+  };
+
+  // Lazy load the status
+  if (isFavorite === null) {
+    checkStatus();
+  }
+
+  const toggleFavorite = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isLoading) return;
+
+    setIsLoading(true);
+    try {
+      const result = await favoritesApi.toggle(trackId);
+      setIsFavorite(result.is_favorite);
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={toggleFavorite}
+      disabled={isLoading}
+      className={`p-1 transition-colors ${
+        isFavorite
+          ? 'text-pink-500 hover:text-pink-400'
+          : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+      } ${isLoading ? 'animate-pulse' : ''}`}
+      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+    >
+      <Heart className="w-4 h-4" fill={isFavorite ? 'currentColor' : 'none'} />
+    </button>
+  );
+}
+
 function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowProps) {
   return (
     <div
-      className={`group grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem] gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 ${
+      className={`group grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 ${
         isCurrentTrack ? 'bg-zinc-800/50' : ''
       }`}
     >
@@ -104,6 +156,9 @@ function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowP
       <div className="text-zinc-400 truncate">{track.artist || 'Unknown'}</div>
       <div className="text-zinc-400 truncate">{track.album || 'Unknown'}</div>
       <div className="text-zinc-400 text-right">{formatDuration(track.duration_seconds)}</div>
+      <div className="flex items-center justify-center">
+        <FavoriteButton trackId={track.id} />
+      </div>
       <div className="flex items-center justify-center">
         <OfflineButton trackId={track.id} />
       </div>
@@ -160,12 +215,13 @@ export function TrackList({ search, artist, album }: TrackListProps) {
   return (
     <div>
       {/* Header */}
-      <div className="grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem] gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800">
+      <div className="grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800">
         <div>#</div>
         <div>Title</div>
         <div>Artist</div>
         <div>Album</div>
         <div className="text-right">Duration</div>
+        <div></div>
         <div></div>
       </div>
 

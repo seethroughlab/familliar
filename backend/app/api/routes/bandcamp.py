@@ -1,10 +1,10 @@
 """Bandcamp API endpoints for searching and discovering music."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from app.api.deps import get_current_user
-from app.db.models import User
+from app.api.deps import RequiredProfile
+from app.db.models import Profile
 from app.services.bandcamp import BandcampService
 
 router = APIRouter(prefix="/bandcamp", tags=["bandcamp"])
@@ -44,10 +44,10 @@ class BandcampAlbumDetails(BaseModel):
 
 @router.get("/search", response_model=BandcampSearchResponse)
 async def search_bandcamp(
+    profile: RequiredProfile,
     q: str = Query(..., min_length=1, description="Search query"),
     item_type: str = Query("a", pattern="^[atb]$", description="a=album, t=track, b=artist"),
     limit: int = Query(10, ge=1, le=50),
-    user: User = Depends(get_current_user),
 ):
     """Search Bandcamp for albums, tracks, or artists.
 
@@ -77,8 +77,8 @@ async def search_bandcamp(
 
 @router.get("/album", response_model=BandcampAlbumDetails)
 async def get_album_details(
+    profile: RequiredProfile,
     url: str = Query(..., description="Bandcamp album URL"),
-    user: User = Depends(get_current_user),
 ):
     """Get detailed information about a Bandcamp album.
 
