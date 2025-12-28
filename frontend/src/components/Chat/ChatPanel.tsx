@@ -133,7 +133,10 @@ export function ChatPanel() {
 
       const response = await fetch('/api/v1/chat/stream', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(profileId && { 'X-Profile-ID': profileId }),
+        },
         body: JSON.stringify({
           message: userMessageContent,
           history,
@@ -465,7 +468,6 @@ function ToolCallBadge({ toolCall }: { toolCall: ChatToolCall }) {
     get_spotify_sync_stats: 'Sync stats',
     search_bandcamp: 'Searching Bandcamp',
     recommend_bandcamp_purchases: 'Recommending',
-    save_as_playlist: 'Saving playlist',
     select_diverse_tracks: 'Selecting diverse tracks',
   };
 

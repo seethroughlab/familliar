@@ -310,9 +310,9 @@ class LibraryScanner:
         result = await self.db.execute(upsert_stmt)
         track = result.scalar_one()
 
-        # Queue analysis task
-        from app.workers.tasks import analyze_track
-        analyze_track.delay(str(track.id))
+        # Queue analysis task (with deduplication)
+        from app.workers.tasks import queue_track_analysis
+        queue_track_analysis(str(track.id))
 
         return track
 
@@ -347,8 +347,8 @@ class LibraryScanner:
         track.analysis_version = 0
         track.analyzed_at = None
 
-        # Queue analysis task
-        from app.workers.tasks import analyze_track
-        analyze_track.delay(str(track.id))
+        # Queue analysis task (with deduplication)
+        from app.workers.tasks import queue_track_analysis
+        queue_track_analysis(str(track.id))
 
         return track

@@ -14,6 +14,7 @@ import { PlaylistsView } from './components/Playlists';
 import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
+import { HealthIndicator } from './components/HealthIndicator';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -76,6 +77,15 @@ function AppContent() {
   useEffect(() => {
     const cleanup = initSyncListeners();
     return cleanup;
+  }, []);
+
+  // Listen for navigate-to-settings event from HealthIndicator
+  useEffect(() => {
+    const handleNavigateToSettings = () => {
+      setRightPanelTab('settings');
+    };
+    window.addEventListener('navigate-to-settings', handleNavigateToSettings);
+    return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings);
   }, []);
 
   // Hydrate player state from IndexedDB
@@ -173,6 +183,12 @@ function AppContent() {
                   </div>
                 </div>
               )}
+
+              {/* Spacer to push health indicator right */}
+              <div className="flex-1" />
+
+              {/* Health indicator - only shows when issues detected */}
+              <HealthIndicator />
             </div>
           </header>
 

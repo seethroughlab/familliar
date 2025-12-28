@@ -22,5 +22,17 @@
 [x] PLAN: We need to re-think the context view. It's not doing what I thought it was going to do. Currently, it seems to just keep a history of all of the searches that the LLM does. It should be more like the CURRENT list of songs that the LLM has returned, as well as recommendations of albums to buy based on Spotify missing tracks. I'd also like to add recommendaayions of NEW albums to add to the library. The idea here is that users will want a "discovery" mechanism similar to what Spotify provides. Where can we get these recommendations? Let's make a full plan for the context view redesign. Please ask any clarifying questions you need to.
 [x] Can you explain how the LLM currently chooses tracks to play? It seems to be almost completely genre-based. I was hoping it would use much more information to make a track selection. It seems to tend to just pick tracks from one album. It should try to avoid picking tracks from only one album/artist.
 [x] Do we have a "favorites" flag for tracks, and play-count? These will be useful for smart playlists
+[x] I'm worried that these worker processes seem so delicate and keep failing silently. It takes you a while each time to find the errors. Is there anything we should do to make them more resilient and have better error reporting? The user shouldn't be prompted to "Ensure Celery workers are running to process the queue." -- the user doesn't know what a Celery worker is. 
+[x] When I clikc "Full Scan", the button currently spins for about 3 seconds and then stops. Is that expected? there is no progress indicator.
+[x] System Status "Some services need attention" and "Some features may be limited." are ambiguous and don't give the user any indication of whether they need to do anything, or why. 
+[x] Profile chooser is not visible.
+[x] How do you cache (download locally for offline listening) a playlist? I don't see the option anywhere in the existing playlists.
+[x] The LLM should come up with better titles for playlists. 
+[x] Why does "Analysis Progress" have such a prominent position in the overall system status, design-wise? Isn't it kind of part of a library scan? Shouldn't it be shown there? The System Status view is still a bit confusing. 
+[x] Is analysis status included in the scan progress? 
+[x] Do scans currently happen automatically at all? 
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
+[ ] please read job-logs-*.txt and fix the CI issues.
+[ ] We need the ability to rename profiles, and choose a profile image
+[ ] Missing from Library should also appear in AI-generated playlists when relevant

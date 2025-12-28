@@ -6,6 +6,7 @@ import { LibraryScan } from './LibraryScan';
 import { ThemeSettings } from './ThemeSettings';
 import { LLMSettings } from './LLMSettings';
 import { ProfileSettings } from './ProfileSettings';
+import { SystemStatus } from './SystemStatus';
 import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
@@ -17,6 +18,16 @@ export function SettingsPanel() {
       </div>
 
       <div className="space-y-6">
+        {/* System Status at the top for visibility */}
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
+            System
+          </h3>
+          <div className="space-y-4">
+            <SystemStatus />
+          </div>
+        </section>
+
         <section>
           <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
             Profile

@@ -6,6 +6,8 @@ export function LibraryScan() {
   const [scanStatus, setScanStatus] = useState<ScanStatus | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [isPending, setIsPending] = useState(false); // Waiting for worker to pick up task
+  const [, setPendingRetries] = useState(0); // Counter for polling timeout
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -29,28 +31,54 @@ export function LibraryScan() {
     checkInitialStatus();
   }, [fetchStatus]);
 
-  // Poll while scan is running
+  // Poll while scan is running or pending
   useEffect(() => {
-    if (!isPolling) return;
+    if (!isPolling && !isPending) return;
 
     const interval = setInterval(async () => {
       const stillRunning = await fetchStatus();
-      if (!stillRunning) {
+      if (stillRunning) {
+        // Worker started, switch from pending to running
+        setIsPending(false);
+        setPendingRetries(0);
+      } else if (isPending) {
+        // Still waiting for worker to start
+        setPendingRetries(prev => {
+          if (prev >= 10) {
+            // Give up after 10 seconds
+            setIsPending(false);
+            setIsPolling(false);
+            return 0;
+          }
+          return prev + 1;
+        });
+      } else {
+        // Scan completed
         setIsPolling(false);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPolling, fetchStatus]);
+  }, [isPolling, isPending, fetchStatus]);
 
   const startScan = async (full: boolean = false) => {
     setIsStarting(true);
+    setIsPending(true);
+    setPendingRetries(0);
     try {
-      await libraryApi.scan(full);
-      setIsPolling(true);
+      const result = await libraryApi.scan(full);
+      if (result.status === 'already_running') {
+        setIsPending(false);
+        setIsPolling(true);
+      } else if (result.status === 'queued') {
+        // Task is queued but won't start soon - show queued state
+        setIsPending(false);
+        setScanStatus(result);
+      }
       await fetchStatus();
     } catch (error) {
       console.error('Failed to start scan:', error);
+      setIsPending(false);
     } finally {
       setIsStarting(false);
     }
@@ -67,11 +95,16 @@ export function LibraryScan() {
   };
 
   const getStatusIcon = () => {
+    if (isPending) {
+      return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
+    }
     if (!scanStatus) return null;
 
     switch (scanStatus.status) {
       case 'running':
         return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
+      case 'queued':
+        return <Loader2 className="w-5 h-5 text-yellow-400 animate-spin" />;
       case 'completed':
         return <CheckCircle className="w-5 h-5 text-green-400" />;
       case 'error':
@@ -81,8 +114,17 @@ export function LibraryScan() {
     }
   };
 
+  const getStatusMessage = () => {
+    if (isPending) {
+      return 'Starting scan...';
+    }
+    return scanStatus?.message || 'Check for new or changed files';
+  };
+
+  const isQueued = scanStatus?.status === 'queued';
+
   const progress = scanStatus?.progress;
-  const isRunning = scanStatus?.status === 'running';
+  const isRunning = scanStatus?.status === 'running' || isPending;
   const isDiscovering = progress?.phase === 'discovery';
   const progressPercent = progress && progress.files_total > 0
     ? Math.round((progress.files_processed / progress.files_total) * 100)
@@ -96,7 +138,7 @@ export function LibraryScan() {
           <div>
             <h4 className="font-medium text-white">Library Scanner</h4>
             <p className="text-sm text-zinc-400">
-              {scanStatus?.message || 'Check for new or changed files'}
+              {getStatusMessage()}
             </p>
           </div>
         </div>
@@ -107,21 +149,60 @@ export function LibraryScan() {
             disabled={isRunning || isStarting}
             className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center gap-2"
           >
-            <RefreshCw className={`w-4 h-4 ${isStarting ? 'animate-spin' : ''}`} />
+            {isStarting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4" />
+            )}
             Quick Scan
           </button>
           <button
             onClick={() => startScan(true)}
             disabled={isRunning || isStarting}
-            className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md"
+            className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center gap-2"
           >
+            {isStarting && <Loader2 className="w-4 h-4 animate-spin" />}
             Full Scan
           </button>
         </div>
       </div>
 
+      {/* Queued state - waiting behind other tasks */}
+      {isQueued && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-yellow-400">Scan queued</span>
+            {scanStatus.queue_position && (
+              <span className="text-zinc-400">
+                {scanStatus.queue_position.toLocaleString()} tasks ahead
+              </span>
+            )}
+          </div>
+          <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
+            <div className="bg-yellow-500 h-2 rounded-full w-1/4 animate-[pulse_1s_ease-in-out_infinite]" />
+          </div>
+          {scanStatus.warnings && scanStatus.warnings.length > 0 && (
+            <div className="p-3 bg-yellow-900/20 border border-yellow-800/50 rounded-lg">
+              <p className="text-sm text-yellow-200">{scanStatus.warnings[0]}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pending state - waiting for worker */}
+      {isPending && !progress && !isQueued && (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-zinc-400">Waiting for background worker...</span>
+          </div>
+          <div className="w-full bg-zinc-700 rounded-full h-2 overflow-hidden">
+            <div className="bg-blue-500 h-2 rounded-full w-1/4 animate-[pulse_1s_ease-in-out_infinite]" />
+          </div>
+        </div>
+      )}
+
       {/* Progress bar when running */}
-      {isRunning && progress && (
+      {scanStatus?.status === 'running' && progress && (
         <div className="mt-4 space-y-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-zinc-400">{getPhaseLabel(progress.phase)}</span>

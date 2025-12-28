@@ -238,29 +238,6 @@ MUSIC_TOOLS = [
         }
     },
     {
-        "name": "save_as_playlist",
-        "description": "Save a set of tracks as a named playlist. Use this after queuing tracks to save them for later. The playlist will be marked as AI-generated.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string",
-                    "description": "A descriptive name for the playlist based on the user's request"
-                },
-                "track_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of track UUIDs to save in the playlist"
-                },
-                "description": {
-                    "type": "string",
-                    "description": "Optional description of the playlist"
-                }
-            },
-            "required": ["name", "track_ids"]
-        }
-    },
-    {
         "name": "select_diverse_tracks",
         "description": "From a list of track IDs, select a diverse subset with variety across different artists and albums. Use this before queueing to ensure the playlist has good variety.",
         "input_schema": {
@@ -296,10 +273,7 @@ SYSTEM_PROMPT = """You are Familiar, an AI music assistant helping users discove
 
 You have access to tools that let you search the library, find similar tracks, filter by audio features, and control playback. You can also access the user's Spotify favorites if they've connected their account.
 
-CRITICAL - ALWAYS SAVE PLAYLISTS:
-After calling queue_tracks, you MUST ALWAYS call save_as_playlist with the same track_ids.
-This is required for every music request. Generate a descriptive name based on what the user asked for.
-Example workflow: search → queue_tracks([ids]) → save_as_playlist("Indie Rock Mix", [ids])
+Playlists are automatically saved when you queue tracks, so just focus on finding and queueing great music.
 
 Guidelines:
 - For mood-based requests (e.g., "sleepy music", "something chill", "upbeat"), first call get_library_genres to see what genres are available, then search for matching genre names
@@ -341,11 +315,13 @@ Keep responses concise and music-focused."""
 class ToolExecutor:
     """Executes tools called by the LLM."""
 
-    def __init__(self, db: AsyncSession, profile_id: UUID | None = None) -> None:
+    def __init__(self, db: AsyncSession, profile_id: UUID | None = None, user_message: str = "") -> None:
         self.db = db
         self.profile_id = profile_id
+        self.user_message = user_message  # Store for auto-naming playlists
         self._queued_tracks: list[dict[str, Any]] = []
         self._playback_action: str | None = None
+        self._auto_saved_playlist: dict[str, Any] | None = None
 
     async def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return the result."""
@@ -377,8 +353,6 @@ class ToolExecutor:
             return await self._search_bandcamp(**tool_input)
         elif tool_name == "recommend_bandcamp_purchases":
             return await self._recommend_bandcamp_purchases(**tool_input)
-        elif tool_name == "save_as_playlist":
-            return await self._save_as_playlist(**tool_input)
         elif tool_name == "select_diverse_tracks":
             return await self._select_diverse_tracks(**tool_input)
         else:
@@ -391,6 +365,98 @@ class ToolExecutor:
     def get_playback_action(self) -> str | None:
         """Get playback action requested during this conversation turn."""
         return self._playback_action
+
+    def get_auto_saved_playlist(self) -> dict[str, Any] | None:
+        """Get the auto-saved playlist created during this conversation turn."""
+        return self._auto_saved_playlist
+
+    async def _generate_playlist_name_llm(self, tracks: list[dict[str, Any]]) -> str:
+        """Generate a creative playlist name using the LLM."""
+        from datetime import datetime
+
+        # Fallback if no tracks or no user message
+        if not tracks:
+            return f"AI Playlist - {datetime.now().strftime('%b %d %H:%M')}"
+
+        # Build context from tracks
+        artists = list(set(t.get("artist", "") for t in tracks[:10] if t.get("artist")))
+        genres = list(set(t.get("genre", "") for t in tracks[:10] if t.get("genre")))
+
+        prompt = f"""Generate a short, creative playlist name (2-5 words max).
+
+User's request: "{self.user_message or 'curated selection'}"
+Artists included: {', '.join(artists[:5]) or 'Various'}
+Genres: {', '.join(genres[:3]) or 'Mixed'}
+Track count: {len(tracks)}
+
+Rules:
+- Be creative and evocative, not literal
+- Don't just repeat the user's words
+- Avoid generic names like "Chill Vibes" or "Good Music"
+- No quotes, colons, or special characters
+- Examples of good names: "Midnight Drive", "Sunday Morning Coffee", "Electric Dreams", "Rainy Day Companion"
+
+Respond with ONLY the playlist name, nothing else."""
+
+        try:
+            # Use a quick, cheap LLM call
+            app_settings = get_app_settings_service().get()
+
+            if app_settings.llm_provider == "ollama":
+                # Use Ollama
+                client = httpx.AsyncClient(timeout=30.0)
+                try:
+                    response = await client.post(
+                        f"{app_settings.ollama_url.rstrip('/')}/api/generate",
+                        json={
+                            "model": app_settings.ollama_model,
+                            "prompt": prompt,
+                            "stream": False,
+                        },
+                    )
+                    response.raise_for_status()
+                    name = response.json().get("response", "").strip()
+                finally:
+                    await client.aclose()
+            else:
+                # Use Claude with a fast model
+                api_key = app_settings.anthropic_api_key or settings.anthropic_api_key
+                if not api_key:
+                    raise ValueError("No API key")
+
+                client = anthropic.Anthropic(api_key=api_key)
+                response = client.messages.create(
+                    model="claude-haiku-4-20250815",  # Fast and cheap
+                    max_tokens=50,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                name = response.content[0].text.strip() if response.content else ""
+
+            # Clean up the response
+            name = name.strip('"\'').strip()
+
+            # Validate: should be short and clean
+            if name and len(name) <= 50 and not any(c in name for c in [':', '\n', '"']):
+                return name
+
+        except Exception as e:
+            logger.debug(f"LLM playlist name generation failed: {e}")
+
+        # Fallback: use a cleaned version of the user message
+        return self._generate_playlist_name_fallback()
+
+    def _generate_playlist_name_fallback(self) -> str:
+        """Fallback playlist name from user message or timestamp."""
+        from datetime import datetime
+
+        if self.user_message:
+            # Truncate and clean the message for a name
+            name = self.user_message[:50].strip()
+            if len(self.user_message) > 50:
+                name += "..."
+            return name
+        # Fallback to timestamp
+        return f"AI Playlist - {datetime.now().strftime('%b %d %H:%M')}"
 
     def _normalize_query_variations(self, query: str) -> list[str]:
         """Generate search variations to handle number padding, etc."""
@@ -641,7 +707,7 @@ class ToolExecutor:
         }
 
     async def _queue_tracks(self, track_ids: list[str], clear_existing: bool = False) -> dict[str, Any]:
-        """Queue tracks for playback."""
+        """Queue tracks for playback and auto-save as playlist."""
         # Fetch track details
         stmt = select(Track).where(Track.id.in_([UUID(tid) for tid in track_ids]))
         result = await self.db.execute(stmt)
@@ -649,6 +715,16 @@ class ToolExecutor:
 
         # Store for frontend to pick up
         self._queued_tracks = [self._track_to_dict(t) for t in tracks]
+
+        # Auto-save as playlist if we have tracks and a profile
+        if tracks and self.profile_id:
+            # Generate a creative name using LLM
+            playlist_name = await self._generate_playlist_name_llm(self._queued_tracks)
+            self._auto_saved_playlist = await self._save_as_playlist(
+                name=playlist_name,
+                track_ids=track_ids,
+                description=self.user_message,
+            )
 
         return {
             "queued": len(tracks),
@@ -1192,7 +1268,7 @@ class LLMService:
             yield {"type": "error", "content": "Claude client not configured"}
             return
 
-        tool_executor = ToolExecutor(db, profile_id)
+        tool_executor = ToolExecutor(db, profile_id, user_message=message)
         messages: list[dict[str, Any]] = conversation_history + [{"role": "user", "content": message}]
 
         while True:
@@ -1242,15 +1318,6 @@ class LLMService:
                         "result": result
                     }
 
-                    # Emit playlist_created event when a playlist is saved
-                    if block.name == "save_as_playlist" and result.get("saved"):
-                        yield {
-                            "type": "playlist_created",
-                            "playlist_id": result.get("playlist_id"),
-                            "playlist_name": result.get("playlist_name"),
-                            "track_count": result.get("tracks_saved"),
-                        }
-
                     assistant_content.append(block)
 
                     # Add tool result to messages for next iteration
@@ -1271,6 +1338,16 @@ class LLMService:
                 queued = tool_executor.get_queued_tracks()
                 if queued:
                     yield {"type": "queue", "tracks": queued, "clear": False}
+
+                # Emit playlist_created if a playlist was auto-saved
+                auto_playlist = tool_executor.get_auto_saved_playlist()
+                if auto_playlist and auto_playlist.get("saved"):
+                    yield {
+                        "type": "playlist_created",
+                        "playlist_id": auto_playlist.get("playlist_id"),
+                        "playlist_name": auto_playlist.get("playlist_name"),
+                        "track_count": auto_playlist.get("tracks_saved"),
+                    }
 
                 action = tool_executor.get_playback_action()
                 if action:
@@ -1297,7 +1374,7 @@ class LLMService:
             yield {"type": "error", "content": "Ollama client not configured"}
             return
 
-        tool_executor = ToolExecutor(db, profile_id)
+        tool_executor = ToolExecutor(db, profile_id, user_message=message)
         messages = conversation_history + [{"role": "user", "content": message}]
 
         max_iterations = 10  # Prevent infinite loops
@@ -1351,15 +1428,6 @@ class LLMService:
                             "result": result
                         }
 
-                        # Emit playlist_created event when a playlist is saved
-                        if tool_name == "save_as_playlist" and result.get("saved"):
-                            yield {
-                                "type": "playlist_created",
-                                "playlist_id": result.get("playlist_id"),
-                                "playlist_name": result.get("playlist_name"),
-                                "track_count": result.get("tracks_saved"),
-                            }
-
                         # Add to messages for next iteration
                         messages.append({
                             "role": "assistant",
@@ -1378,6 +1446,16 @@ class LLMService:
                 queued = tool_executor.get_queued_tracks()
                 if queued:
                     yield {"type": "queue", "tracks": queued, "clear": False}
+
+                # Emit playlist_created if a playlist was auto-saved
+                auto_playlist = tool_executor.get_auto_saved_playlist()
+                if auto_playlist and auto_playlist.get("saved"):
+                    yield {
+                        "type": "playlist_created",
+                        "playlist_id": auto_playlist.get("playlist_id"),
+                        "playlist_name": auto_playlist.get("playlist_name"),
+                        "track_count": auto_playlist.get("tracks_saved"),
+                    }
 
                 action = tool_executor.get_playback_action()
                 if action:

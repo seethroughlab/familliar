@@ -350,6 +350,8 @@ export interface ScanStatus {
   status: string;
   message: string;
   progress: ScanProgress | null;
+  warnings?: string[];
+  queue_position?: number | null;
 }
 
 export const libraryApi = {
@@ -810,6 +812,72 @@ export const organizerApi = {
       template,
       dry_run: dryRun,
     });
+    return data;
+  },
+};
+
+// Health/System Status API
+export interface ServiceStatus {
+  name: string;
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  message: string | null;
+  details: Record<string, unknown> | null;
+}
+
+export interface SystemHealth {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  services: ServiceStatus[];
+  warnings: string[];
+  deployment_mode: 'docker' | 'local';
+}
+
+export interface WorkerTask {
+  id: string;
+  name: string;
+  args: unknown[];
+  started_at: string | null;
+}
+
+export interface WorkerInfo {
+  name: string;
+  status: string;
+  active_tasks: WorkerTask[];
+  processed_total: number;
+  concurrency: number | null;
+}
+
+export interface QueueStats {
+  name: string;
+  pending: number;
+}
+
+export interface TaskFailure {
+  task: string;
+  error: string;
+  track: string | null;
+  timestamp: string;
+}
+
+export interface WorkerStatus {
+  workers: WorkerInfo[];
+  queues: QueueStats[];
+  analysis_progress: {
+    total: number;
+    analyzed: number;
+    pending: number;
+    percent: number;
+  };
+  recent_failures: TaskFailure[];
+}
+
+export const healthApi = {
+  getSystemHealth: async (): Promise<SystemHealth> => {
+    const { data } = await api.get('/health/system');
+    return data;
+  },
+
+  getWorkerStatus: async (): Promise<WorkerStatus> => {
+    const { data } = await api.get('/health/workers');
     return data;
   },
 };

@@ -43,14 +43,17 @@ class ScanProgress(BaseModel):
     current_file: str | None = None
     started_at: str | None = None
     errors: list[str] = []
+    warnings: list[str] = []
 
 
 class ScanStatus(BaseModel):
     """Scan status response."""
 
-    status: str  # "idle", "running", "completed", "error"
+    status: str  # "idle", "running", "completed", "error", "queued"
     message: str
     progress: ScanProgress | None = None
+    warnings: list[str] = []
+    queue_position: int | None = None  # Position in queue if waiting
 
 
 # Note: Scan progress is now stored in Redis and managed by the Celery worker.
@@ -109,6 +112,10 @@ async def start_scan(
     Args:
         full: If True, rescan all files even if unchanged. Default False (incremental).
     """
+    import redis
+
+    from app.config import settings
+
     # Check if a scan is already running
     progress = get_scan_progress()
     if progress and progress.get("status") == "running":
@@ -118,12 +125,34 @@ async def start_scan(
             progress=ScanProgress(**{k: progress.get(k, v) for k, v in ScanProgress().model_dump().items()}),
         )
 
+    # Check queue depth to warn user if there's a long wait
+    warnings = []
+    queue_depth = 0
+    try:
+        r = redis.from_url(settings.redis_url)
+        queue_depth = r.llen("default") or 0
+        if queue_depth > 100:
+            warnings.append(
+                f"There are {queue_depth:,} analysis tasks ahead in the queue. "
+                "The scan will start once a worker becomes available."
+            )
+    except Exception:
+        pass  # Don't fail if we can't check queue
+
     # Dispatch to Celery worker
     scan_library.delay(full_scan=full)
 
+    if queue_depth > 100:
+        return ScanStatus(
+            status="queued",
+            message=f"Scan queued (waiting for {queue_depth:,} tasks to complete)",
+            warnings=warnings,
+            queue_position=queue_depth,
+        )
+
     return ScanStatus(
         status="started",
-        message="Scan started in Celery worker",
+        message="Scan started",
     )
 
 
@@ -175,12 +204,14 @@ async def get_scan_status() -> ScanStatus:
         current_file=progress.get("current_file"),
         started_at=progress.get("started_at"),
         errors=progress.get("errors", []),
+        warnings=progress.get("warnings", []),
     )
 
     return ScanStatus(
         status=status,
         message=progress.get("message", ""),
         progress=scan_progress if status != "idle" else None,
+        warnings=progress.get("warnings", []),
     )
 
 

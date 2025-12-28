@@ -33,8 +33,77 @@ def get_redis() -> redis.Redis:
 # Redis key for scan progress
 SCAN_PROGRESS_KEY = "familiar:scan:progress"
 
+# Redis key for tracking pending analysis tasks (deduplication)
+PENDING_ANALYSIS_KEY = "familiar:pending:analysis"
 
-@celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
+# Redis key for recent task failures
+TASK_FAILURES_KEY = "familiar:task:failures"
+MAX_FAILURES_STORED = 50
+
+
+def queue_track_analysis(track_id: str) -> bool:
+    """Queue a track for analysis with deduplication.
+
+    Uses Redis set to track pending tasks. If the track is already
+    queued, this is a no-op.
+
+    Args:
+        track_id: UUID string of the track to analyze
+
+    Returns:
+        True if task was queued, False if already pending
+    """
+    r = get_redis()
+
+    # Try to add to pending set - returns 1 if added, 0 if already exists
+    added = r.sadd(PENDING_ANALYSIS_KEY, track_id)
+
+    if added:
+        # Not already pending, queue the task
+        analyze_track.delay(track_id)
+        return True
+    else:
+        # Already in queue, skip
+        logger.debug(f"Track {track_id} already queued for analysis, skipping")
+        return False
+
+
+def _record_task_failure(task_name: str, error: str, track_info: str | None = None) -> None:
+    """Record a task failure in Redis for UI visibility."""
+    try:
+        r = get_redis()
+        failure = json.dumps({
+            "task": task_name,
+            "error": error,
+            "track": track_info,
+            "timestamp": datetime.now().isoformat(),
+        })
+        # Push to list and trim to max size
+        r.lpush(TASK_FAILURES_KEY, failure)
+        r.ltrim(TASK_FAILURES_KEY, 0, MAX_FAILURES_STORED - 1)
+        r.expire(TASK_FAILURES_KEY, 86400)  # 24 hour expiry
+    except Exception as e:
+        logger.warning(f"Could not record task failure: {e}")
+
+
+def get_recent_failures(limit: int = 10) -> list[dict[str, Any]]:
+    """Get recent task failures from Redis."""
+    try:
+        r = get_redis()
+        failures = r.lrange(TASK_FAILURES_KEY, 0, limit - 1)
+        return [json.loads(f) for f in failures]
+    except Exception:
+        return []
+
+
+@celery_app.task(
+    bind=True,
+    max_retries=3,
+    autoretry_for=(OSError, IOError, ConnectionError),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_jitter=True,
+)  # type: ignore[misc]
 def analyze_track(self, track_id: str) -> dict[str, Any]:
     """Analyze a track and save results.
 
@@ -50,6 +119,7 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
     Returns:
         Dict with analysis results
     """
+    track_info = None
     try:
         with sync_session_maker() as db:
             # Get track from database
@@ -59,11 +129,24 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
             track = result.scalar_one_or_none()
 
             if not track:
-                return {"error": f"Track not found: {track_id}"}
+                return {"error": f"Track not found: {track_id}", "permanent": True}
 
+            track_info = f"{track.artist} - {track.title}"
             file_path = Path(track.file_path)
+
             if not file_path.exists():
-                return {"error": f"File not found: {track.file_path}"}
+                # Check if the parent volume might be unmounted
+                parts = file_path.parts
+                if len(parts) > 2 and parts[1] == "Volumes":
+                    volume_name = parts[2]
+                    if not Path(f"/Volumes/{volume_name}").exists():
+                        # Volume is unmounted - this is a transient error, retry later
+                        error_msg = f"Volume '{volume_name}' is not mounted"
+                        logger.warning(f"Analysis skipped for {track_info}: {error_msg}")
+                        _record_task_failure("analyze_track", error_msg, track_info)
+                        raise OSError(error_msg)  # Will trigger auto-retry
+                # File is truly missing
+                return {"error": f"File not found: {track.file_path}", "permanent": True}
 
             logger.info(f"Analyzing track: {track.title} by {track.artist}")
 
@@ -174,10 +257,21 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }
+    except (OSError, IOError, ConnectionError):
+        # These are auto-retried by Celery, just re-raise
+        raise
     except Exception as e:
-        logger.error(f"Error analyzing track {track_id}: {e}")
-        self.retry(exc=e, countdown=60)
-        return {"error": str(e), "status": "retry"}
+        error_msg = str(e)
+        logger.error(f"Error analyzing track {track_id}: {error_msg}")
+        _record_task_failure("analyze_track", error_msg, track_info)
+        # Don't retry on unknown errors - they're likely permanent
+        return {"error": error_msg, "status": "failed", "permanent": True}
+    finally:
+        # Remove from pending set (deduplication tracking)
+        try:
+            get_redis().srem(PENDING_ANALYSIS_KEY, track_id)
+        except Exception:
+            pass  # Don't fail the task if cleanup fails
 
 
 @celery_app.task  # type: ignore[misc]
@@ -199,8 +293,9 @@ def batch_analyze(track_ids: list[str]) -> dict[str, Any]:
 
     for track_id in track_ids:
         try:
-            analyze_track.delay(track_id)
-            results["success"] += 1
+            if queue_track_analysis(track_id):
+                results["success"] += 1
+            # else: already queued, still count as success
         except Exception as e:
             results["failed"] += 1
             results["errors"].append({"track_id": track_id, "error": str(e)})
@@ -208,12 +303,59 @@ def batch_analyze(track_ids: list[str]) -> dict[str, Any]:
     return results
 
 
+@celery_app.task  # type: ignore[misc]
+def analyze_unanalyzed_tracks(limit: int = 1000) -> dict[str, Any]:
+    """Queue analysis for tracks that haven't been analyzed yet.
+
+    This is a catch-all task to ensure all tracks get analyzed,
+    even if they were added when the worker wasn't running.
+
+    Args:
+        limit: Maximum number of tracks to queue per run
+
+    Returns:
+        Dict with queuing results
+    """
+    from sqlalchemy import or_
+
+    with sync_session_maker() as db:
+        # Find tracks with no analysis or outdated analysis
+        result = db.execute(
+            select(Track.id)
+            .where(
+                or_(
+                    Track.analysis_version == 0,
+                    Track.analysis_version < ANALYSIS_VERSION,
+                    Track.analyzed_at.is_(None),
+                )
+            )
+            .limit(limit)
+        )
+        track_ids = [str(row[0]) for row in result.fetchall()]
+
+        if not track_ids:
+            logger.info("No unanalyzed tracks found")
+            return {"queued": 0, "status": "complete"}
+
+        logger.info(f"Found {len(track_ids)} unanalyzed tracks, queuing for analysis")
+
+        # Queue each track for analysis (with deduplication)
+        queued = 0
+        for track_id in track_ids:
+            if queue_track_analysis(track_id):
+                queued += 1
+
+        logger.info(f"Queued {queued} tracks ({len(track_ids) - queued} already pending)")
+        return {"queued": queued, "skipped": len(track_ids) - queued, "status": "success"}
+
+
 class ScanProgressReporter:
     """Reports scan progress to Redis for API consumption."""
 
-    def __init__(self):
+    def __init__(self, warnings: list[str] | None = None):
         self.redis = get_redis()
         self.started_at = datetime.now().isoformat()
+        self.warnings = warnings or []
         self._update_progress({
             "status": "running",
             "phase": "discovery",
@@ -229,6 +371,7 @@ class ScanProgressReporter:
             "started_at": self.started_at,
             "last_heartbeat": datetime.now().isoformat(),
             "errors": [],
+            "warnings": self.warnings,
         })
 
     def _update_progress(self, data: dict[str, Any]) -> None:
@@ -313,6 +456,7 @@ class ScanProgressReporter:
             "current_file": None,
             "started_at": self.started_at,
             "errors": [],
+            "warnings": self.warnings,
         })
 
     def error(self, msg: str) -> None:
@@ -324,6 +468,23 @@ class ScanProgressReporter:
             current["errors"] = []
         current["errors"].append(msg)
         self._update_progress(current)
+
+
+def check_worker_availability() -> tuple[bool, list[str]]:
+    """Check if Celery workers are available for processing tasks.
+
+    Returns:
+        Tuple of (workers_available, worker_names)
+    """
+    try:
+        inspect = celery_app.control.inspect(timeout=2.0)
+        active_queues = inspect.active_queues()
+        if active_queues:
+            return True, list(active_queues.keys())
+        return False, []
+    except Exception as e:
+        logger.warning(f"Could not check worker availability: {e}")
+        return False, []
 
 
 @celery_app.task(bind=True)  # type: ignore[misc]
@@ -345,7 +506,28 @@ def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
 
     from app.services.scanner import LibraryScanner
 
-    progress = ScanProgressReporter()
+    warnings: list[str] = []
+
+    # Check if other workers are available for analysis tasks
+    # Note: We're running in a worker ourselves, so check for at least 1 other
+    workers_available, worker_names = check_worker_availability()
+    current_worker = f"celery@{self.request.hostname}" if self.request.hostname else None
+
+    # Count workers excluding ourselves
+    other_workers = [w for w in worker_names if w != current_worker]
+    if not other_workers and workers_available:
+        # Only this worker is running - analysis will be processed by us sequentially
+        logger.warning(
+            "Only one Celery worker running. "
+            "Analysis tasks will be processed sequentially after scan completes."
+        )
+        warnings.append(
+            "Only one Celery worker running. Consider starting additional workers "
+            "for parallel analysis processing."
+        )
+
+    # Create progress reporter with any initial warnings
+    progress = ScanProgressReporter(warnings=warnings)
 
     async def run_scan() -> dict[str, Any]:
         """Run the async scanner."""
@@ -406,13 +588,21 @@ def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
             deleted=results["deleted"],
         )
 
+        # Add warning if new tracks were queued but analysis may be slow
+        if results["new"] > 0 or results["updated"] > 0:
+            queued_count = results["new"] + results["updated"]
+            if warnings:
+                logger.warning(f"Queued {queued_count} tracks for analysis. {warnings[0]}")
+            else:
+                logger.info(f"Queued {queued_count} tracks for analysis")
+
         logger.info(f"Scan complete: {results}")
-        return {"status": "success", **results}
+        return {"status": "success", "warnings": warnings, **results}
 
     except Exception as e:
         logger.error(f"Scan failed: {e}")
         progress.error(str(e))
-        return {"status": "error", "error": str(e)}
+        return {"status": "error", "error": str(e), "warnings": warnings}
 
 
 def get_scan_progress() -> dict[str, Any] | None:
