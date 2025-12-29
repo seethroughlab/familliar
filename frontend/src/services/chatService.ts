@@ -207,6 +207,54 @@ export async function deleteSession(sessionId: string): Promise<void> {
 }
 
 /**
+ * Rename a chat session.
+ */
+export async function renameSession(
+  sessionId: string,
+  title: string
+): Promise<void> {
+  await db.chatSessions.update(sessionId, {
+    title: title.trim() || 'Untitled',
+    updatedAt: new Date(),
+  });
+}
+
+/**
+ * Search sessions by title and message content.
+ */
+export async function searchSessions(
+  profileId: string,
+  query: string
+): Promise<ChatSession[]> {
+  const normalizedQuery = query.toLowerCase().trim();
+  if (!normalizedQuery) {
+    return listSessions(profileId);
+  }
+
+  const allSessions = await db.chatSessions
+    .where('profileId')
+    .equals(profileId)
+    .toArray();
+
+  // Filter by title or message content
+  const filtered = allSessions.filter((session) => {
+    // Check title
+    if (session.title.toLowerCase().includes(normalizedQuery)) {
+      return true;
+    }
+    // Check message content
+    return session.messages.some((msg) =>
+      msg.content.toLowerCase().includes(normalizedQuery)
+    );
+  });
+
+  // Sort by most recent first
+  return filtered.sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
+/**
  * Clear all sessions for a profile.
  */
 export async function clearAllSessions(profileId: string): Promise<void> {

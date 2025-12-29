@@ -1,6 +1,6 @@
 # Familiar — Feature Roadmap
 
-## Project Status: ~90% Complete
+## Project Status: ~92% Complete
 
 See `CLAUDE.md` for project overview and development guide.
 
@@ -27,6 +27,16 @@ Enhanced offline management:
 - Download progress tracking for individual tracks
 - Batch download with progress in playlists
 
+### Conversation History UI ✓
+**Location:** `frontend/src/components/Chat/ChatHistoryPanel.tsx`
+
+Full conversation management:
+- Sidebar panel with search across conversations
+- Date grouping (Today, Yesterday, This Week, This Month, Older)
+- Inline session rename (click edit button)
+- Session delete with confirmation
+- Message count and relative timestamps
+
 ---
 
 ## Remaining Features
@@ -42,7 +52,7 @@ WebRTC listening sessions work locally but need a public signaling server for re
 - Session discovery and peer coordination
 - No media relay (STUN/TURN handles that)
 
-#### 3. Listening Sessions - TURN Server Deployment
+#### 2. Listening Sessions - TURN Server Deployment
 **Docs:** See "WebRTC TURN Server Setup" section below
 - Can/should this be combined with familiar-signaling into a single familliar-public Cloudflare worker?
 
@@ -53,24 +63,7 @@ For guests behind symmetric NAT, deploy coturn:
 
 ### Medium Priority
 
-#### 4. Offline Playback UI
-**Location:** `frontend/src/components/Settings/OfflineSettings.tsx`
-
-Infrastructure exists (IndexedDB caching, service worker) but needs:
-- Better UI for managing offline tracks
-- Download progress indicators
-- Playlist offline sync
-- Storage quota management
-
-#### 5. Conversation History UI
-**Location:** `frontend/src/components/Chat/ChatPanel.tsx`
-
-Chat sessions persist in IndexedDB but UI needs:
-- Session list/picker in sidebar
-- Session rename/delete
-- Search across conversations
-
-#### 6. Music Import Flow
+#### 3. Music Import Flow
 **Location:** `backend/app/services/import_service.py`
 
 Backend endpoint exists (`/library/import`) but needs:
@@ -80,14 +73,14 @@ Backend endpoint exists (`/library/import`) but needs:
 
 ### Low Priority / Future
 
-#### 7. Multi-Room Audio (Sonos/AirPlay)
+#### 4. Multi-Room Audio (Sonos/AirPlay)
 **Location:** `backend/app/services/outputs.py`
 
 Output abstraction layer exists. Implementations needed:
 - Sonos SOAP/UPnP integration
 - AirPlay via shairport-sync or similar
 
-#### 8. Guest Listener Page
+#### 5. Guest Listener Page
 **Location:** `frontend/src/components/Guest/GuestListener.tsx`
 
 Needs polish:

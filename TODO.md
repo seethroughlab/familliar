@@ -39,3 +39,4 @@
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
+[ ] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
