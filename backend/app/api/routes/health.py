@@ -138,11 +138,33 @@ async def system_health_check(db: DbSession) -> SystemHealth:
 
         if active_workers:
             worker_names = list(active_workers.keys())
+
+            # Count active tasks across all workers
+            active_tasks = inspect.active() or {}
+            total_tasks = sum(len(tasks) for tasks in active_tasks.values())
+
+            # Build a more informative message
+            if total_tasks > 0:
+                # Get task names for context
+                task_names = []
+                for tasks in active_tasks.values():
+                    for task in tasks:
+                        name = task.get("name", "").split(".")[-1]
+                        if name and name not in task_names:
+                            task_names.append(name)
+
+                if task_names:
+                    message = f"{total_tasks} task(s) running: {', '.join(task_names)}"
+                else:
+                    message = f"{total_tasks} task(s) running"
+            else:
+                message = "Idle"
+
             services.append(ServiceStatus(
                 name="background_processing",
                 status="healthy",
-                message=f"{len(worker_names)} process(es) running",
-                details={"workers": worker_names},
+                message=message,
+                details={"workers": worker_names, "active_tasks": total_tasks},
             ))
         else:
             services.append(ServiceStatus(

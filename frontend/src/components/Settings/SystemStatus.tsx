@@ -399,7 +399,7 @@ function ServiceStatusRow({ service }: { service: ServiceStatus }) {
               )}
               {service.name === 'background_processing' && service.details.workers && (
                 <span>
-                  {(service.details.workers as string[]).length} process(es) active
+                  {(service.details.workers as string[]).length} worker(s)
                 </span>
               )}
             </div>
