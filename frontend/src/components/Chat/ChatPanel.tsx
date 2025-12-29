@@ -32,12 +32,14 @@ export function ChatPanel() {
       const profile = await getOrCreateDeviceProfile();
       setProfileId(profile);
 
-      const allSessions = await chatService.listSessions(profile);
-      setSessions(allSessions);
+      if (profile) {
+        const allSessions = await chatService.listSessions(profile);
+        setSessions(allSessions);
 
-      // Load most recent session or create new one
-      if (allSessions.length > 0) {
-        setCurrentSession(allSessions[0]);
+        // Load most recent session or create new one
+        if (allSessions.length > 0) {
+          setCurrentSession(allSessions[0]);
+        }
       }
     };
     init();

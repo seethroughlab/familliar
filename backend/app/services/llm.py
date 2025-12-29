@@ -424,13 +424,18 @@ Respond with ONLY the playlist name, nothing else."""
                 if not api_key:
                     raise ValueError("No API key")
 
-                client = anthropic.Anthropic(api_key=api_key)
-                response = client.messages.create(
+                anthropic_client = anthropic.Anthropic(api_key=api_key)
+                message = anthropic_client.messages.create(
                     model="claude-haiku-4-20250815",  # Fast and cheap
                     max_tokens=50,
                     messages=[{"role": "user", "content": prompt}],
                 )
-                name = response.content[0].text.strip() if response.content else ""
+                # Extract text from the first TextBlock
+                name = ""
+                if message.content:
+                    first_block = message.content[0]
+                    if hasattr(first_block, "text"):
+                        name = first_block.text.strip()
 
             # Clean up the response
             name = name.strip('"\'').strip()

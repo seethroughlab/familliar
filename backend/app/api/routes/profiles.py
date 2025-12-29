@@ -234,7 +234,7 @@ async def upload_avatar(
 
     # Validate and process image
     try:
-        img = Image.open(io.BytesIO(contents))
+        img: Image.Image = Image.open(io.BytesIO(contents))
 
         # Convert to RGB (handles RGBA, palette, etc.)
         if img.mode in ("RGBA", "LA", "P"):

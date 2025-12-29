@@ -397,9 +397,9 @@ function ServiceStatusRow({ service }: { service: ServiceStatus }) {
                   {(service.details.total as number).toLocaleString()} tracks analyzed
                 </span>
               )}
-              {service.name === 'background_processing' && service.details.workers && (
+              {service.name === 'background_processing' && Array.isArray(service.details.workers) && (
                 <span>
-                  {(service.details.workers as string[]).length} worker(s)
+                  {service.details.workers.length} worker(s)
                 </span>
               )}
             </div>

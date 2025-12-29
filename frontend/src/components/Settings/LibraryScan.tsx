@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle, AlertCircle, Loader2, FolderSearch, Music, Activity } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Loader2, Music, Activity } from 'lucide-react';
 import { libraryApi, healthApi, type ScanStatus, type WorkerStatus } from '../../api/client';
 
 export function LibraryScan() {
