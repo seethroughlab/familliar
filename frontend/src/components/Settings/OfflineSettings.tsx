@@ -4,7 +4,6 @@
 import { useState, useEffect } from 'react';
 import {
   HardDrive,
-  Download,
   Trash2,
   RefreshCw,
   Loader2,
@@ -12,18 +11,14 @@ import {
   Cloud,
   CheckCircle,
 } from 'lucide-react';
-import * as offlineService from '../../services/offlineService';
 import * as libraryCache from '../../services/libraryCache';
 import * as syncService from '../../services/syncService';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
+import { OfflineTracksPanel } from './OfflineTracksPanel';
+import { StorageQuotaDisplay } from './StorageQuotaDisplay';
 
 export function OfflineSettings() {
   const { isOnline, isOffline } = useOfflineStatus();
-
-  const [offlineStats, setOfflineStats] = useState<{
-    count: number;
-    sizeFormatted: string;
-  } | null>(null);
 
   const [cacheInfo, setCacheInfo] = useState<{
     count: number;
@@ -31,29 +26,23 @@ export function OfflineSettings() {
   } | null>(null);
 
   const [pendingCount, setPendingCount] = useState<number>(0);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState<{
-    offlineStats?: boolean;
     cacheLibrary?: boolean;
-    clearOffline?: boolean;
     clearCache?: boolean;
     syncPending?: boolean;
   }>({});
 
   const loadStats = async () => {
-    setIsLoading((prev) => ({ ...prev, offlineStats: true }));
     try {
-      const [offline, cache, pending] = await Promise.all([
-        offlineService.getOfflineStorageUsage(),
+      const [cache, pending] = await Promise.all([
         libraryCache.getCacheInfo(),
         syncService.getPendingCount(),
       ]);
-      setOfflineStats(offline);
       setCacheInfo(cache);
       setPendingCount(pending);
     } catch (error) {
       console.error('Failed to load offline stats:', error);
-    } finally {
-      setIsLoading((prev) => ({ ...prev, offlineStats: false }));
     }
   };
 
@@ -70,21 +59,6 @@ export function OfflineSettings() {
       console.error('Failed to cache library:', error);
     } finally {
       setIsLoading((prev) => ({ ...prev, cacheLibrary: false }));
-    }
-  };
-
-  const handleClearOfflineTracks = async () => {
-    if (!confirm('Remove all downloaded tracks for offline playback?')) {
-      return;
-    }
-    setIsLoading((prev) => ({ ...prev, clearOffline: true }));
-    try {
-      await offlineService.clearAllOfflineTracks();
-      await loadStats();
-    } catch (error) {
-      console.error('Failed to clear offline tracks:', error);
-    } finally {
-      setIsLoading((prev) => ({ ...prev, clearOffline: false }));
     }
   };
 
@@ -152,33 +126,19 @@ export function OfflineSettings() {
       </div>
 
       <div className="space-y-4">
-        {/* Downloaded tracks */}
-        <div className="flex items-center justify-between py-2 border-t border-zinc-700">
-          <div className="flex items-center gap-2">
-            <Download className="w-4 h-4 text-zinc-400" />
-            <span className="text-sm text-zinc-300">Downloaded tracks</span>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-400">
-              {offlineStats
-                ? `${offlineStats.count} tracks (${offlineStats.sizeFormatted})`
-                : '...'}
-            </span>
-            {offlineStats && offlineStats.count > 0 && (
-              <button
-                onClick={handleClearOfflineTracks}
-                disabled={isLoading.clearOffline}
-                className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors disabled:opacity-50"
-                title="Clear offline tracks"
-              >
-                {isLoading.clearOffline ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
-                )}
-              </button>
-            )}
-          </div>
+        {/* Storage quota */}
+        <div className="py-2 border-t border-zinc-700">
+          <StorageQuotaDisplay refreshTrigger={refreshTrigger} />
+        </div>
+
+        {/* Downloaded tracks panel */}
+        <div className="py-2 border-t border-zinc-700">
+          <OfflineTracksPanel
+            onTracksChanged={() => {
+              loadStats();
+              setRefreshTrigger((t) => t + 1);
+            }}
+          />
         </div>
 
         {/* Library cache */}

@@ -22,17 +22,21 @@ interface TrackRowProps {
 }
 
 function OfflineButton({ trackId }: { trackId: string }) {
-  const { isOffline, isDownloading, download, remove } = useOfflineTrack(trackId);
+  const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
 
   if (isDownloading) {
     return (
-      <button
-        disabled
-        className="p-1 text-zinc-500"
-        title="Downloading..."
+      <div
+        className="relative p-1 text-purple-400"
+        title={`Downloading... ${downloadProgress}%`}
       >
         <Loader2 className="w-4 h-4 animate-spin" />
-      </button>
+        {downloadProgress > 0 && downloadProgress < 100 && (
+          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-medium">
+            {downloadProgress}%
+          </span>
+        )}
+      </div>
     );
   }
 

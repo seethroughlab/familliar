@@ -7,6 +7,7 @@ import {
 } from '../services/playerPersistence';
 
 type RepeatMode = 'off' | 'all' | 'one';
+type CrossfadeState = 'idle' | 'preloading' | 'crossfading';
 
 interface PlayerState {
   // Current playback
@@ -24,6 +25,10 @@ interface PlayerState {
   queue: QueueItem[];
   queueIndex: number;
   history: Track[];
+
+  // Crossfade state
+  crossfadeState: CrossfadeState;
+  nextTrackPreloaded: boolean;
 
   // Hydration
   isHydrated: boolean;
@@ -45,6 +50,12 @@ interface PlayerState {
   playNext: () => void;
   playPrevious: () => void;
   setQueue: (tracks: Track[], startIndex?: number) => void;
+
+  // Crossfade actions
+  setCrossfadeState: (state: CrossfadeState) => void;
+  setNextTrackPreloaded: (preloaded: boolean) => void;
+  getNextTrack: () => Track | null;
+  advanceToNextTrack: (track: Track) => void;
 
   // Hydration
   hydrate: () => Promise<void>;
@@ -78,6 +89,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   queue: [],
   queueIndex: -1,
   history: [],
+  crossfadeState: 'idle',
+  nextTrackPreloaded: false,
   isHydrated: false,
 
   // Setters
@@ -199,6 +212,38 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTrack: tracks[startIndex] || null,
       isPlaying: tracks.length > 0,
       currentTime: 0,
+    });
+    persistState();
+  },
+
+  // Crossfade actions
+  setCrossfadeState: (crossfadeState) => set({ crossfadeState }),
+
+  setNextTrackPreloaded: (nextTrackPreloaded) => set({ nextTrackPreloaded }),
+
+  getNextTrack: () => {
+    const state = get();
+    const nextIndex = state.queueIndex + 1;
+    if (nextIndex < state.queue.length) {
+      return state.queue[nextIndex].track;
+    }
+    return null;
+  },
+
+  advanceToNextTrack: (track) => {
+    const state = get();
+    // Add current track to history
+    if (state.currentTrack) {
+      set((s) => ({
+        history: [...s.history.slice(-49), s.currentTrack!],
+      }));
+    }
+    set({
+      currentTrack: track,
+      queueIndex: state.queueIndex + 1,
+      currentTime: 0,
+      crossfadeState: 'idle',
+      nextTrackPreloaded: false,
     });
     persistState();
   },

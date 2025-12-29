@@ -1,15 +1,49 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
+import { useAudioSettingsStore } from '../stores/audioSettingsStore';
 import { tracksApi } from '../api/client';
-import { getOfflineTrack, createOfflineTrackUrl, revokeOfflineTrackUrl } from '../services/offlineService';
+import {
+  getOfflineTrack,
+  createOfflineTrackUrl,
+  revokeOfflineTrackUrl,
+} from '../services/offlineService';
 
-const CROSSFADE_DURATION = 3; // seconds
+// ============================================================================
+// Global Audio Graph State (singleton pattern for visualizer access)
+// ============================================================================
 
-// Singleton audio context and analyser for visualizer access
+// Audio context and nodes
 let globalAudioContext: AudioContext | null = null;
 let globalAnalyser: AnalyserNode | null = null;
-let globalMediaSource: MediaElementAudioSourceNode | null = null;
-let globalAudioElement: HTMLAudioElement | null = null;
+let globalMasterGain: GainNode | null = null;
+
+// Dual audio element system for crossfade
+let globalAudioElementA: HTMLAudioElement | null = null;
+let globalAudioElementB: HTMLAudioElement | null = null;
+let globalMediaSourceA: MediaElementAudioSourceNode | null = null;
+let globalMediaSourceB: MediaElementAudioSourceNode | null = null;
+let globalGainA: GainNode | null = null;
+let globalGainB: GainNode | null = null;
+
+// Track which element is currently playing
+let currentElementIsA = true;
+
+// Crossfade state
+interface CrossfadeContext {
+  isActive: boolean;
+  startTime: number;
+  duration: number;
+  timeoutId: ReturnType<typeof setTimeout> | null;
+}
+let crossfadeContext: CrossfadeContext | null = null;
+
+// Offline URL tracking for cleanup
+let currentOfflineUrl: string | null = null;
+let nextOfflineUrl: string | null = null;
+
+// ============================================================================
+// Exported functions for visualizer and WebRTC access
+// ============================================================================
 
 export function getAudioAnalyser(): AnalyserNode | null {
   return globalAnalyser;
@@ -19,131 +53,342 @@ export function getAudioContext(): AudioContext | null {
   return globalAudioContext;
 }
 
+// ============================================================================
+// Audio Graph Initialization
+// ============================================================================
+
+function initializeAudioGraph(): boolean {
+  if (globalAudioContext && globalAudioElementA && globalAudioElementB) {
+    return true; // Already initialized
+  }
+
+  try {
+    // Create audio context
+    if (!globalAudioContext) {
+      globalAudioContext = new AudioContext();
+    }
+
+    // Create audio elements
+    if (!globalAudioElementA) {
+      globalAudioElementA = new Audio();
+      globalAudioElementA.preload = 'auto';
+      globalAudioElementA.crossOrigin = 'anonymous';
+    }
+
+    if (!globalAudioElementB) {
+      globalAudioElementB = new Audio();
+      globalAudioElementB.preload = 'auto';
+      globalAudioElementB.crossOrigin = 'anonymous';
+    }
+
+    // Create media sources (once per element, forever)
+    if (!globalMediaSourceA) {
+      globalMediaSourceA = globalAudioContext.createMediaElementSource(
+        globalAudioElementA
+      );
+    }
+
+    if (!globalMediaSourceB) {
+      globalMediaSourceB = globalAudioContext.createMediaElementSource(
+        globalAudioElementB
+      );
+    }
+
+    // Create gain nodes for crossfade
+    if (!globalGainA) {
+      globalGainA = globalAudioContext.createGain();
+      globalGainA.gain.value = 1; // A starts as current
+    }
+
+    if (!globalGainB) {
+      globalGainB = globalAudioContext.createGain();
+      globalGainB.gain.value = 0; // B starts as next
+    }
+
+    // Create master gain for volume control
+    if (!globalMasterGain) {
+      globalMasterGain = globalAudioContext.createGain();
+    }
+
+    // Create analyser for visualizer
+    if (!globalAnalyser) {
+      globalAnalyser = globalAudioContext.createAnalyser();
+      globalAnalyser.fftSize = 256;
+      globalAnalyser.smoothingTimeConstant = 0.8;
+    }
+
+    // Connect the audio graph:
+    // MediaSourceA -> GainA -> MasterGain -> Analyser -> Destination
+    // MediaSourceB -> GainB -> MasterGain -> Analyser -> Destination
+    globalMediaSourceA.connect(globalGainA);
+    globalMediaSourceB.connect(globalGainB);
+    globalGainA.connect(globalMasterGain);
+    globalGainB.connect(globalMasterGain);
+    globalMasterGain.connect(globalAnalyser);
+    globalAnalyser.connect(globalAudioContext.destination);
+
+    return true;
+  } catch (e) {
+    console.error('Failed to initialize audio graph:', e);
+    return false;
+  }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+function getCurrentElement(): HTMLAudioElement | null {
+  return currentElementIsA ? globalAudioElementA : globalAudioElementB;
+}
+
+function getNextElement(): HTMLAudioElement | null {
+  return currentElementIsA ? globalAudioElementB : globalAudioElementA;
+}
+
+function getCurrentGain(): GainNode | null {
+  return currentElementIsA ? globalGainA : globalGainB;
+}
+
+function getNextGain(): GainNode | null {
+  return currentElementIsA ? globalGainB : globalGainA;
+}
+
+async function getTrackUrl(trackId: string): Promise<{
+  url: string;
+  isOffline: boolean;
+}> {
+  const offlineBlob = await getOfflineTrack(trackId);
+  if (offlineBlob) {
+    return {
+      url: createOfflineTrackUrl(offlineBlob),
+      isOffline: true,
+    };
+  }
+  return {
+    url: tracksApi.getStreamUrl(trackId),
+    isOffline: false,
+  };
+}
+
+function cleanupElement(
+  element: HTMLAudioElement | null,
+  offlineUrl: string | null
+): void {
+  if (element) {
+    element.pause();
+    element.currentTime = 0;
+    element.src = '';
+    element.load(); // Reset internal state
+  }
+  if (offlineUrl) {
+    revokeOfflineTrackUrl(offlineUrl);
+  }
+}
+
+// ============================================================================
+// Main Hook
+// ============================================================================
+
 export function useAudioEngine() {
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const nextSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const gainCurrentRef = useRef<GainNode | null>(null);
-  const gainNextRef = useRef<GainNode | null>(null);
-  const currentBufferRef = useRef<AudioBuffer | null>(null);
-  const startTimeRef = useRef<number>(0);
-  const pausedAtRef = useRef<number>(0);
   const animationFrameRef = useRef<number | undefined>(undefined);
   const isLoadingRef = useRef(false);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-
-  // For fallback when Web Audio API has issues, keep a simple audio element
-  const fallbackAudioRef = useRef<HTMLAudioElement | null>(null);
-  const useFallbackRef = useRef(false);
-
-  // Track current offline URL for cleanup
-  const currentOfflineUrlRef = useRef<string | null>(null);
+  const preloadingTrackIdRef = useRef<string | null>(null);
 
   const {
     currentTrack,
     isPlaying,
     volume,
-    queue,
-    queueIndex,
+    crossfadeState,
+    nextTrackPreloaded,
     setCurrentTime,
     setDuration,
     setIsPlaying,
     playNext,
+    setCrossfadeState,
+    setNextTrackPreloaded,
+    getNextTrack,
+    advanceToNextTrack,
   } = usePlayerStore();
 
-  // Initialize audio context and fallback
-  useEffect(() => {
-    // Initialize fallback audio element (reuse global if exists)
-    if (!fallbackAudioRef.current) {
-      if (globalAudioElement) {
-        fallbackAudioRef.current = globalAudioElement;
-      } else {
-        fallbackAudioRef.current = new Audio();
-        fallbackAudioRef.current.preload = 'auto';
-        fallbackAudioRef.current.crossOrigin = 'anonymous';
-        globalAudioElement = fallbackAudioRef.current;
+  const { crossfadeDuration, crossfadeEnabled } = useAudioSettingsStore();
+
+  // --------------------------------------------------------------------------
+  // Preload next track
+  // --------------------------------------------------------------------------
+  const preloadNextTrack = useCallback(
+    async (trackId: string): Promise<boolean> => {
+      if (preloadingTrackIdRef.current === trackId) {
+        return false; // Already preloading this track
       }
-    }
 
-    // Try to initialize Web Audio API with analyser
-    try {
-      if (!audioContextRef.current) {
-        // Reuse global context if exists
-        if (globalAudioContext) {
-          audioContextRef.current = globalAudioContext;
-          analyserRef.current = globalAnalyser;
-        } else {
-          audioContextRef.current = new AudioContext();
-          globalAudioContext = audioContextRef.current;
+      preloadingTrackIdRef.current = trackId;
+      const nextElement = getNextElement();
+      if (!nextElement) return false;
 
-          // Create analyser for visualizer
-          analyserRef.current = audioContextRef.current.createAnalyser();
-          analyserRef.current.fftSize = 256;
-          analyserRef.current.smoothingTimeConstant = 0.8;
-          globalAnalyser = analyserRef.current;
-
-          // Connect audio element to analyser (only once)
-          if (fallbackAudioRef.current && !globalMediaSource) {
-            globalMediaSource = audioContextRef.current.createMediaElementSource(fallbackAudioRef.current);
-            globalMediaSource.connect(analyserRef.current);
-            analyserRef.current.connect(audioContextRef.current.destination);
-          }
+      try {
+        // Clean up any existing next track
+        if (nextOfflineUrl) {
+          revokeOfflineTrackUrl(nextOfflineUrl);
+          nextOfflineUrl = null;
         }
 
-        gainCurrentRef.current = audioContextRef.current.createGain();
-        gainNextRef.current = audioContextRef.current.createGain();
-        gainCurrentRef.current.connect(audioContextRef.current.destination);
-        gainNextRef.current.connect(audioContextRef.current.destination);
+        const { url, isOffline } = await getTrackUrl(trackId);
+        if (isOffline) {
+          nextOfflineUrl = url;
+        }
+
+        nextElement.src = url;
+        nextElement.load();
+
+        // Wait for enough data to play
+        return new Promise((resolve) => {
+          const onCanPlay = () => {
+            nextElement.removeEventListener('canplay', onCanPlay);
+            nextElement.removeEventListener('error', onError);
+            resolve(true);
+          };
+          const onError = () => {
+            nextElement.removeEventListener('canplay', onCanPlay);
+            nextElement.removeEventListener('error', onError);
+            console.error('Failed to preload next track');
+            resolve(false);
+          };
+          nextElement.addEventListener('canplay', onCanPlay);
+          nextElement.addEventListener('error', onError);
+        });
+      } catch (e) {
+        console.error('Error preloading track:', e);
+        preloadingTrackIdRef.current = null;
+        return false;
       }
-    } catch (e) {
-      console.warn('Web Audio API not available, using fallback:', e);
-      useFallbackRef.current = true;
+    },
+    []
+  );
+
+  // --------------------------------------------------------------------------
+  // Execute crossfade
+  // --------------------------------------------------------------------------
+  const executeCrossfade = useCallback(
+    (duration: number, nextTrack: { id: string; title: string | null }) => {
+      if (!globalAudioContext || !globalMasterGain) return;
+
+      const currentGain = getCurrentGain();
+      const nextGain = getNextGain();
+      const nextElement = getNextElement();
+
+      if (!currentGain || !nextGain || !nextElement) return;
+
+      const ctx = globalAudioContext;
+      const now = ctx.currentTime;
+
+      // Cancel any existing ramps
+      currentGain.gain.cancelScheduledValues(now);
+      nextGain.gain.cancelScheduledValues(now);
+
+      if (duration === 0) {
+        // Gapless: instant switch
+        currentGain.gain.setValueAtTime(0, now);
+        nextGain.gain.setValueAtTime(1, now);
+        nextElement.play().catch(console.error);
+      } else {
+        // Crossfade: ramp over duration
+        currentGain.gain.setValueAtTime(1, now);
+        currentGain.gain.linearRampToValueAtTime(0, now + duration);
+
+        nextGain.gain.setValueAtTime(0, now);
+        nextGain.gain.linearRampToValueAtTime(1, now + duration);
+
+        // Start next track immediately (it will fade in)
+        nextElement.play().catch(console.error);
+      }
+
+      // Store crossfade context
+      const timeoutId = setTimeout(() => {
+        completeCrossfade();
+      }, duration * 1000);
+
+      crossfadeContext = {
+        isActive: true,
+        startTime: now,
+        duration,
+        timeoutId,
+      };
+
+      // Advance the queue (updates UI to show next track)
+      advanceToNextTrack(nextTrack as any);
+    },
+    [advanceToNextTrack]
+  );
+
+  // --------------------------------------------------------------------------
+  // Complete crossfade
+  // --------------------------------------------------------------------------
+  const completeCrossfade = useCallback(() => {
+    // Clean up old (now-inactive) element
+    const oldElement = getCurrentElement();
+    cleanupElement(oldElement, currentOfflineUrl);
+
+    // Transfer offline URL ownership
+    currentOfflineUrl = nextOfflineUrl;
+    nextOfflineUrl = null;
+
+    // Flip the current element flag
+    currentElementIsA = !currentElementIsA;
+
+    // Clear crossfade context
+    if (crossfadeContext?.timeoutId) {
+      clearTimeout(crossfadeContext.timeoutId);
     }
+    crossfadeContext = null;
 
-    // Setup fallback audio event handlers
-    const audio = fallbackAudioRef.current;
-    const handleEnded = () => playNext();
-    const handleError = (e: Event) => {
-      // Ignore errors from empty src (happens on initial load or when clearing)
-      const target = e.target as HTMLAudioElement;
-      if (!target.src || target.src === window.location.href) {
-        return;
-      }
-      console.error('Audio error:', e);
-      setIsPlaying(false);
-    };
-    const handleLoadedMetadata = () => {
-      if (useFallbackRef.current && audio) {
-        setDuration(audio.duration);
-      }
-    };
+    // Reset preloading state
+    preloadingTrackIdRef.current = null;
 
-    audio?.addEventListener('ended', handleEnded);
-    audio?.addEventListener('error', handleError);
-    audio?.addEventListener('loadedmetadata', handleLoadedMetadata);
+    // Update store
+    setCrossfadeState('idle');
+    setNextTrackPreloaded(false);
+  }, [setCrossfadeState, setNextTrackPreloaded]);
 
-    return () => {
-      audio?.removeEventListener('ended', handleEnded);
-      audio?.removeEventListener('error', handleError);
-      audio?.removeEventListener('loadedmetadata', handleLoadedMetadata);
-    };
-  }, [playNext, setIsPlaying, setDuration]);
+  // --------------------------------------------------------------------------
+  // Cancel crossfade (e.g., on seek or skip)
+  // --------------------------------------------------------------------------
+  const cancelCrossfade = useCallback(() => {
+    if (!crossfadeContext || !globalAudioContext) return;
 
-  // Load audio buffer
-  const loadAudioBuffer = useCallback(async (url: string): Promise<AudioBuffer | null> => {
-    if (!audioContextRef.current || useFallbackRef.current) return null;
+    const ctx = globalAudioContext;
+    const now = ctx.currentTime;
 
-    try {
-      const response = await fetch(url);
-      const arrayBuffer = await response.arrayBuffer();
-      return await audioContextRef.current.decodeAudioData(arrayBuffer);
-    } catch (e) {
-      console.error('Failed to load audio buffer:', e);
-      return null;
+    const currentGain = getCurrentGain();
+    const nextGain = getNextGain();
+    const nextElement = getNextElement();
+
+    // Cancel ramps and restore current element
+    currentGain?.gain.cancelScheduledValues(now);
+    nextGain?.gain.cancelScheduledValues(now);
+
+    currentGain?.gain.setValueAtTime(1, now);
+    nextGain?.gain.setValueAtTime(0, now);
+
+    // Stop and reset next element
+    cleanupElement(nextElement, nextOfflineUrl);
+    nextOfflineUrl = null;
+
+    // Clear timeout
+    if (crossfadeContext.timeoutId) {
+      clearTimeout(crossfadeContext.timeoutId);
     }
-  }, []);
+    crossfadeContext = null;
 
+    // Reset state
+    preloadingTrackIdRef.current = null;
+    setCrossfadeState('idle');
+    setNextTrackPreloaded(false);
+  }, [setCrossfadeState, setNextTrackPreloaded]);
+
+  // --------------------------------------------------------------------------
   // Update Media Session API
+  // --------------------------------------------------------------------------
   const updateMediaSession = useCallback(() => {
     if (!('mediaSession' in navigator) || !currentTrack) return;
 
@@ -151,20 +396,20 @@ export function useAudioEngine() {
       title: currentTrack.title || 'Unknown',
       artist: currentTrack.artist || 'Unknown',
       album: currentTrack.album || 'Unknown',
-      artwork: currentTrack.id ? [
-        { src: tracksApi.getArtworkUrl(currentTrack.id), sizes: '512x512', type: 'image/jpeg' }
-      ] : []
+      artwork: currentTrack.id
+        ? [
+            {
+              src: tracksApi.getArtworkUrl(currentTrack.id),
+              sizes: '512x512',
+              type: 'image/jpeg',
+            },
+          ]
+        : [],
     });
 
-    navigator.mediaSession.setActionHandler('play', () => {
-      setIsPlaying(true);
-    });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      setIsPlaying(false);
-    });
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      playNext();
-    });
+    navigator.mediaSession.setActionHandler('play', () => setIsPlaying(true));
+    navigator.mediaSession.setActionHandler('pause', () => setIsPlaying(false));
+    navigator.mediaSession.setActionHandler('nexttrack', () => playNext());
     navigator.mediaSession.setActionHandler('previoustrack', () => {
       usePlayerStore.getState().playPrevious();
     });
@@ -175,129 +420,208 @@ export function useAudioEngine() {
     });
   }, [currentTrack, setIsPlaying, playNext]);
 
-  // Load and play track
+  // --------------------------------------------------------------------------
+  // Seek function
+  // --------------------------------------------------------------------------
+  const seek = useCallback(
+    (time: number) => {
+      const currentElement = getCurrentElement();
+      if (!currentElement) return;
+
+      // If crossfading and user seeks backward, cancel crossfade
+      if (crossfadeContext?.isActive) {
+        const duration = currentElement.duration;
+        const effectiveCrossfade = crossfadeEnabled ? crossfadeDuration : 0;
+        if (duration - time > effectiveCrossfade + 1) {
+          cancelCrossfade();
+        }
+      }
+
+      currentElement.currentTime = time;
+      setCurrentTime(time);
+    },
+    [setCurrentTime, crossfadeEnabled, crossfadeDuration, cancelCrossfade]
+  );
+
+  // --------------------------------------------------------------------------
+  // Toggle play/pause
+  // --------------------------------------------------------------------------
+  const togglePlayPause = useCallback(() => {
+    setIsPlaying(!isPlaying);
+  }, [isPlaying, setIsPlaying]);
+
+  // --------------------------------------------------------------------------
+  // Initialize audio graph on mount
+  // --------------------------------------------------------------------------
   useEffect(() => {
+    initializeAudioGraph();
+
+    // Setup event handlers for track end
+    const handleEndedA = () => {
+      if (currentElementIsA && !crossfadeContext?.isActive) {
+        playNext();
+      }
+    };
+    const handleEndedB = () => {
+      if (!currentElementIsA && !crossfadeContext?.isActive) {
+        playNext();
+      }
+    };
+
+    globalAudioElementA?.addEventListener('ended', handleEndedA);
+    globalAudioElementB?.addEventListener('ended', handleEndedB);
+
+    // Error handlers
+    const handleError = (e: Event) => {
+      const target = e.target as HTMLAudioElement;
+      if (!target.src || target.src === window.location.href) return;
+      console.error('Audio error:', e);
+      setIsPlaying(false);
+    };
+
+    globalAudioElementA?.addEventListener('error', handleError);
+    globalAudioElementB?.addEventListener('error', handleError);
+
+    return () => {
+      globalAudioElementA?.removeEventListener('ended', handleEndedA);
+      globalAudioElementB?.removeEventListener('ended', handleEndedB);
+      globalAudioElementA?.removeEventListener('error', handleError);
+      globalAudioElementB?.removeEventListener('error', handleError);
+    };
+  }, [playNext, setIsPlaying]);
+
+  // --------------------------------------------------------------------------
+  // Load and play track when currentTrack changes
+  // --------------------------------------------------------------------------
+  useEffect(() => {
+    const currentElement = getCurrentElement();
+
     if (!currentTrack) {
       // Stop everything
-      if (currentSourceRef.current) {
-        try { currentSourceRef.current.stop(); } catch { /* Already stopped */ }
-        currentSourceRef.current = null;
-      }
-      if (fallbackAudioRef.current) {
-        fallbackAudioRef.current.pause();
-        fallbackAudioRef.current.src = '';
-      }
-      // Clean up any offline URL
-      if (currentOfflineUrlRef.current) {
-        revokeOfflineTrackUrl(currentOfflineUrlRef.current);
-        currentOfflineUrlRef.current = null;
+      cleanupElement(globalAudioElementA, null);
+      cleanupElement(globalAudioElementB, null);
+      if (currentOfflineUrl) {
+        revokeOfflineTrackUrl(currentOfflineUrl);
+        currentOfflineUrl = null;
       }
       return;
     }
 
-    // Clean up previous offline URL
-    if (currentOfflineUrlRef.current) {
-      revokeOfflineTrackUrl(currentOfflineUrlRef.current);
-      currentOfflineUrlRef.current = null;
+    // Skip if this track is already playing (happens after crossfade advance)
+    if (
+      currentElement?.src &&
+      !currentElement.src.endsWith('/') &&
+      currentElement.src !== window.location.href
+    ) {
+      // Check if we're already playing the right track by comparing
+      // This is a heuristic - if duration matches, probably same track
+      const loadedDuration = currentElement.duration;
+      if (
+        loadedDuration &&
+        currentTrack.duration_seconds &&
+        Math.abs(loadedDuration - currentTrack.duration_seconds) < 1
+      ) {
+        return; // Same track already loaded
+      }
     }
 
     isLoadingRef.current = true;
 
-    // Check for offline track first, then fall back to streaming
     const loadTrack = async () => {
-      let audioUrl: string;
-
-      // Try to get offline track
-      const offlineBlob = await getOfflineTrack(currentTrack.id);
-      if (offlineBlob) {
-        audioUrl = createOfflineTrackUrl(offlineBlob);
-        currentOfflineUrlRef.current = audioUrl;
-      } else {
-        audioUrl = tracksApi.getStreamUrl(currentTrack.id);
+      // Clean up previous
+      if (currentOfflineUrl) {
+        revokeOfflineTrackUrl(currentOfflineUrl);
+        currentOfflineUrl = null;
       }
 
-      // Use fallback for now (simpler and more reliable for streaming)
-      // Web Audio API crossfade will be used for track transitions
-      useFallbackRef.current = true;
+      const { url, isOffline } = await getTrackUrl(currentTrack.id);
+      if (isOffline) {
+        currentOfflineUrl = url;
+      }
 
-      if (fallbackAudioRef.current) {
-        const audio = fallbackAudioRef.current;
-        audio.src = audioUrl;
-        audio.load();
+      if (currentElement) {
+        currentElement.src = url;
+        currentElement.load();
 
-        // Wait for audio to be ready before playing
+        // Wait for ready then play if isPlaying
         const playWhenReady = () => {
-          // Get the CURRENT isPlaying state from the store, not the stale closure value
-          const currentIsPlaying = usePlayerStore.getState().isPlaying;
-          if (currentIsPlaying) {
-            audio.play().catch((err) => {
+          const shouldPlay = usePlayerStore.getState().isPlaying;
+          if (shouldPlay) {
+            currentElement.play().catch((err) => {
               if (err.name !== 'AbortError') {
-                console.error('[AudioEngine] Play failed after load:', err);
+                console.error('Play failed:', err);
               }
             });
           }
-          audio.removeEventListener('canplay', playWhenReady);
+          currentElement.removeEventListener('canplay', playWhenReady);
         };
-        audio.addEventListener('canplay', playWhenReady);
+
+        const handleMetadata = () => {
+          setDuration(currentElement.duration);
+          currentElement.removeEventListener('loadedmetadata', handleMetadata);
+        };
+
+        currentElement.addEventListener('canplay', playWhenReady);
+        currentElement.addEventListener('loadedmetadata', handleMetadata);
       }
 
-      // Also preload buffer for crossfade capability
-      const buffer = await loadAudioBuffer(audioUrl);
-      if (buffer) {
-        currentBufferRef.current = buffer;
-        setDuration(buffer.duration);
-      }
       isLoadingRef.current = false;
     };
 
     loadTrack();
     updateMediaSession();
-    pausedAtRef.current = 0;
-    startTimeRef.current = 0;
-  }, [currentTrack?.id, loadAudioBuffer, setDuration, updateMediaSession]);
+  }, [currentTrack?.id, setDuration, updateMediaSession]);
 
+  // --------------------------------------------------------------------------
   // Handle play/pause
+  // --------------------------------------------------------------------------
   useEffect(() => {
     if (!currentTrack) return;
 
-    const audio = fallbackAudioRef.current;
-    if (!audio) return;
+    const currentElement = getCurrentElement();
+    if (!currentElement) return;
 
     if (isPlaying) {
       // Resume audio context if suspended
-      if (audioContextRef.current?.state === 'suspended') {
-        audioContextRef.current.resume();
+      if (globalAudioContext?.state === 'suspended') {
+        globalAudioContext.resume();
       }
 
-      // Only try to play if we have a valid source loaded
-      // Check that src is set and not just the page URL (empty src defaults to current page)
-      const hasValidSource = audio.src && audio.src !== window.location.href && !audio.src.endsWith('/');
+      const hasValidSource =
+        currentElement.src &&
+        currentElement.src !== window.location.href &&
+        !currentElement.src.endsWith('/');
+      const isReady =
+        currentElement.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
 
-      // Also check if audio has enough data to play
-      // HAVE_FUTURE_DATA (3) or HAVE_ENOUGH_DATA (4) means we can play
-      const isReadyToPlay = audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
-
-      if (hasValidSource && isReadyToPlay) {
-        audio.play().catch((err) => {
-          // Ignore AbortError - it's expected when source changes during play
+      if (hasValidSource && isReady) {
+        currentElement.play().catch((err) => {
           if (err.name !== 'AbortError') {
             console.error('Play failed:', err);
-            // Only reset isPlaying for real errors, not timing issues
-            // NotAllowedError typically means autoplay was blocked
             if (err.name === 'NotAllowedError') {
               setIsPlaying(false);
             }
           }
         });
       }
-      // If audio not ready yet, the track loading effect's canplay handler will start playback
 
-      // Update media session playback state
+      // Also resume next element if crossfading
+      if (crossfadeContext?.isActive) {
+        const nextElement = getNextElement();
+        nextElement?.play().catch(console.error);
+      }
+
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
       }
     } else {
-      audio.pause();
+      currentElement.pause();
+
+      // Also pause next element if crossfading
+      if (crossfadeContext?.isActive) {
+        const nextElement = getNextElement();
+        nextElement?.pause();
+      }
 
       if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
@@ -305,52 +629,83 @@ export function useAudioEngine() {
     }
   }, [isPlaying, currentTrack, setIsPlaying]);
 
+  // --------------------------------------------------------------------------
   // Handle volume changes
+  // --------------------------------------------------------------------------
   useEffect(() => {
-    if (fallbackAudioRef.current) {
-      fallbackAudioRef.current.volume = volume;
-    }
-    if (gainCurrentRef.current) {
-      gainCurrentRef.current.gain.value = volume;
-    }
-    if (gainNextRef.current) {
-      gainNextRef.current.gain.value = volume;
+    if (globalMasterGain) {
+      globalMasterGain.gain.value = volume;
     }
   }, [volume]);
 
-  // Update time during playback
+  // --------------------------------------------------------------------------
+  // Time update loop with crossfade trigger
+  // --------------------------------------------------------------------------
   useEffect(() => {
     const updateTime = () => {
-      if (fallbackAudioRef.current && isPlaying) {
-        const currentTime = fallbackAudioRef.current.currentTime;
-        setCurrentTime(currentTime);
+      const currentElement = getCurrentElement();
+      if (!currentElement || !isPlaying) return;
 
-        // Update media session position
-        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration: fallbackAudioRef.current.duration || 0,
-              playbackRate: 1,
-              position: currentTime
-            });
-          } catch { /* mediaSession not fully supported */ }
+      const currentTime = currentElement.currentTime;
+      const duration = currentElement.duration;
+
+      setCurrentTime(currentTime);
+
+      // Update media session position
+      if (
+        'mediaSession' in navigator &&
+        'setPositionState' in navigator.mediaSession
+      ) {
+        try {
+          navigator.mediaSession.setPositionState({
+            duration: duration || 0,
+            playbackRate: 1,
+            position: currentTime,
+          });
+        } catch {
+          /* mediaSession not fully supported */
         }
-
-        // Check if we should start crossfade to next track
-        const duration = fallbackAudioRef.current.duration;
-        const timeRemaining = duration - currentTime;
-
-        if (timeRemaining <= CROSSFADE_DURATION && timeRemaining > 0 && queueIndex < queue.length - 1) {
-          // Preload next track for crossfade
-          const nextTrack = queue[queueIndex + 1];
-          if (nextTrack && !nextSourceRef.current) {
-            // TODO: Implement actual crossfade with Web Audio API
-            // For now, just let the track end naturally
-          }
-        }
-
-        animationFrameRef.current = requestAnimationFrame(updateTime);
       }
+
+      // Check if we should preload/crossfade
+      const timeRemaining = duration - currentTime;
+      const nextTrack = getNextTrack();
+      const hasNextTrack = nextTrack !== null;
+      const effectiveCrossfade = crossfadeEnabled ? crossfadeDuration : 0;
+
+      // Preload threshold: crossfade duration + 3 seconds buffer
+      const preloadThreshold = effectiveCrossfade + 3;
+
+      // Start preloading when we hit the threshold
+      if (
+        hasNextTrack &&
+        crossfadeState === 'idle' &&
+        timeRemaining <= preloadThreshold &&
+        timeRemaining > effectiveCrossfade
+      ) {
+        setCrossfadeState('preloading');
+        preloadNextTrack(nextTrack.id).then((success) => {
+          if (success) {
+            setNextTrackPreloaded(true);
+          } else {
+            setCrossfadeState('idle');
+          }
+        });
+      }
+
+      // Start crossfade when we hit crossfade duration
+      if (
+        hasNextTrack &&
+        nextTrackPreloaded &&
+        crossfadeState === 'preloading' &&
+        timeRemaining <= effectiveCrossfade &&
+        timeRemaining > 0.1 // Small buffer to avoid edge case
+      ) {
+        setCrossfadeState('crossfading');
+        executeCrossfade(effectiveCrossfade, nextTrack);
+      }
+
+      animationFrameRef.current = requestAnimationFrame(updateTime);
     };
 
     if (isPlaying) {
@@ -362,94 +717,36 @@ export function useAudioEngine() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isPlaying, setCurrentTime, queue, queueIndex]);
+  }, [
+    isPlaying,
+    setCurrentTime,
+    crossfadeState,
+    nextTrackPreloaded,
+    crossfadeEnabled,
+    crossfadeDuration,
+    getNextTrack,
+    setCrossfadeState,
+    setNextTrackPreloaded,
+    preloadNextTrack,
+    executeCrossfade,
+  ]);
 
-  // Handle track end
-  useEffect(() => {
-    const audio = fallbackAudioRef.current;
-    if (!audio) return;
-
-    const handleEnded = () => {
-      playNext();
-    };
-
-    audio.addEventListener('ended', handleEnded);
-    return () => audio.removeEventListener('ended', handleEnded);
-  }, [playNext]);
-
-  // Seek function
-  const seek = useCallback((time: number) => {
-    if (fallbackAudioRef.current) {
-      fallbackAudioRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
-    pausedAtRef.current = time;
-  }, [setCurrentTime]);
-
-  // Toggle play/pause
-  const togglePlayPause = useCallback(() => {
-    setIsPlaying(!isPlaying);
-  }, [isPlaying, setIsPlaying]);
-
-  // Crossfade to next track (advanced feature)
-  const crossfadeTo = useCallback(async (trackId: string) => {
-    if (!audioContextRef.current || !gainCurrentRef.current || !gainNextRef.current) {
-      // Fallback: just switch tracks
-      return;
-    }
-
-    const url = tracksApi.getStreamUrl(trackId);
-    const buffer = await loadAudioBuffer(url);
-    if (!buffer) return;
-
-    const ctx = audioContextRef.current;
-    const now = ctx.currentTime;
-
-    // Create new source
-    nextSourceRef.current = ctx.createBufferSource();
-    nextSourceRef.current.buffer = buffer;
-    nextSourceRef.current.connect(gainNextRef.current);
-
-    // Crossfade gains
-    gainCurrentRef.current.gain.setValueAtTime(volume, now);
-    gainCurrentRef.current.gain.linearRampToValueAtTime(0, now + CROSSFADE_DURATION);
-    gainNextRef.current.gain.setValueAtTime(0, now);
-    gainNextRef.current.gain.linearRampToValueAtTime(volume, now + CROSSFADE_DURATION);
-
-    // Start next source
-    nextSourceRef.current.start(now);
-
-    // Swap after crossfade
-    setTimeout(() => {
-      if (currentSourceRef.current) {
-        try { currentSourceRef.current.stop(); } catch { /* Already stopped */ }
-      }
-      currentSourceRef.current = nextSourceRef.current;
-      nextSourceRef.current = null;
-      currentBufferRef.current = buffer;
-
-      // Swap gain nodes
-      const temp = gainCurrentRef.current;
-      gainCurrentRef.current = gainNextRef.current;
-      gainNextRef.current = temp;
-    }, CROSSFADE_DURATION * 1000);
-  }, [loadAudioBuffer, volume]);
-
-  // Get the audio context for WebRTC streaming
+  // --------------------------------------------------------------------------
+  // Get audio context and output node for WebRTC
+  // --------------------------------------------------------------------------
   const getContext = useCallback((): AudioContext | null => {
-    return audioContextRef.current || globalAudioContext;
+    return globalAudioContext;
   }, []);
 
-  // Get the output node (analyser) for WebRTC streaming
   const getOutputNode = useCallback((): AudioNode | null => {
-    return analyserRef.current || globalAnalyser;
+    return globalAnalyser;
   }, []);
 
   return {
     seek,
     togglePlayPause,
-    crossfadeTo,
     getContext,
     getOutputNode,
+    cancelCrossfade,
   };
 }

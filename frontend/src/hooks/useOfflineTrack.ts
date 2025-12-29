@@ -47,7 +47,9 @@ export function useOfflineTrack(trackId: string): UseOfflineTrackResult {
     setError(null);
 
     try {
-      await downloadTrackForOffline(trackId);
+      await downloadTrackForOffline(trackId, (progress) => {
+        setDownloadProgress(progress.percentage);
+      });
       setIsOffline(true);
       setDownloadProgress(100);
     } catch (err) {

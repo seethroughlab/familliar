@@ -1,25 +1,73 @@
 /**
  * Offline service for managing track downloads and offline playback.
  */
-import { db, type OfflineTrack } from '../db';
+import { db, type OfflineTrack, type CachedTrack } from '../db';
 
 /**
- * Download a track for offline playback.
+ * Progress callback type for download tracking.
  */
-export async function downloadTrackForOffline(trackId: string): Promise<void> {
+export type DownloadProgressCallback = (progress: {
+  loaded: number;
+  total: number;
+  percentage: number;
+}) => void;
+
+/**
+ * Download a track for offline playback with optional progress tracking.
+ */
+export async function downloadTrackForOffline(
+  trackId: string,
+  onProgress?: DownloadProgressCallback
+): Promise<void> {
   // Check if already downloaded
   const existing = await db.offlineTracks.get(trackId);
   if (existing) {
+    onProgress?.({ loaded: 1, total: 1, percentage: 100 });
     return;
   }
 
-  // Fetch the audio file
+  // Fetch the audio file with progress tracking
   const response = await fetch(`/api/v1/tracks/${trackId}/stream`);
   if (!response.ok) {
     throw new Error(`Failed to download track: ${response.statusText}`);
   }
 
-  const blob = await response.blob();
+  let blob: Blob;
+
+  // Use streaming if available and progress callback provided
+  if (onProgress && response.body) {
+    const contentLength = response.headers.get('content-length');
+    const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+    if (total > 0) {
+      const reader = response.body.getReader();
+      const chunks: BlobPart[] = [];
+      let loaded = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        loaded += value.length;
+        onProgress({
+          loaded,
+          total,
+          percentage: Math.round((loaded / total) * 100),
+        });
+      }
+
+      blob = new Blob(chunks, {
+        type: response.headers.get('content-type') || 'audio/mpeg',
+      });
+    } else {
+      // No content-length header, can't track progress
+      blob = await response.blob();
+      onProgress({ loaded: blob.size, total: blob.size, percentage: 100 });
+    }
+  } else {
+    blob = await response.blob();
+  }
 
   // Store in IndexedDB
   const offlineTrack: OfflineTrack = {
@@ -105,7 +153,7 @@ export function revokeOfflineTrackUrl(url: string): void {
 /**
  * Format bytes to human-readable string.
  */
-function formatBytes(bytes: number): string {
+export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
 
   const k = 1024;
@@ -113,4 +161,109 @@ function formatBytes(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+/**
+ * Get storage quota information.
+ */
+export async function getStorageQuota(): Promise<{
+  used: number;
+  quota: number;
+  usedFormatted: string;
+  quotaFormatted: string;
+  percentUsed: number;
+} | null> {
+  if (!navigator.storage?.estimate) {
+    return null;
+  }
+
+  try {
+    const estimate = await navigator.storage.estimate();
+    const used = estimate.usage || 0;
+    const quota = estimate.quota || 0;
+
+    return {
+      used,
+      quota,
+      usedFormatted: formatBytes(used),
+      quotaFormatted: formatBytes(quota),
+      percentUsed: quota > 0 ? Math.round((used / quota) * 100) : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Get detailed info for all offline tracks including metadata from cache.
+ */
+export interface OfflineTrackInfo {
+  id: string;
+  title: string;
+  artist: string;
+  album: string;
+  sizeBytes: number;
+  sizeFormatted: string;
+  cachedAt: Date;
+}
+
+export async function getOfflineTracksWithInfo(): Promise<OfflineTrackInfo[]> {
+  const offlineTracks = await db.offlineTracks.toArray();
+  const cachedTracks = await db.cachedTracks.toArray();
+
+  // Create a map for fast lookup
+  const trackInfoMap = new Map<string, CachedTrack>();
+  cachedTracks.forEach((t) => trackInfoMap.set(t.id, t));
+
+  return offlineTracks.map((track) => {
+    const info = trackInfoMap.get(track.id);
+    return {
+      id: track.id,
+      title: info?.title || 'Unknown Title',
+      artist: info?.artist || 'Unknown Artist',
+      album: info?.album || 'Unknown Album',
+      sizeBytes: track.audio.size,
+      sizeFormatted: formatBytes(track.audio.size),
+      cachedAt: track.cachedAt,
+    };
+  });
+}
+
+/**
+ * Download multiple tracks with overall progress.
+ */
+export async function downloadTracksForOffline(
+  trackIds: string[],
+  onProgress?: (progress: {
+    currentTrack: number;
+    totalTracks: number;
+    currentTrackProgress: number;
+    overallPercentage: number;
+  }) => void
+): Promise<{ succeeded: number; failed: number }> {
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < trackIds.length; i++) {
+    const trackId = trackIds[i];
+
+    try {
+      await downloadTrackForOffline(trackId, (progress) => {
+        onProgress?.({
+          currentTrack: i + 1,
+          totalTracks: trackIds.length,
+          currentTrackProgress: progress.percentage,
+          overallPercentage: Math.round(
+            ((i + progress.percentage / 100) / trackIds.length) * 100
+          ),
+        });
+      });
+      succeeded++;
+    } catch (error) {
+      console.error(`Failed to download track ${trackId}:`, error);
+      failed++;
+    }
+  }
+
+  return { succeeded, failed };
 }

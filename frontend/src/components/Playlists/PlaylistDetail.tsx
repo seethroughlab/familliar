@@ -34,18 +34,35 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const handleDownloadPlaylist = async () => {
     if (!playlist || playlist.tracks.length === 0) return;
 
+    // Get tracks that need to be downloaded
+    const tracksToDownload = playlist.tracks.filter(
+      (t) => !offlineTrackIds.has(t.id)
+    );
+    if (tracksToDownload.length === 0) return;
+
     setIsDownloading(true);
-    setDownloadProgress({ current: 0, total: playlist.tracks.length });
+    setDownloadProgress({ current: 0, total: tracksToDownload.length });
 
     try {
-      for (let i = 0; i < playlist.tracks.length; i++) {
-        const track = playlist.tracks[i];
-        if (!offlineTrackIds.has(track.id)) {
-          await offlineService.downloadTrackForOffline(track.id);
-          setOfflineTrackIds(prev => new Set([...prev, track.id]));
+      await offlineService.downloadTracksForOffline(
+        tracksToDownload.map((t) => t.id),
+        (progress) => {
+          setDownloadProgress({
+            current: progress.currentTrack,
+            total: progress.totalTracks,
+          });
+          // Update offline IDs as tracks complete
+          if (progress.currentTrackProgress === 100) {
+            const completedTrack = tracksToDownload[progress.currentTrack - 1];
+            if (completedTrack) {
+              setOfflineTrackIds((prev) => new Set([...prev, completedTrack.id]));
+            }
+          }
         }
-        setDownloadProgress({ current: i + 1, total: playlist.tracks.length });
-      }
+      );
+      // Final update to ensure all are marked
+      const ids = await offlineService.getOfflineTrackIds();
+      setOfflineTrackIds(new Set(ids));
     } catch (error) {
       console.error('Failed to download playlist:', error);
     } finally {

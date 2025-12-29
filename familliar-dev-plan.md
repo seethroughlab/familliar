@@ -1,8 +1,31 @@
 # Familiar — Feature Roadmap
 
-## Project Status: ~85% Complete
+## Project Status: ~90% Complete
 
 See `CLAUDE.md` for project overview and development guide.
+
+---
+
+## Completed Features
+
+### Gapless Crossfade (Audio Engine) ✓
+**Location:** `frontend/src/hooks/useAudioEngine.ts`
+
+Implemented dual HTMLAudioElement architecture with Web Audio API:
+- Two audio elements (A/B) that swap roles for crossfade
+- Individual GainNodes for crossfade control, MasterGain for volume
+- Configurable crossfade duration (0-10s) in Settings > Playback
+- Pre-buffers next track 3 seconds before crossfade
+- Ready for future EQ/effects chain
+
+### Offline Playback UI ✓
+**Location:** `frontend/src/components/Settings/OfflineSettings.tsx`
+
+Enhanced offline management:
+- Storage quota display with warnings (80%/95% thresholds)
+- Expandable track list with search/sort/remove
+- Download progress tracking for individual tracks
+- Batch download with progress in playlists
 
 ---
 
@@ -10,16 +33,9 @@ See `CLAUDE.md` for project overview and development guide.
 
 ### High Priority
 
-#### 1. Gapless Crossfade (Audio Engine)
-**Location:** `frontend/src/hooks/useAudioEngine.ts`
-
-The audio engine uses basic HTML5 Audio. True gapless playback requires:
-- Web Audio API AudioBufferSourceNode for precise timing
-- Crossfade between tracks using gain nodes
-- Pre-buffering next track before current ends
-
-#### 2. Listening Sessions - Public Signaling Server
+#### 1. Listening Sessions - Public Signaling Server
 **Location:** Need to create `familiar-signaling/` (Cloudflare Workers)
+ - this should be in a different repo: ~/Developer/familliar-signaling
 
 WebRTC listening sessions work locally but need a public signaling server for remote guests:
 - Cloudflare Workers for WebSocket signaling
@@ -28,6 +44,7 @@ WebRTC listening sessions work locally but need a public signaling server for re
 
 #### 3. Listening Sessions - TURN Server Deployment
 **Docs:** See "WebRTC TURN Server Setup" section below
+- Can/should this be combined with familiar-signaling into a single familliar-public Cloudflare worker?
 
 For guests behind symmetric NAT, deploy coturn:
 - VPS with public IP
