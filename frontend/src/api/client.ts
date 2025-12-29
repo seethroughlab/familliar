@@ -372,11 +372,22 @@ export const libraryApi = {
     return data;
   },
 
-  importMusic: async (file: File): Promise<ImportResult> => {
+  importMusic: async (
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<ImportResult> => {
     const formData = new FormData();
     formData.append('file', file);
     const { data } = await api.post('/library/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const percentCompleted = Math.round(
+            (progressEvent.loaded * 100) / progressEvent.total
+          );
+          onProgress(percentCompleted);
+        }
+      },
     });
     return data;
   },

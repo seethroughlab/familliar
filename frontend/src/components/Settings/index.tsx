@@ -8,6 +8,7 @@ import { PlaybackSettings } from './PlaybackSettings';
 import { LLMSettings } from './LLMSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
+import { MusicImport } from './MusicImport';
 import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
@@ -98,6 +99,7 @@ export function SettingsPanel() {
             Library Management
           </h3>
           <div className="space-y-4">
+            <MusicImport />
             <LibraryScan />
             <LibraryOrganizer />
           </div>

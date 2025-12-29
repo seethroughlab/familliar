@@ -1,41 +1,8 @@
 # Familiar — Feature Roadmap
 
-## Project Status: ~92% Complete
+## Project Status: ~95% Complete
 
 See `CLAUDE.md` for project overview and development guide.
-
----
-
-## Completed Features
-
-### Gapless Crossfade (Audio Engine) ✓
-**Location:** `frontend/src/hooks/useAudioEngine.ts`
-
-Implemented dual HTMLAudioElement architecture with Web Audio API:
-- Two audio elements (A/B) that swap roles for crossfade
-- Individual GainNodes for crossfade control, MasterGain for volume
-- Configurable crossfade duration (0-10s) in Settings > Playback
-- Pre-buffers next track 3 seconds before crossfade
-- Ready for future EQ/effects chain
-
-### Offline Playback UI ✓
-**Location:** `frontend/src/components/Settings/OfflineSettings.tsx`
-
-Enhanced offline management:
-- Storage quota display with warnings (80%/95% thresholds)
-- Expandable track list with search/sort/remove
-- Download progress tracking for individual tracks
-- Batch download with progress in playlists
-
-### Conversation History UI ✓
-**Location:** `frontend/src/components/Chat/ChatHistoryPanel.tsx`
-
-Full conversation management:
-- Sidebar panel with search across conversations
-- Date grouping (Today, Yesterday, This Week, This Month, Older)
-- Inline session rename (click edit button)
-- Session delete with confirmation
-- Message count and relative timestamps
 
 ---
 
@@ -61,26 +28,16 @@ For guests behind symmetric NAT, deploy coturn:
 - Configure coturn with credentials
 - Add TURN config to Familiar settings
 
-### Medium Priority
-
-#### 3. Music Import Flow
-**Location:** `backend/app/services/import_service.py`
-
-Backend endpoint exists (`/library/import`) but needs:
-- Drag-drop UI in frontend
-- Progress feedback
-- Duplicate detection UI
-
 ### Low Priority / Future
 
-#### 4. Multi-Room Audio (Sonos/AirPlay)
+#### 3. Multi-Room Audio (Sonos/AirPlay)
 **Location:** `backend/app/services/outputs.py`
 
 Output abstraction layer exists. Implementations needed:
 - Sonos SOAP/UPnP integration
 - AirPlay via shairport-sync or similar
 
-#### 5. Guest Listener Page
+#### 4. Guest Listener Page
 **Location:** `frontend/src/components/Guest/GuestListener.tsx`
 
 Needs polish:

@@ -23,7 +23,7 @@ export function MusicImport({ onImportComplete, onClose }: Props) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const importMutation = useMutation({
-    mutationFn: libraryApi.importMusic,
+    mutationFn: (file: File) => libraryApi.importMusic(file),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['library-stats'] });
       queryClient.invalidateQueries({ queryKey: ['tracks'] });

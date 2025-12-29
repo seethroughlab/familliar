@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 import { useAudioSettingsStore } from '../stores/audioSettingsStore';
 import { tracksApi } from '../api/client';
+import type { Track } from '../types';
 import {
   getOfflineTrack,
   createOfflineTrackUrl,
@@ -270,7 +271,7 @@ export function useAudioEngine() {
   // Execute crossfade
   // --------------------------------------------------------------------------
   const executeCrossfade = useCallback(
-    (duration: number, nextTrack: { id: string; title: string | null }) => {
+    (duration: number, nextTrack: Track) => {
       if (!globalAudioContext || !globalMasterGain) return;
 
       const currentGain = getCurrentGain();
@@ -316,7 +317,7 @@ export function useAudioEngine() {
       };
 
       // Advance the queue (updates UI to show next track)
-      advanceToNextTrack(nextTrack as any);
+      advanceToNextTrack(nextTrack);
     },
     [advanceToNextTrack]
   );
