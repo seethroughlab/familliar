@@ -35,7 +35,7 @@
 [x] The play button doesn't update when the LLM starts to play a playlist. 
 [x] Why does System Status say "Background Processing: 1 process(es) running 1 process(es) active" even though both a library scan AND audio analysis are running? This is confusing for the user. 
 [x] The visualizer should be available to fill the Library/Playlists/Settings view at any time, with the option to go fullscreen.
-[ ] please read job-logs-*.txt and fix the CI issues.
+[x] please read job-logs-*.txt and fix the CI issues.
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
