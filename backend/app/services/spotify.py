@@ -518,3 +518,147 @@ class SpotifySyncService:
             "preview_url": spotify_track.get("preview_url"),
             "external_url": spotify_track.get("external_urls", {}).get("spotify"),
         }
+
+
+class SpotifyArtistService:
+    """Service for Spotify artist-related operations."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+        self.spotify_service = SpotifyService()
+
+    async def search_artist(
+        self, profile_id: UUID, artist_name: str
+    ) -> dict[str, Any] | None:
+        """Search for an artist on Spotify.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            artist_name: Name to search for
+
+        Returns:
+            Artist info dict or None
+        """
+        client = await self.spotify_service.get_client(self.db, profile_id)
+        if not client:
+            return None
+
+        try:
+            results = client.search(q=artist_name, type="artist", limit=1)
+            artists = results.get("artists", {}).get("items", [])
+            if not artists:
+                return None
+
+            artist = artists[0]
+            return {
+                "id": artist.get("id"),
+                "name": artist.get("name"),
+                "genres": artist.get("genres", []),
+                "popularity": artist.get("popularity"),
+                "images": artist.get("images", []),
+                "external_url": artist.get("external_urls", {}).get("spotify"),
+            }
+        except Exception as e:
+            logger.error(f"Spotify artist search error: {e}")
+            return None
+
+    async def get_artist_albums(
+        self,
+        profile_id: UUID,
+        artist_id: str,
+        album_type: str = "album,single",
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Get albums by artist from Spotify.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            artist_id: Spotify artist ID
+            album_type: Comma-separated types (album, single, compilation)
+            limit: Max albums to return
+
+        Returns:
+            List of album dicts
+        """
+        client = await self.spotify_service.get_client(self.db, profile_id)
+        if not client:
+            return []
+
+        try:
+            results = client.artist_albums(
+                artist_id,
+                album_type=album_type,
+                limit=limit,
+                country="US",  # Get US releases
+            )
+            albums = results.get("items", [])
+
+            return [
+                {
+                    "id": album.get("id"),
+                    "name": album.get("name"),
+                    "release_date": album.get("release_date"),
+                    "release_date_precision": album.get("release_date_precision"),
+                    "album_type": album.get("album_type"),
+                    "total_tracks": album.get("total_tracks"),
+                    "images": album.get("images", []),
+                    "external_url": album.get("external_urls", {}).get("spotify"),
+                    "artists": [
+                        {"id": a.get("id"), "name": a.get("name")}
+                        for a in album.get("artists", [])
+                    ],
+                }
+                for album in albums
+            ]
+        except Exception as e:
+            logger.error(f"Spotify get artist albums error: {e}")
+            return []
+
+    async def get_artist_albums_recent(
+        self,
+        profile_id: UUID,
+        artist_id: str,
+        days_back: int = 90,
+    ) -> list[dict[str, Any]]:
+        """Get recent albums (released in the last N days) by artist.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            artist_id: Spotify artist ID
+            days_back: Number of days to look back
+
+        Returns:
+            List of recent album dicts
+        """
+        from datetime import datetime, timedelta
+
+        albums = await self.get_artist_albums(profile_id, artist_id)
+        if not albums:
+            return []
+
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+        recent_albums = []
+
+        for album in albums:
+            release_date_str = album.get("release_date")
+            if not release_date_str:
+                continue
+
+            # Parse release date (can be YYYY, YYYY-MM, or YYYY-MM-DD)
+            try:
+                precision = album.get("release_date_precision", "day")
+                if precision == "year":
+                    release_date = datetime.strptime(release_date_str, "%Y")
+                elif precision == "month":
+                    release_date = datetime.strptime(release_date_str, "%Y-%m")
+                else:
+                    release_date = datetime.strptime(release_date_str, "%Y-%m-%d")
+
+                if release_date >= cutoff_date:
+                    album["release_date_parsed"] = release_date.isoformat()
+                    recent_albums.append(album)
+            except ValueError:
+                # Skip albums with unparseable dates
+                continue
+
+        return recent_albums

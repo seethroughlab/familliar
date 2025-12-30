@@ -1118,3 +1118,352 @@ def clear_spotify_sync_progress() -> None:
         r.delete(SPOTIFY_SYNC_PROGRESS_KEY)
     except Exception as e:
         logger.error(f"Failed to clear Spotify sync progress: {e}")
+
+
+# Redis key for new releases check progress
+NEW_RELEASES_PROGRESS_KEY = "familiar:new_releases:progress"
+
+
+class NewReleasesProgressReporter:
+    """Reports new releases check progress to Redis for API consumption."""
+
+    def __init__(self, profile_id: str | None = None):
+        self.redis = get_redis()
+        self.profile_id = profile_id
+        self.started_at = datetime.now().isoformat()
+        self._update_progress({
+            "status": "running",
+            "phase": "starting",
+            "message": "Starting new releases check...",
+            "profile_id": profile_id,
+            "artists_total": 0,
+            "artists_checked": 0,
+            "releases_found": 0,
+            "releases_new": 0,
+            "current_artist": None,
+            "started_at": self.started_at,
+            "last_heartbeat": datetime.now().isoformat(),
+            "errors": [],
+        })
+
+    def _update_progress(self, data: dict[str, Any]) -> None:
+        """Update progress in Redis with heartbeat."""
+        data["last_heartbeat"] = datetime.now().isoformat()
+        self.redis.set(NEW_RELEASES_PROGRESS_KEY, json.dumps(data), ex=3600)  # 1 hour expiry
+
+    def _get_current(self) -> dict[str, Any]:
+        """Get current progress from Redis."""
+        data = self.redis.get(NEW_RELEASES_PROGRESS_KEY)
+        if data:
+            return json.loads(data)
+        return {}
+
+    def set_checking(
+        self,
+        checked: int,
+        total: int,
+        found: int,
+        new: int,
+        current_artist: str | None = None,
+    ) -> None:
+        """Update checking progress."""
+        pct = int(checked / total * 100) if total > 0 else 0
+        self._update_progress({
+            "status": "running",
+            "phase": "checking",
+            "message": f"Checking artists... {checked}/{total} ({pct}%)",
+            "profile_id": self.profile_id,
+            "artists_total": total,
+            "artists_checked": checked,
+            "releases_found": found,
+            "releases_new": new,
+            "current_artist": current_artist,
+            "started_at": self.started_at,
+            "errors": [],
+        })
+
+    def complete(self, checked: int, found: int, new: int) -> None:
+        """Mark check as complete."""
+        self._update_progress({
+            "status": "completed",
+            "phase": "complete",
+            "message": f"Complete: {checked} artists checked, {new} new releases found",
+            "profile_id": self.profile_id,
+            "artists_total": checked,
+            "artists_checked": checked,
+            "releases_found": found,
+            "releases_new": new,
+            "current_artist": None,
+            "started_at": self.started_at,
+            "errors": [],
+        })
+
+    def error(self, msg: str) -> None:
+        """Mark check as failed."""
+        current = self._get_current()
+        current["status"] = "error"
+        current["message"] = msg
+        if "errors" not in current:
+            current["errors"] = []
+        current["errors"].append(msg)
+        self._update_progress(current)
+
+
+@celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
+def check_new_releases(
+    self,
+    profile_id: str | None = None,
+    days_back: int = 90,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Check for new releases from artists in the library.
+
+    This task runs in a Celery worker process, querying Spotify (if connected)
+    and MusicBrainz for recent releases from library artists.
+
+    Args:
+        profile_id: Optional profile ID for Spotify connection
+        days_back: Number of days to look back for releases
+        force: If True, check all artists regardless of cache
+
+    Returns:
+        Dict with check results
+    """
+    import asyncio
+    import time
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.services.musicbrainz import get_artist_releases_recent, search_artist
+    from app.services.new_releases import NewReleasesService, normalize_artist_name
+    from app.services.spotify import SpotifyArtistService
+
+    progress = NewReleasesProgressReporter(profile_id)
+
+    async def run_check() -> dict[str, Any]:
+        """Run the async check."""
+        stats = {
+            "artists_total": 0,
+            "artists_checked": 0,
+            "artists_skipped_cache": 0,
+            "releases_found": 0,
+            "releases_new": 0,
+            "spotify_queries": 0,
+            "musicbrainz_queries": 0,
+        }
+
+        # Create a fresh async engine for this event loop
+        local_engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            future=True,
+        )
+        local_session_maker = async_sessionmaker(
+            local_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+            autocommit=False,
+            autoflush=False,
+        )
+
+        try:
+            async with local_session_maker() as db:
+                service = NewReleasesService(db)
+                spotify_service = None
+
+                # Set up Spotify service if profile is connected
+                if profile_id:
+                    spotify_service = SpotifyArtistService(db)
+
+                # Get library artists
+                artists = await service.get_library_artists()
+                stats["artists_total"] = len(artists)
+                logger.info(f"Found {len(artists)} unique artists in library")
+
+                if not artists:
+                    progress.complete(0, 0, 0)
+                    return stats
+
+                # Process each artist
+                for i, artist_info in enumerate(artists):
+                    artist_name = artist_info["name"]
+                    normalized = artist_info["normalized_name"]
+                    mb_artist_id = artist_info.get("musicbrainz_artist_id")
+
+                    # Update progress every 5 artists
+                    if i % 5 == 0:
+                        progress.set_checking(
+                            checked=i,
+                            total=len(artists),
+                            found=stats["releases_found"],
+                            new=stats["releases_new"],
+                            current_artist=artist_name,
+                        )
+
+                    # Check cache unless force is True
+                    if not force:
+                        should_check = await service.should_check_artist(normalized)
+                        if not should_check:
+                            stats["artists_skipped_cache"] += 1
+                            continue
+
+                    stats["artists_checked"] += 1
+                    spotify_artist_id = None
+                    releases_for_artist: list[dict[str, Any]] = []
+
+                    # Try Spotify first (faster, rate limits are more generous)
+                    if spotify_service and profile_id:
+                        try:
+                            # Search for artist on Spotify
+                            spotify_artist = await spotify_service.search_artist(
+                                UUID(profile_id), artist_name
+                            )
+                            if spotify_artist:
+                                spotify_artist_id = spotify_artist["id"]
+                                # Get recent albums
+                                recent = await spotify_service.get_artist_albums_recent(
+                                    UUID(profile_id),
+                                    spotify_artist_id,
+                                    days_back=days_back,
+                                )
+                                stats["spotify_queries"] += 1
+
+                                for album in recent:
+                                    releases_for_artist.append({
+                                        "release_id": album["id"],
+                                        "source": "spotify",
+                                        "release_name": album["name"],
+                                        "release_type": album.get("album_type"),
+                                        "release_date_str": album.get("release_date"),
+                                        "release_date": album.get("release_date_parsed"),
+                                        "artwork_url": album["images"][0]["url"] if album.get("images") else None,
+                                        "external_url": album.get("external_url"),
+                                        "track_count": album.get("total_tracks"),
+                                        "spotify_artist_id": spotify_artist_id,
+                                    })
+
+                            # Small delay to avoid rate limiting
+                            time.sleep(0.1)
+
+                        except Exception as e:
+                            logger.warning(f"Spotify lookup failed for {artist_name}: {e}")
+
+                    # Fall back to MusicBrainz if no Spotify results
+                    if not releases_for_artist:
+                        try:
+                            # Search for artist on MusicBrainz if we don't have ID
+                            mb_id_to_use = mb_artist_id
+                            if not mb_id_to_use:
+                                mb_result = search_artist(artist_name)
+                                if mb_result and mb_result.get("score", 0) >= 80:
+                                    mb_id_to_use = mb_result["musicbrainz_artist_id"]
+
+                            if mb_id_to_use:
+                                recent = get_artist_releases_recent(
+                                    mb_id_to_use,
+                                    days_back=days_back,
+                                )
+                                stats["musicbrainz_queries"] += 1
+
+                                for release in recent:
+                                    releases_for_artist.append({
+                                        "release_id": release["musicbrainz_release_group_id"],
+                                        "source": "musicbrainz",
+                                        "release_name": release["title"],
+                                        "release_type": release.get("release_type"),
+                                        "release_date_str": release.get("release_date"),
+                                        "release_date": release.get("release_date_parsed"),
+                                        "musicbrainz_artist_id": mb_id_to_use,
+                                    })
+
+                            # MusicBrainz rate limit: 1 req/sec (handled by library)
+
+                        except Exception as e:
+                            logger.warning(f"MusicBrainz lookup failed for {artist_name}: {e}")
+
+                    # Save discovered releases
+                    for release in releases_for_artist:
+                        stats["releases_found"] += 1
+
+                        # Parse release date
+                        release_date = None
+                        if release.get("release_date"):
+                            try:
+                                from datetime import datetime as dt
+                                release_date = dt.fromisoformat(release["release_date"])
+                            except Exception:
+                                pass
+
+                        saved = await service.save_discovered_release(
+                            artist_name=artist_name,
+                            release_id=release["release_id"],
+                            source=release["source"],
+                            release_name=release["release_name"],
+                            release_type=release.get("release_type"),
+                            release_date=release_date,
+                            artwork_url=release.get("artwork_url"),
+                            external_url=release.get("external_url"),
+                            track_count=release.get("track_count"),
+                            musicbrainz_artist_id=release.get("musicbrainz_artist_id"),
+                            spotify_artist_id=release.get("spotify_artist_id"),
+                        )
+                        if saved:
+                            stats["releases_new"] += 1
+
+                    # Update artist cache
+                    await service.update_artist_cache(
+                        artist_normalized=normalized,
+                        musicbrainz_id=mb_artist_id,
+                        spotify_id=spotify_artist_id,
+                    )
+
+                await db.commit()
+
+        finally:
+            await local_engine.dispose()
+
+        return stats
+
+    try:
+        # Run the async check in a new event loop
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            results = loop.run_until_complete(run_check())
+        finally:
+            loop.close()
+
+        progress.complete(
+            checked=results["artists_checked"],
+            found=results["releases_found"],
+            new=results["releases_new"],
+        )
+
+        logger.info(f"New releases check complete: {results}")
+        return {"status": "success", **results}
+
+    except Exception as e:
+        logger.error(f"New releases check failed: {e}", exc_info=True)
+        progress.error(str(e))
+        return {"status": "error", "error": str(e)}
+
+
+def get_new_releases_progress() -> dict[str, Any] | None:
+    """Get current new releases check progress from Redis."""
+    try:
+        r = get_redis()
+        data = r.get(NEW_RELEASES_PROGRESS_KEY)
+        if data:
+            return json.loads(data)
+    except Exception as e:
+        logger.error(f"Failed to get new releases progress: {e}")
+    return None
+
+
+def clear_new_releases_progress() -> None:
+    """Clear new releases check progress from Redis."""
+    try:
+        r = get_redis()
+        r.delete(NEW_RELEASES_PROGRESS_KEY)
+    except Exception as e:
+        logger.error(f"Failed to clear new releases progress: {e}")

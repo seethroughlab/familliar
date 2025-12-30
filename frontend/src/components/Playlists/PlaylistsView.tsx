@@ -9,6 +9,7 @@ import type { Playlist, SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { PlaylistDetail } from './PlaylistDetail';
 import { SmartPlaylistList } from '../SmartPlaylists/SmartPlaylistList';
+import { NewReleasesView } from '../NewReleases';
 
 type ViewMode = 'list' | 'detail';
 
@@ -213,6 +214,9 @@ export function PlaylistsView() {
           )}
         </div>
       )}
+
+      {/* New Releases Section */}
+      <NewReleasesView />
 
       {/* Smart Playlists Section */}
       <SmartPlaylistList onSelectPlaylist={handleSelectSmartPlaylist} />

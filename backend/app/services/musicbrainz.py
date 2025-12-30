@@ -290,3 +290,118 @@ def enrich_track(
             return result
 
     return None
+
+
+def search_artist(name: str) -> dict[str, Any] | None:
+    """Search for an artist on MusicBrainz.
+
+    Args:
+        name: Artist name to search
+
+    Returns:
+        Best matching artist info or None
+    """
+    try:
+        result = musicbrainzngs.search_artists(artist=name, limit=5)
+        artists = result.get("artist-list", [])
+        if not artists:
+            return None
+
+        # Get the best match (highest score)
+        best_match = artists[0]
+        return {
+            "musicbrainz_artist_id": best_match.get("id"),
+            "name": best_match.get("name"),
+            "sort_name": best_match.get("sort-name"),
+            "type": best_match.get("type"),
+            "country": best_match.get("country"),
+            "score": int(best_match.get("ext:score", 0)),
+        }
+
+    except musicbrainzngs.WebServiceError as e:
+        logger.error(f"MusicBrainz artist search error for '{name}': {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error searching artist '{name}': {e}")
+        return None
+
+
+def get_artist_releases_recent(
+    artist_id: str,
+    days_back: int = 90,
+    release_types: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Get recent releases by an artist from MusicBrainz.
+
+    Args:
+        artist_id: MusicBrainz artist UUID
+        days_back: Number of days to look back
+        release_types: Filter by types (Album, Single, EP, etc.)
+
+    Returns:
+        List of recent release dicts
+    """
+    from datetime import datetime, timedelta
+
+    if release_types is None:
+        release_types = ["Album", "Single", "EP"]
+
+    cutoff_date = datetime.now() - timedelta(days=days_back)
+    recent_releases = []
+
+    try:
+        # Browse release groups by artist
+        offset = 0
+        limit = 100
+
+        while True:
+            result = musicbrainzngs.browse_release_groups(
+                artist=artist_id,
+                release_type=release_types,
+                limit=limit,
+                offset=offset,
+            )
+
+            release_groups = result.get("release-group-list", [])
+            if not release_groups:
+                break
+
+            for rg in release_groups:
+                first_release = rg.get("first-release-date", "")
+                if not first_release:
+                    continue
+
+                # Parse release date (can be YYYY, YYYY-MM, or YYYY-MM-DD)
+                try:
+                    if len(first_release) == 4:  # YYYY
+                        release_date = datetime.strptime(first_release, "%Y")
+                    elif len(first_release) == 7:  # YYYY-MM
+                        release_date = datetime.strptime(first_release, "%Y-%m")
+                    else:  # YYYY-MM-DD
+                        release_date = datetime.strptime(first_release, "%Y-%m-%d")
+
+                    if release_date >= cutoff_date:
+                        recent_releases.append({
+                            "musicbrainz_release_group_id": rg.get("id"),
+                            "title": rg.get("title"),
+                            "release_type": rg.get("type") or rg.get("primary-type"),
+                            "release_date": first_release,
+                            "release_date_parsed": release_date.isoformat(),
+                        })
+                except ValueError:
+                    continue
+
+            # Check if there are more pages
+            total = result.get("release-group-count", 0)
+            offset += limit
+            if offset >= total:
+                break
+
+        return recent_releases
+
+    except musicbrainzngs.WebServiceError as e:
+        logger.error(f"MusicBrainz browse error for artist {artist_id}: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Error getting releases for artist {artist_id}: {e}")
+        return []

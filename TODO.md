@@ -49,11 +49,14 @@
 [x] Why did you decide to make it a 0.2.0 instead of 0.1.1? In my mind, we're still doing hotfixes.
 [x] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
 [x] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
-[ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [x] When syncing from Spotify, there should be an option to "favorite" matching tracks. But before we do that, how are we currently matching between Spotify and local tracks?
 [x] The AI Assistant configuration is still visible in the Settings panel. It should be part of the admin interface.
 [x] The admin interface should display the callback URL for Spotify (and anywhere else appropriate) so that the user knows what to put into https://developer.spotify.com/dashboard/
 [x] The README should mention that is "somewhat" optimized for NAS usage (but phrased better than that), because I think it is... Do you see many people using this on a personal computer?
-[ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
-[ ] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
+[x] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
+[ ] "Missing from Library" songs should also appear in playlists when relevant
+[ ] Processing audio is stuck at "0 / 23,318 (0%)"
+[ ] Let's examine the UX around what appears in the LLM chat window if neither Anthropic nor Ollama are configured. Just saying "Something went wrong" is bad UX.
+
+## For future releases
 [ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 

@@ -18,6 +18,7 @@ from app.api.routes import (
     health,
     lastfm,
     library,
+    new_releases,
     organizer,
     outputs,
     playlists,
@@ -82,6 +83,7 @@ app.include_router(favorites.router, prefix="/api/v1")
 app.include_router(organizer.router, prefix="/api/v1")
 app.include_router(bandcamp.router, prefix="/api/v1")
 app.include_router(outputs.router, prefix="/api/v1")
+app.include_router(new_releases.router, prefix="/api/v1")
 
 
 # Serve frontend static files in production

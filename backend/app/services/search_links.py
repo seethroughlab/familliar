@@ -82,3 +82,26 @@ def generate_search_url(store_key: str, artist: str, title: str, album: str | No
     encoded_query = urllib.parse.quote(query)
 
     return STORES[store_key]["url_template"].format(query=encoded_query)
+
+
+def generate_release_search_urls(artist: str, album: str) -> dict[str, dict[str, str]]:
+    """Generate search URLs for album/release purchases.
+
+    Args:
+        artist: Artist name
+        album: Album/release name
+
+    Returns:
+        Dict mapping store key to {name, url}
+    """
+    query = f"{artist} {album}"
+    encoded_query = urllib.parse.quote(query)
+
+    result = {}
+    for store_key, store_info in STORES.items():
+        result[store_key] = {
+            "name": store_info["name"],
+            "url": store_info["url_template"].format(query=encoded_query),
+        }
+
+    return result
