@@ -45,8 +45,10 @@ COPY backend/uv.lock ./
 COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production, with analysis extras)
+# Use CPU-only PyTorch index to reduce image size
+ENV UV_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev --extra analysis
+    uv sync --no-dev --extra analysis
 
 # =============================================================================
 # Stage 4: Production image
