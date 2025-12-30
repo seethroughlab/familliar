@@ -88,6 +88,11 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
     Returns:
         512-dimensional embedding as list of floats, or None on error
     """
+    # Skip CLAP if disabled (useful for systems where torch crashes)
+    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+        logger.debug("CLAP embeddings disabled via DISABLE_CLAP_EMBEDDINGS")
+        return None
+
     try:
         # Load audio file
         audio, sr = librosa.load(file_path, sr=target_sr, mono=True)

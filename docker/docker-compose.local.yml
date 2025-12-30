@@ -96,6 +96,7 @@ services:
       - ART_PATH=/data/art
       - VIDEOS_PATH=/data/videos
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DISABLE_CLAP_EMBEDDINGS=true
     depends_on:
       postgres:
         condition: service_healthy

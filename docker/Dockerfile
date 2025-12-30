@@ -44,9 +44,9 @@ COPY backend/pyproject.toml ./
 COPY backend/uv.lock ./
 COPY backend/README.md ./
 
-# Install dependencies (without dev extras for production)
+# Install dependencies (without dev extras for production, with analysis extras)
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+    uv sync --frozen --no-dev --extra analysis
 
 # =============================================================================
 # Stage 4: Production image

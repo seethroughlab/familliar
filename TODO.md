@@ -40,3 +40,5 @@
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
 [ ] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
+[ ] What's left in familliar-dev-plan.md? Can we move what's left to TODO.md and delete it?
+[ ] What would it take to get this to run on Synology NAS servers in addition to openmediavault? I think openmediavault is too niche and we need to support other platforms in order to make familliar more useful.
