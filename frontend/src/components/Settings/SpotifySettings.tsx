@@ -101,13 +101,15 @@ export function SpotifySettings() {
       spotify_client_id: clientId,
       spotify_client_secret: clientSecret,
     }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setSyncMessage('Spotify credentials saved!');
-      setShowSetup(false);
       setClientId('');
       setClientSecret('');
-      queryClient.invalidateQueries({ queryKey: ['spotify-status'] });
-      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+      // Wait for status to refetch before hiding setup form
+      // This ensures status.configured is updated before we check it
+      await queryClient.refetchQueries({ queryKey: ['spotify-status'] });
+      await queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+      setShowSetup(false);
     },
     onError: (error: Error) => {
       setSyncMessage(`Failed to save credentials: ${error.message}`);

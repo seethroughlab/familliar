@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Scanner progress reporting error (`ScanProgressReporter` attribute error)
+- Tracks not appearing after scan (transaction not committed before analysis tasks ran)
+- Torch import error when `DISABLE_CLAP_EMBEDDINGS=true` (now conditionally imported)
+- AcoustID fingerprint storage error (column too small for fingerprint data)
 
 ## [0.1.0] - 2025-12-30
 

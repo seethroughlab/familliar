@@ -22,13 +22,14 @@ export function LastfmSettings() {
       lastfm_api_key: apiKey,
       lastfm_api_secret: apiSecret,
     }),
-    onSuccess: () => {
+    onSuccess: async () => {
       setMessage('Last.fm credentials saved!');
-      setShowSetup(false);
       setApiKey('');
       setApiSecret('');
-      queryClient.invalidateQueries({ queryKey: ['lastfm-status'] });
-      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+      // Wait for status to refetch before hiding setup form
+      await queryClient.refetchQueries({ queryKey: ['lastfm-status'] });
+      await queryClient.invalidateQueries({ queryKey: ['app-settings'] });
+      setShowSetup(false);
     },
     onError: (error: Error) => {
       setMessage(`Failed to save credentials: ${error.message}`);

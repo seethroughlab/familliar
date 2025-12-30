@@ -4,11 +4,24 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import acoustid
 import librosa
 import numpy as np
-import torch
+
+# Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
+# This allows the module to be imported on systems without torch
+_torch_available = False
+if not os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+    try:
+        import torch
+        _torch_available = True
+    except ImportError:
+        pass
+
+if TYPE_CHECKING:
+    import torch  # For type hints only
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +52,8 @@ def get_device() -> str:
     Note: MPS (Apple Silicon) doesn't work well with forked processes
     (like Celery workers), so we use CPU for workers.
     """
-    import os
+    if not _torch_available:
+        return "cpu"
 
     # Check if we're in a forked process (Celery worker)
     # MPS doesn't work after fork, so use CPU
@@ -55,7 +69,7 @@ def get_device() -> str:
 
 
 @lru_cache(maxsize=1)
-def load_clap_model() -> tuple[torch.nn.Module, object]:
+def load_clap_model() -> tuple:  # Returns (model, processor)
     """Load the CLAP model (cached)."""
     global _clap_model, _clap_processor
 
@@ -88,6 +102,11 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
     Returns:
         512-dimensional embedding as list of floats, or None on error
     """
+    # Skip CLAP if torch isn't available or disabled
+    if not _torch_available:
+        logger.debug("CLAP embeddings disabled (torch not available)")
+        return None
+
     # Skip CLAP if disabled (useful for systems where torch crashes)
     if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
         logger.debug("CLAP embeddings disabled via DISABLE_CLAP_EMBEDDINGS")

@@ -77,3 +77,4 @@ logs/
 job-logs-*.txt
 docker/.env
 backend/.cache
+_*.md

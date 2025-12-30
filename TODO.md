@@ -36,9 +36,17 @@
 [x] Why does System Status say "Background Processing: 1 process(es) running 1 process(es) active" even though both a library scan AND audio analysis are running? This is confusing for the user. 
 [x] The visualizer should be available to fill the Library/Playlists/Settings view at any time, with the option to go fullscreen.
 [x] please read job-logs-*.txt and fix the CI issues.
+[x] What would it take to get this to run on Synology NAS servers in addition to openmediavault? I think openmediavault is too niche and we need to support other platforms in order to make familliar more useful.
+[x] When I enter my Anthropic API key and press Save, it hangs on "Saving..."
+[x] Library Status 'ScanProgressReporter' object has no attribute 'progress'
+[x] When I enter my Anthropic key and click Save, it says "Failed to save settings"
+[x] Please make a CHANGELOG with the changes in all of the tagged releases.
+[x] It says "No tracks found" even though I've done a scan
+[x] The filename "familliar-dev-plan.md" isn't really accurate anymore. Please separate it into as many plan files (start with "_", like "_SYNOLOGY.md) as appropriate, that contain detailed steps to complete the plan. Then delete familliar-dev-plan.md
+[x] When I enter my Spotify id and secret, it says that it was successfully saved, but it doesn't update to the "Connect to Spotify.." button - it stays on the client ID and client secret form.
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
 [ ] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
-[ ] What's left in familliar-dev-plan.md? Can we move what's left to TODO.md and delete it?
-[ ] What would it take to get this to run on Synology NAS servers in addition to openmediavault? I think openmediavault is too niche and we need to support other platforms in order to make familliar more useful.
+[ ] Are we done with _SYNOLOGY.md?
+[ ] Update the README.md with all of the features of familliar. As well as the install instructions for OMV and Synology (assume that the repo is public)

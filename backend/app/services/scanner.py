@@ -149,6 +149,9 @@ class LibraryScanner:
             "queued": 0,
         }
 
+        # Track IDs to queue for analysis after commit
+        pending_analysis_ids: list[str] = []
+
         # Process found files
         processed = 0
         for file_path in found_files:
@@ -178,7 +181,8 @@ class LibraryScanner:
             if path_str not in existing_paths:
                 # New file
                 logger.info(f"NEW: {file_path.name}")
-                await self._create_track(file_path, file_hash, file_mtime)
+                track = await self._create_track(file_path, file_hash, file_mtime)
+                pending_analysis_ids.append(str(track.id))
                 results["new"] += 1
                 results["queued"] += 1
             else:
@@ -186,15 +190,32 @@ class LibraryScanner:
                 if full_scan or existing.file_hash != file_hash:
                     # Changed file (or full scan requested)
                     logger.info(f"UPDATED: {file_path.name}")
-                    await self._update_track(existing, file_hash, file_mtime)
+                    track = await self._update_track(existing, file_hash, file_mtime)
+                    pending_analysis_ids.append(str(track.id))
                     results["updated"] += 1
                     results["queued"] += 1
                 else:
                     results["unchanged"] += 1
 
-            # Yield control periodically to keep server responsive
+            # Commit and queue analysis tasks periodically
+            # This ensures tracks are visible to analyze_track workers BEFORE they're queued
             if processed % 50 == 0:
+                await self.db.commit()
+                # Queue analysis tasks for committed tracks
+                if pending_analysis_ids:
+                    from app.workers.tasks import queue_track_analysis
+                    for track_id in pending_analysis_ids:
+                        queue_track_analysis(track_id)
+                    pending_analysis_ids = []
                 await asyncio.sleep(0)
+
+        # Commit and queue any remaining tracks from the last batch
+        if pending_analysis_ids:
+            await self.db.commit()
+            from app.workers.tasks import queue_track_analysis
+            for track_id in pending_analysis_ids:
+                queue_track_analysis(track_id)
+            pending_analysis_ids = []
 
         # Handle missing files - only check files that were under this library_path
         library_prefix = str(library_path)
@@ -306,10 +327,7 @@ class LibraryScanner:
         result = await self.db.execute(upsert_stmt)
         track = result.scalar_one()
 
-        # Queue analysis task (with deduplication)
-        from app.workers.tasks import queue_track_analysis
-        queue_track_analysis(str(track.id))
-
+        # Note: Analysis is queued by the caller after commit
         return track
 
     async def _update_track(
@@ -343,8 +361,5 @@ class LibraryScanner:
         track.analysis_version = 0
         track.analyzed_at = None
 
-        # Queue analysis task (with deduplication)
-        from app.workers.tasks import queue_track_analysis
-        queue_track_analysis(str(track.id))
-
+        # Note: Analysis is queued by the caller after commit
         return track

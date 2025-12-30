@@ -219,8 +219,8 @@ class TrackAnalysis(Base):
     # Vector embedding for similarity search (CLAP produces 512-dim embeddings)
     embedding: Mapped[Any | None] = mapped_column(Vector(512))
 
-    # Audio fingerprint for identification
-    acoustid: Mapped[str | None] = mapped_column(String(100))
+    # Audio fingerprint for identification (base64-encoded, can be very long)
+    acoustid: Mapped[str | None] = mapped_column(Text)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
