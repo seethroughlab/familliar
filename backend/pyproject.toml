@@ -48,10 +48,10 @@ dev = [
 ]
 
 # Phase 1.5: Audio analysis
+# Note: torch is installed separately in Docker with CPU-only version
 analysis = [
     "librosa>=0.10.0",
     "numpy>=1.24.0",
-    "torch>=2.0.0",
     "transformers>=4.30.0",  # For CLAP model
     "soundfile>=0.12.0",     # Audio file loading
 ]

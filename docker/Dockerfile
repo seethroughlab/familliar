@@ -45,7 +45,7 @@ COPY backend/uv.lock ./
 COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production, with analysis extras)
-# Install CPU-only PyTorch first to avoid downloading CUDA version (~5GB)
+# Install CPU-only PyTorch first (~200MB vs ~5GB for CUDA version)
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv && \
     uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
