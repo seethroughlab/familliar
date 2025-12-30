@@ -854,6 +854,9 @@ def sync_spotify(
                 # (Spotify API may return same track multiple times)
                 added_track_ids: set[str] = set()
 
+                # Collect matched local track IDs for batch ProfileFavorite processing
+                matched_local_track_ids: list[UUID] = []
+
                 # Process and match tracks
                 for i, item in enumerate(all_tracks):
                     spotify_track = item.get("track")
@@ -904,22 +907,15 @@ def sync_spotify(
 
                     if local_match:
                         stats["matched"] += 1
-                        # Auto-favorite matched tracks if requested
+                        # Collect matched track IDs for batch ProfileFavorite processing
                         if favorite_matched:
-                            existing_fav = await db.execute(
-                                select(ProfileFavorite).where(
-                                    ProfileFavorite.profile_id == profile_uuid,
-                                    ProfileFavorite.track_id == local_match.id,
-                                )
-                            )
-                            if not existing_fav.scalar_one_or_none():
-                                db.add(ProfileFavorite(
-                                    profile_id=profile_uuid,
-                                    track_id=local_match.id,
-                                ))
-                                stats["favorited"] += 1
+                            matched_local_track_ids.append(local_match.id)
                     else:
                         stats["unmatched"] += 1
+
+                    # Periodic flush to release locks (every 100 tracks)
+                    if i > 0 and i % 100 == 0:
+                        await db.flush()
 
                 # Optionally sync top tracks
                 if include_top_tracks:
@@ -949,24 +945,35 @@ def sync_spotify(
 
                             if local_match:
                                 stats["matched"] += 1
-                                # Auto-favorite matched tracks if requested
+                                # Collect matched track IDs for batch ProfileFavorite processing
                                 if favorite_matched:
-                                    existing_fav = await db.execute(
-                                        select(ProfileFavorite).where(
-                                            ProfileFavorite.profile_id == profile_uuid,
-                                            ProfileFavorite.track_id == local_match.id,
-                                        )
-                                    )
-                                    if not existing_fav.scalar_one_or_none():
-                                        db.add(ProfileFavorite(
-                                            profile_id=profile_uuid,
-                                            track_id=local_match.id,
-                                        ))
-                                        stats["favorited"] += 1
+                                    matched_local_track_ids.append(local_match.id)
                             else:
                                 stats["unmatched"] += 1
                     except Exception as e:
                         logger.warning(f"Failed to fetch top tracks: {e}")
+
+                # Batch process ProfileFavorites (one query instead of N queries)
+                if favorite_matched and matched_local_track_ids:
+                    # Single query to find existing favorites
+                    existing_result = await db.execute(
+                        select(ProfileFavorite.track_id).where(
+                            ProfileFavorite.profile_id == profile_uuid,
+                            ProfileFavorite.track_id.in_(matched_local_track_ids),
+                        )
+                    )
+                    existing_favs = {row[0] for row in existing_result.fetchall()}
+
+                    # Bulk insert only new favorites
+                    new_favs = [
+                        ProfileFavorite(profile_id=profile_uuid, track_id=tid)
+                        for tid in matched_local_track_ids
+                        if tid not in existing_favs
+                    ]
+                    if new_favs:
+                        db.add_all(new_favs)
+                        stats["favorited"] = len(new_favs)
+                    logger.info(f"Batch favorited {len(new_favs)} tracks (skipped {len(existing_favs)} existing)")
 
                 # Update last sync time
                 profile_result = await db.execute(

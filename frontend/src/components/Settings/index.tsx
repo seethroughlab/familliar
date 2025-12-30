@@ -5,7 +5,6 @@ import { LibraryOrganizer } from './LibraryOrganizer';
 import { LibraryScan } from './LibraryScan';
 import { ThemeSettings } from './ThemeSettings';
 import { PlaybackSettings } from './PlaybackSettings';
-import { LLMSettings } from './LLMSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
 import { MusicImport } from './MusicImport';
@@ -63,15 +62,6 @@ export function SettingsPanel() {
           </h3>
           <div className="space-y-4">
             <PlaybackSettings />
-          </div>
-        </section>
-
-        <section>
-          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
-            AI Assistant
-          </h3>
-          <div className="space-y-4">
-            <LLMSettings />
           </div>
         </section>
 

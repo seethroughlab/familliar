@@ -11,6 +11,10 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     future=True,
+    pool_size=20,           # Up from default 5
+    max_overflow=20,        # Up from default 10 (40 total)
+    pool_pre_ping=True,     # Detect stale connections
+    pool_recycle=1800,      # Recycle after 30 mins
 )
 
 # Async session factory (for FastAPI)
@@ -32,6 +36,10 @@ sync_engine = create_engine(
     sync_database_url,
     echo=settings.debug,
     future=True,
+    pool_size=20,           # Up from default 5
+    max_overflow=20,        # Up from default 10 (40 total)
+    pool_pre_ping=True,     # Detect stale connections
+    pool_recycle=1800,      # Recycle after 30 mins
 )
 
 # Sync session factory (for Celery workers)

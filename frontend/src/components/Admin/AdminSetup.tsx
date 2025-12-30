@@ -18,6 +18,9 @@ import {
   XCircle,
   ArrowLeft,
   Loader2,
+  Server,
+  Bot,
+  RefreshCw,
 } from 'lucide-react';
 
 interface SettingsData {
@@ -55,6 +58,12 @@ export function AdminSetup() {
   const [showLastfmSecret, setShowLastfmSecret] = useState(false);
   const [showAcoustidKey, setShowAcoustidKey] = useState(false);
 
+  // LLM provider settings
+  const [llmProvider, setLlmProvider] = useState('claude');
+  const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
+  const [ollamaModel, setOllamaModel] = useState('llama3.2');
+  const [ollamaStatus, setOllamaStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -66,6 +75,10 @@ export function AdminSetup() {
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
+        // Load LLM provider settings
+        setLlmProvider(data.llm_provider || 'claude');
+        setOllamaUrl(data.ollama_url || 'http://localhost:11434');
+        setOllamaModel(data.ollama_model || 'llama3.2');
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -74,12 +87,25 @@ export function AdminSetup() {
     }
   }
 
+  async function checkOllamaConnection() {
+    try {
+      const response = await fetch(`${ollamaUrl}/api/tags`);
+      if (response.ok) {
+        setOllamaStatus('connected');
+      } else {
+        setOllamaStatus('error');
+      }
+    } catch {
+      setOllamaStatus('error');
+    }
+  }
+
   async function handleSave() {
     setSaving(true);
     setStatus(null);
 
     try {
-      // Only include non-empty values in the update
+      // Only include non-empty values in the update for API keys
       const updates: Record<string, string> = {};
       if (anthropicKey) updates.anthropic_api_key = anthropicKey;
       if (spotifyClientId) updates.spotify_client_id = spotifyClientId;
@@ -88,11 +114,10 @@ export function AdminSetup() {
       if (lastfmApiSecret) updates.lastfm_api_secret = lastfmApiSecret;
       if (acoustidApiKey) updates.acoustid_api_key = acoustidApiKey;
 
-      if (Object.keys(updates).length === 0) {
-        setStatus({ type: 'error', message: 'No changes to save' });
-        setSaving(false);
-        return;
-      }
+      // Always include LLM provider settings
+      updates.llm_provider = llmProvider;
+      updates.ollama_url = ollamaUrl;
+      updates.ollama_model = ollamaModel;
 
       const response = await fetch('/api/v1/settings', {
         method: 'PUT',
@@ -219,6 +244,107 @@ export function AdminSetup() {
                 console.anthropic.com
               </a>
             </p>
+          </section>
+
+          {/* AI Provider Settings */}
+          <section className="bg-zinc-900 rounded-xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-purple-500/20">
+                <Bot className="w-5 h-5 text-purple-400" />
+              </div>
+              <div className="flex-1">
+                <h2 className="font-medium text-white">AI Provider</h2>
+                <p className="text-sm text-zinc-500">Choose which AI model powers the assistant</p>
+              </div>
+            </div>
+
+            {/* Provider Selection */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setLlmProvider('claude')}
+                className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${
+                  llmProvider === 'claude'
+                    ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                    : 'border-zinc-700 hover:border-zinc-500 text-zinc-400'
+                }`}
+              >
+                <Cloud className="w-4 h-4" />
+                <span>Claude</span>
+              </button>
+              <button
+                onClick={() => setLlmProvider('ollama')}
+                className={`flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border transition-colors ${
+                  llmProvider === 'ollama'
+                    ? 'border-purple-500 bg-purple-500/10 text-purple-400'
+                    : 'border-zinc-700 hover:border-zinc-500 text-zinc-400'
+                }`}
+              >
+                <Server className="w-4 h-4" />
+                <span>Ollama</span>
+              </button>
+            </div>
+
+            {/* Claude info */}
+            {llmProvider === 'claude' && (
+              <div>
+                {anthropicConfigured ? (
+                  <div className="flex items-center gap-2 p-3 bg-green-900/20 border border-green-800 rounded-lg">
+                    <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    <span className="text-sm text-green-400">Claude API configured and ready</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-3 bg-amber-900/20 border border-amber-800 rounded-lg">
+                    <div className="w-2 h-2 bg-amber-500 rounded-full" />
+                    <span className="text-sm text-amber-400">Add your Anthropic API key above to use Claude</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Ollama Settings */}
+            {llmProvider === 'ollama' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">Ollama URL</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={ollamaUrl}
+                      onChange={(e) => setOllamaUrl(e.target.value)}
+                      placeholder="http://localhost:11434"
+                      className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                    <button
+                      onClick={checkOllamaConnection}
+                      className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors"
+                      title="Test connection"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </div>
+                  {ollamaStatus === 'connected' && (
+                    <p className="text-xs text-green-400 mt-1">Connected to Ollama</p>
+                  )}
+                  {ollamaStatus === 'error' && (
+                    <p className="text-xs text-red-400 mt-1">Cannot connect to Ollama</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm text-zinc-400 mb-2">Model</label>
+                  <input
+                    type="text"
+                    value={ollamaModel}
+                    onChange={(e) => setOllamaModel(e.target.value)}
+                    placeholder="llama3.2"
+                    className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Use a model with tool/function calling support (e.g., llama3.2, mistral)
+                  </p>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Spotify API */}
