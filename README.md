@@ -266,13 +266,155 @@ docker exec familiar-redis redis-cli ping
 
 ### Synology NAS Installation
 
-Similar to OMV, but use Container Manager:
+Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (older DSM).
 
-1. Download the compose file to your Synology
-2. In Container Manager → Project → Create
-3. Set the path and upload the compose file
-4. Adjust volume paths for Synology format (`/volume1/music`, etc.)
-5. Start the project
+#### Supported Models
+
+**ARM64 models** (most common):
+- DS218, DS220+, DS220j
+- DS418, DS420+, DS420j
+- DS720+, DS920+, DS923+
+- RS820+, RS1221+
+
+**x86 models** (Intel/AMD):
+- DS920+, DS1621+, DS1821+
+- DS3622xs+, RS3621xs+
+- Any model with Intel Celeron, Atom, or Xeon
+
+#### Step-by-Step Guide
+
+1. **Install Container Manager:**
+   - Open Package Center
+   - Search for "Container Manager" (DSM 7.2+) or "Docker" (older DSM)
+   - Install and open it
+
+2. **Create folders for Familiar:**
+   ```
+   /volume1/docker/familiar/          # App data
+   /volume1/docker/familiar/postgres  # Database
+   /volume1/docker/familiar/redis     # Cache
+   /volume1/docker/familiar/art       # Album artwork
+   /volume1/docker/familiar/videos    # Music videos
+   ```
+
+3. **Create a Project in Container Manager:**
+   - Go to Project → Create
+   - **Project name:** `familiar`
+   - **Path:** `/volume1/docker/familiar`
+   - **Source:** Create docker-compose.yml
+
+4. **Paste this docker-compose.yml:**
+   ```yaml
+   services:
+     postgres:
+       image: pgvector/pgvector:pg16
+       container_name: familiar-postgres
+       restart: unless-stopped
+       environment:
+         POSTGRES_USER: familiar
+         POSTGRES_PASSWORD: familiar
+         POSTGRES_DB: familiar
+       volumes:
+         - /volume1/docker/familiar/postgres:/var/lib/postgresql/data
+       healthcheck:
+         test: ["CMD-SHELL", "pg_isready -U familiar"]
+         interval: 10s
+         timeout: 5s
+         retries: 5
+
+     redis:
+       image: redis:7-alpine
+       container_name: familiar-redis
+       restart: unless-stopped
+       volumes:
+         - /volume1/docker/familiar/redis:/data
+       healthcheck:
+         test: ["CMD", "redis-cli", "ping"]
+         interval: 10s
+         timeout: 5s
+         retries: 5
+
+     api:
+       image: ghcr.io/seethroughlab/familliar:latest
+       container_name: familiar-api
+       restart: unless-stopped
+       ports:
+         - "4400:8000"
+       volumes:
+         - /volume1/music:/data/music:ro
+         - /volume1/docker/familiar/art:/data/art
+         - /volume1/docker/familiar/videos:/data/videos
+       environment:
+         - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
+         - REDIS_URL=redis://redis:6379/0
+         - MUSIC_LIBRARY_PATH=/data/music
+         # Optional: Add your API keys
+         # - ANTHROPIC_API_KEY=your-key
+         # - SPOTIFY_CLIENT_ID=your-id
+         # - SPOTIFY_CLIENT_SECRET=your-secret
+       depends_on:
+         postgres:
+           condition: service_healthy
+         redis:
+           condition: service_healthy
+
+     worker:
+       image: ghcr.io/seethroughlab/familliar:latest
+       container_name: familiar-worker
+       restart: unless-stopped
+       command: celery -A app.workers.celery_app worker --loglevel=info
+       volumes:
+         - /volume1/music:/data/music:ro
+         - /volume1/docker/familiar/art:/data/art
+         - /volume1/docker/familiar/videos:/data/videos
+       environment:
+         - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
+         - REDIS_URL=redis://redis:6379/0
+         - MUSIC_LIBRARY_PATH=/data/music
+         # Disable CLAP embeddings on ARM if needed
+         # - DISABLE_CLAP_EMBEDDINGS=true
+       depends_on:
+         postgres:
+           condition: service_healthy
+         redis:
+           condition: service_healthy
+   ```
+
+   **Note:** Adjust `/volume1/music` to match your music library location.
+
+5. **Build and start:**
+   - Click "Build" to pull images and start containers
+   - Wait for all containers to show as "Running"
+
+6. **Access Familiar:**
+   - Open `http://your-synology-ip:4400`
+   - Go to Settings to add API keys and start a library scan
+
+#### Updating on Synology
+
+1. Go to Container Manager → Project → familiar
+2. Click "Action" → "Build" (this pulls latest images)
+3. Containers will restart automatically
+
+#### Troubleshooting Synology
+
+**ARM64 audio analysis issues:**
+
+If audio analysis fails on ARM-based Synology, disable CLAP embeddings:
+```yaml
+environment:
+  - DISABLE_CLAP_EMBEDDINGS=true
+```
+
+**Permission denied errors:**
+
+Synology uses specific user/group IDs. If you see permission errors:
+1. SSH into your Synology
+2. Run: `sudo chown -R 1000:1000 /volume1/docker/familiar`
+
+**Container won't start:**
+
+Check logs in Container Manager → Container → familiar-api → Log
 
 ### Development Setup
 
