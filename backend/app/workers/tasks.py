@@ -744,7 +744,9 @@ class SpotifySyncProgressReporter:
 
 
 @celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
-def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict[str, Any]:
+def sync_spotify(
+    self, profile_id: str, include_top_tracks: bool = True, favorite_matched: bool = False
+) -> dict[str, Any]:
     """Sync Spotify favorites for a profile.
 
     This task runs in a Celery worker process, so it won't block the API.
@@ -753,6 +755,7 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
     Args:
         profile_id: UUID of the device profile
         include_top_tracks: If True, also sync top tracks
+        favorite_matched: If True, auto-favorite matched tracks in local library
 
     Returns:
         Dict with sync results
@@ -765,7 +768,7 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.config import settings
-    from app.db.models import SpotifyFavorite, SpotifyProfile
+    from app.db.models import ProfileFavorite, SpotifyFavorite, SpotifyProfile
     from app.services.spotify import SpotifyService
 
     progress = SpotifySyncProgressReporter(profile_id)
@@ -780,6 +783,7 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
             "unmatched": 0,
             "top_tracks_fetched": 0,
             "top_tracks_new": 0,
+            "favorited": 0,  # Tracks auto-favorited in local library
         }
 
         # Create a fresh async engine for this event loop
@@ -900,6 +904,20 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
 
                     if local_match:
                         stats["matched"] += 1
+                        # Auto-favorite matched tracks if requested
+                        if favorite_matched:
+                            existing_fav = await db.execute(
+                                select(ProfileFavorite).where(
+                                    ProfileFavorite.profile_id == profile_uuid,
+                                    ProfileFavorite.track_id == local_match.id,
+                                )
+                            )
+                            if not existing_fav.scalar_one_or_none():
+                                db.add(ProfileFavorite(
+                                    profile_id=profile_uuid,
+                                    track_id=local_match.id,
+                                ))
+                                stats["favorited"] += 1
                     else:
                         stats["unmatched"] += 1
 
@@ -931,6 +949,20 @@ def sync_spotify(self, profile_id: str, include_top_tracks: bool = True) -> dict
 
                             if local_match:
                                 stats["matched"] += 1
+                                # Auto-favorite matched tracks if requested
+                                if favorite_matched:
+                                    existing_fav = await db.execute(
+                                        select(ProfileFavorite).where(
+                                            ProfileFavorite.profile_id == profile_uuid,
+                                            ProfileFavorite.track_id == local_match.id,
+                                        )
+                                    )
+                                    if not existing_fav.scalar_one_or_none():
+                                        db.add(ProfileFavorite(
+                                            profile_id=profile_uuid,
+                                            track_id=local_match.id,
+                                        ))
+                                        stats["favorited"] += 1
                             else:
                                 stats["unmatched"] += 1
                     except Exception as e:

@@ -4,6 +4,7 @@ import {
   debouncedSavePlayerState,
   loadPlayerState,
   fetchTracksByIds,
+  migrateOldPlayerState,
 } from '../services/playerPersistence';
 
 type RepeatMode = 'off' | 'all' | 'one';
@@ -59,6 +60,7 @@ interface PlayerState {
 
   // Hydration
   hydrate: () => Promise<void>;
+  resetForProfileSwitch: () => void;
 }
 
 let queueIdCounter = 0;
@@ -251,6 +253,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   // Hydrate state from IndexedDB
   hydrate: async () => {
     try {
+      // Migrate old player state from fixed ID to profile-based
+      await migrateOldPlayerState();
+
       const persisted = await loadPlayerState();
       if (!persisted) {
         set({ isHydrated: true });
@@ -288,5 +293,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       console.error('Failed to hydrate player state:', error);
       set({ isHydrated: true });
     }
+  },
+
+  // Reset player state for profile switch (call before hydrate)
+  resetForProfileSwitch: () => {
+    set({
+      currentTrack: null,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      volume: 1,
+      shuffle: false,
+      repeat: 'off',
+      queue: [],
+      queueIndex: -1,
+      history: [],
+      crossfadeState: 'idle',
+      nextTrackPreloaded: false,
+      isHydrated: false,
+    });
   },
 }));

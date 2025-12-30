@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Bot, Cloud, Server, RefreshCw } from 'lucide-react';
+import { Bot, Cloud, Server, RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface LLMSettingsData {
   llm_provider: string;
   ollama_url: string;
   ollama_model: string;
-  anthropic_api_key: string | null;
+  anthropic_configured: boolean;
 }
 
 export function LLMSettings() {
@@ -13,7 +13,7 @@ export function LLMSettings() {
     llm_provider: 'claude',
     ollama_url: 'http://localhost:11434',
     ollama_model: 'llama3.2',
-    anthropic_api_key: null,
+    anthropic_configured: false,
   });
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export function LLMSettings() {
           llm_provider: data.llm_provider || 'claude',
           ollama_url: data.ollama_url || 'http://localhost:11434',
           ollama_model: data.ollama_model || 'llama3.2',
-          anthropic_api_key: data.anthropic_api_key || null,
+          anthropic_configured: Boolean(data.anthropic_api_key),
         });
       })
       .catch(console.error);
@@ -59,7 +59,6 @@ export function LLMSettings() {
           llm_provider: settings.llm_provider,
           ollama_url: settings.ollama_url,
           ollama_model: settings.ollama_model,
-          anthropic_api_key: settings.anthropic_api_key,
         }),
       });
 
@@ -116,20 +115,26 @@ export function LLMSettings() {
         {/* Claude Settings */}
         {settings.llm_provider === 'claude' && (
           <div>
-            <label className="block text-sm text-zinc-400 mb-2">Anthropic API Key</label>
-            <input
-              type="password"
-              value={settings.anthropic_api_key || ''}
-              onChange={(e) => setSettings((s) => ({ ...s, anthropic_api_key: e.target.value || null }))}
-              placeholder={settings.anthropic_api_key ? '••••••••••••••••' : 'sk-ant-...'}
-              className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-            <p className="text-xs text-zinc-500 mt-1">
-              Get your API key from{' '}
-              <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:underline">
-                console.anthropic.com
-              </a>
-            </p>
+            {settings.anthropic_configured ? (
+              <div className="flex items-center gap-2 p-3 bg-green-900/20 border border-green-800 rounded-lg">
+                <div className="w-2 h-2 bg-green-500 rounded-full" />
+                <span className="text-sm text-green-400">Claude API configured</span>
+              </div>
+            ) : (
+              <div className="flex items-start gap-2 p-3 bg-amber-900/20 border border-amber-800 rounded-lg">
+                <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm text-amber-400">Anthropic API key not configured</p>
+                  <p className="text-xs text-zinc-500 mt-1">
+                    Configure API keys via the{' '}
+                    <a href="/admin" className="text-purple-400 hover:underline">
+                      admin setup
+                    </a>
+                    {' '}or environment variables.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

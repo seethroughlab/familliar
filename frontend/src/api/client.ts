@@ -160,9 +160,9 @@ export const spotifyApi = {
     return data;
   },
 
-  sync: async (includeTopTracks = true): Promise<SpotifySyncResponse> => {
+  sync: async (includeTopTracks = true, favoriteMatched = false): Promise<SpotifySyncResponse> => {
     const { data } = await api.post('/spotify/sync', null, {
-      params: { include_top_tracks: includeTopTracks },
+      params: { include_top_tracks: includeTopTracks, favorite_matched: favoriteMatched },
       timeout: 300000, // 5 minute timeout for large libraries
     });
     return data;

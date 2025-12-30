@@ -188,6 +188,7 @@ async def spotify_callback(
 async def start_spotify_sync(
     profile: CurrentProfile,
     include_top_tracks: bool = Query(True),
+    favorite_matched: bool = Query(False, description="Auto-favorite matched tracks in local library"),
 ) -> SpotifySyncStatus:
     """Start Spotify sync using Celery worker.
 
@@ -212,7 +213,11 @@ async def start_spotify_sync(
         )
 
     # Dispatch to Celery worker
-    sync_spotify.delay(profile_id=str(profile.id), include_top_tracks=include_top_tracks)
+    sync_spotify.delay(
+        profile_id=str(profile.id),
+        include_top_tracks=include_top_tracks,
+        favorite_matched=favorite_matched,
+    )
 
     return SpotifySyncStatus(
         status="started",

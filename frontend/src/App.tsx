@@ -16,6 +16,7 @@ import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
+import { AdminSetup } from './components/Admin';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -309,8 +310,11 @@ function App() {
     );
   }
 
-  // Show profile selector if no profile selected
-  if (profile === null) {
+  // Check if we're on /admin route - allow access without profile for initial setup
+  const isAdminRoute = window.location.pathname === '/admin';
+
+  // Show profile selector if no profile selected (unless on admin route)
+  if (profile === null && !isAdminRoute) {
     return (
       <ProfileSelector
         onProfileSelected={(p) => {
@@ -324,6 +328,7 @@ function App() {
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <Routes>
+          <Route path="/admin" element={<AdminSetup />} />
           <Route path="/guest" element={<GuestListener />} />
           <Route path="*" element={<AppContent />} />
         </Routes>

@@ -44,9 +44,15 @@
 [x] It says "No tracks found" even though I've done a scan
 [x] The filename "familliar-dev-plan.md" isn't really accurate anymore. Please separate it into as many plan files (start with "_", like "_SYNOLOGY.md) as appropriate, that contain detailed steps to complete the plan. Then delete familliar-dev-plan.md
 [x] When I enter my Spotify id and secret, it says that it was successfully saved, but it doesn't update to the "Connect to Spotify.." button - it stays on the client ID and client secret form.
+[x] Are we done with _SYNOLOGY.md? If so, please delete it. 
+[x] Update the README.md with all of the features of familliar. As well as the install instructions for OMV and Synology (assume that the repo is public)
+[x] Why did you decide to make it a 0.2.0 instead of 0.1.1? In my mind, we're still doing hotfixes.
+[x] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
+[x] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
-[ ] How does the ollama integration work? Does it have to run on the client side? It should run on the server side. 
+[x] When syncing from Spotify, there should be an option to "favorite" matching tracks. But before we do that, how are we currently matching between Spotify and local tracks?
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
-[ ] Do an audit of what is stored in indexeddb and what is postgres (client vs server) and make sure it all makes sense considering the switch to profiles. 
-[ ] Are we done with _SYNOLOGY.md?
-[ ] Update the README.md with all of the features of familliar. As well as the install instructions for OMV and Synology (assume that the repo is public)
+[ ] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
+
+[ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 
+[ ] The README should mention that is "somewhat" optimized for NAS usage, because I think it is... Do you see many people using this on a personal computer?

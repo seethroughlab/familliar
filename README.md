@@ -4,18 +4,68 @@
 [![Release](https://github.com/seethroughlab/familliar/actions/workflows/release.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-An LLM-powered local music player that combines library management with AI-powered discovery.
+An LLM-powered local music player that combines library management with AI-powered discovery. Your music, your server, your data.
 
 ## Features
 
-- **Local Library Management** - Scan and organize your music collection
-- **AI-Powered Chat** - Ask Claude about your music, get recommendations
-- **Spotify Integration** - Sync favorites, match to local tracks
-- **Last.fm Scrobbling** - Track your listening history
-- **Smart Playlists** - Dynamic playlists based on rules and audio analysis
-- **Listening Sessions** - Listen together with friends via WebRTC
-- **PWA Support** - Offline playback, background sync
-- **Music Videos** - Download and sync music videos from YouTube
+### AI-Powered Music Chat
+Talk to your music library using Claude. Ask questions like:
+- "Play something upbeat for a workout"
+- "What albums do I have from the 90s?"
+- "Find tracks similar to this one"
+- "Create a playlist for a dinner party"
+
+The AI understands your library's metadata, audio features (BPM, key, energy), and can create intelligent playlists on the fly.
+
+### Local Library Management
+- **Fast scanning** - Scans thousands of tracks quickly with metadata extraction
+- **Audio analysis** - Automatic BPM, key detection, and audio feature extraction via librosa
+- **CLAP embeddings** - Semantic audio search powered by LAION's CLAP model (optional)
+- **AcoustID fingerprinting** - Identify unknown tracks
+- **Multiple library paths** - Scan from multiple directories
+- **Format support** - MP3, FLAC, AAC, OGG, WAV, AIFF, and more
+
+### Spotify Integration
+- Sync your Spotify favorites to your local library
+- Automatic matching of Spotify tracks to local files
+- See which favorites you're missing locally
+- One-click sync to keep everything up to date
+
+### Last.fm Scrobbling
+- Automatic scrobbling as you listen
+- Love/unlove tracks
+- View your listening history
+
+### Smart Playlists
+Create dynamic playlists with rules:
+- Filter by artist, album, genre, year
+- Audio features: BPM range, key, energy level
+- Recently added, most played, favorites
+- Combine multiple rules with AND/OR logic
+
+### Listening Sessions (WebRTC)
+Listen together with friends in real-time:
+- Host a session and share the link
+- Guests hear synchronized audio
+- Works across the internet (with TURN server)
+- No account required for guests
+
+### Progressive Web App (PWA)
+- Install on desktop or mobile
+- Offline playback with cached tracks
+- Background sync when connection returns
+- Lock screen controls and media notifications
+- Works over Tailscale HTTPS
+
+### Music Videos
+- Download music videos from YouTube
+- Automatic matching to library tracks
+- Toggle between audio and video playback
+
+### Multi-Profile Support
+- Multiple user profiles for household use
+- Each profile has its own favorites and history
+- Simple profile switching (no passwords)
 
 ## Quick Start (Docker)
 

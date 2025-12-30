@@ -60,6 +60,7 @@ export interface OfflineTrack {
 
 export interface PendingAction {
   id?: number; // Auto-increment
+  profileId: string; // Profile that queued this action
   type: 'scrobble' | 'now_playing' | 'sync_spotify';
   payload: unknown;
   createdAt: Date;
@@ -68,7 +69,7 @@ export interface PendingAction {
 
 // Player state persistence
 export interface PersistedPlayerState {
-  id: 'player-state'; // Single record with fixed ID
+  id: string; // Profile ID (was fixed 'player-state', now per-profile)
   volume: number;
   shuffle: boolean;
   repeat: 'off' | 'all' | 'one';
@@ -116,6 +117,16 @@ export class FamiliarDB extends Dexie {
       offlineTracks: 'id, cachedAt',
       pendingActions: '++id, type, createdAt',
       playerState: 'id',
+    });
+
+    // Version 5: Add profile context to pendingActions and playerState
+    this.version(5).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      pendingActions: '++id, profileId, type, createdAt',
+      playerState: 'id', // id is now profileId
     });
   }
 }

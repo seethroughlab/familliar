@@ -5,12 +5,7 @@ All notable changes to Familiar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.0] - 2025-12-30
-
-### Added
-- **ARM64 support** for Synology NAS and other ARM-based systems
-- Comprehensive Synology NAS installation guide in README
-- Multi-architecture Docker builds (amd64 + arm64)
+## [0.1.1] - 2025-12-30
 
 ### Fixed
 - Scanner progress reporting error (`ScanProgressReporter` attribute error)
@@ -41,5 +36,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CPU-only PyTorch for smaller Docker images (~200MB vs ~5GB)
 - `DISABLE_CLAP_EMBEDDINGS` environment variable for systems where torch is problematic
 
-[0.2.0]: https://github.com/seethroughlab/familliar/releases/tag/v0.2.0
+[0.1.1]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.1
 [0.1.0]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.0

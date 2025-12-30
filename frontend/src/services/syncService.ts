@@ -2,17 +2,26 @@
  * Sync service for queuing actions when offline and syncing when back online.
  */
 import { db, type PendingAction } from '../db';
+import { getSelectedProfileId } from './profileService';
 
 type ActionType = 'scrobble' | 'now_playing' | 'sync_spotify';
 
 /**
  * Queue an action to be performed when online.
+ * Captures the current profile ID so actions go to the correct profile.
  */
 export async function queueAction(
   type: ActionType,
   payload: unknown
 ): Promise<void> {
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    console.warn('Cannot queue action without a selected profile');
+    return;
+  }
+
   const action: PendingAction = {
+    profileId,
     type,
     payload,
     createdAt: new Date(),
@@ -78,13 +87,13 @@ export async function processPendingActions(): Promise<{
 async function executeAction(action: PendingAction): Promise<void> {
   switch (action.type) {
     case 'scrobble':
-      await executeScrobble(action.payload as ScrobblePayload);
+      await executeScrobble(action.profileId, action.payload as ScrobblePayload);
       break;
     case 'now_playing':
-      await executeNowPlaying(action.payload as NowPlayingPayload);
+      await executeNowPlaying(action.profileId, action.payload as NowPlayingPayload);
       break;
     case 'sync_spotify':
-      await executeSyncSpotify();
+      await executeSyncSpotify(action.profileId);
       break;
     default:
       console.warn(`Unknown action type: ${action.type}`);
@@ -100,10 +109,13 @@ interface NowPlayingPayload {
   trackId: string;
 }
 
-async function executeScrobble(payload: ScrobblePayload): Promise<void> {
+async function executeScrobble(profileId: string, payload: ScrobblePayload): Promise<void> {
   const response = await fetch('/api/v1/lastfm/scrobble', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Profile-ID': profileId,
+    },
     body: JSON.stringify({
       track_id: payload.trackId,
       timestamp: payload.timestamp,
@@ -115,10 +127,13 @@ async function executeScrobble(payload: ScrobblePayload): Promise<void> {
   }
 }
 
-async function executeNowPlaying(payload: NowPlayingPayload): Promise<void> {
+async function executeNowPlaying(profileId: string, payload: NowPlayingPayload): Promise<void> {
   const response = await fetch('/api/v1/lastfm/now-playing', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Profile-ID': profileId,
+    },
     body: JSON.stringify({ track_id: payload.trackId }),
   });
 
@@ -127,9 +142,12 @@ async function executeNowPlaying(payload: NowPlayingPayload): Promise<void> {
   }
 }
 
-async function executeSyncSpotify(): Promise<void> {
+async function executeSyncSpotify(profileId: string): Promise<void> {
   const response = await fetch('/api/v1/spotify/sync', {
     method: 'POST',
+    headers: {
+      'X-Profile-ID': profileId,
+    },
   });
 
   if (!response.ok) {

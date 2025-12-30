@@ -1,14 +1,13 @@
 /**
  * Player state persistence service.
- * Saves and loads player state from IndexedDB.
+ * Saves and loads player state from IndexedDB per profile.
  */
 import { db, type PersistedPlayerState } from '../db';
+import { getSelectedProfileId } from './profileService';
 import type { Track, QueueItem } from '../types';
 
-const PLAYER_STATE_ID = 'player-state' as const;
-
 /**
- * Save player state to IndexedDB.
+ * Save player state to IndexedDB for the current profile.
  */
 export async function savePlayerState(state: {
   volume: number;
@@ -18,8 +17,13 @@ export async function savePlayerState(state: {
   queueIndex: number;
   currentTrack: Track | null;
 }): Promise<void> {
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    return; // No profile selected, don't save
+  }
+
   const persistedState: PersistedPlayerState = {
-    id: PLAYER_STATE_ID,
+    id: profileId, // Use profile ID as record key
     volume: state.volume,
     shuffle: state.shuffle,
     repeat: state.repeat,
@@ -33,10 +37,23 @@ export async function savePlayerState(state: {
 }
 
 /**
- * Load player state from IndexedDB.
+ * Load player state from IndexedDB for the current profile.
  */
 export async function loadPlayerState(): Promise<PersistedPlayerState | null> {
-  const state = await db.playerState.get(PLAYER_STATE_ID);
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    return null;
+  }
+
+  const state = await db.playerState.get(profileId);
+  return state || null;
+}
+
+/**
+ * Load player state for a specific profile (used when switching profiles).
+ */
+export async function loadPlayerStateForProfile(profileId: string): Promise<PersistedPlayerState | null> {
+  const state = await db.playerState.get(profileId);
   return state || null;
 }
 
@@ -69,10 +86,40 @@ export async function fetchTracksByIds(trackIds: string[]): Promise<Track[]> {
 }
 
 /**
- * Clear persisted player state.
+ * Clear persisted player state for the current profile.
  */
 export async function clearPlayerState(): Promise<void> {
-  await db.playerState.delete(PLAYER_STATE_ID);
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    return;
+  }
+  await db.playerState.delete(profileId);
+}
+
+/**
+ * Migrate old player state from fixed ID to current profile.
+ * Call this once on app startup to handle upgrade from v4 to v5.
+ */
+export async function migrateOldPlayerState(): Promise<void> {
+  const profileId = await getSelectedProfileId();
+  if (!profileId) {
+    return;
+  }
+
+  // Check if old fixed-ID state exists
+  const oldState = await db.playerState.get('player-state');
+  if (oldState) {
+    // Migrate to current profile if they don't already have state
+    const existingState = await db.playerState.get(profileId);
+    if (!existingState) {
+      await db.playerState.put({
+        ...oldState,
+        id: profileId,
+      });
+    }
+    // Delete old state
+    await db.playerState.delete('player-state');
+  }
 }
 
 /**
