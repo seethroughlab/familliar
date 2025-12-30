@@ -236,10 +236,6 @@ class LibraryScanner:
             await self.db.delete(track)
             results["deleted"] += 1
 
-        # Final progress update
-        if self.scan_state:
-            self.scan_state.progress.deleted_tracks = results["deleted"]
-
         await self.db.commit()
 
         logger.info(f"Scan complete: {results['new']} new, {results['updated']} updated, {results['relocated']} relocated, {results['deleted']} deleted, {results['unchanged']} unchanged")
