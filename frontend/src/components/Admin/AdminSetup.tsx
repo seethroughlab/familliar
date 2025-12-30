@@ -21,6 +21,7 @@ import {
   Server,
   Bot,
   RefreshCw,
+  Copy,
 } from 'lucide-react';
 
 interface SettingsData {
@@ -402,8 +403,23 @@ export function AdminSetup() {
               >
                 developer.spotify.com
               </a>
-              . Set redirect URI to <code className="text-zinc-400">{window.location.origin}/settings</code>
             </p>
+            <div className="mt-3 p-3 bg-zinc-800 rounded-lg">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs text-zinc-400 mb-1">Redirect URI (copy this to Spotify Dashboard):</p>
+                  <code className="text-sm text-green-400 break-all">{window.location.origin}/api/v1/spotify/callback</code>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/api/v1/spotify/callback`)}
+                  className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors flex-shrink-0"
+                  title="Copy to clipboard"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </section>
 
           {/* Last.fm API */}

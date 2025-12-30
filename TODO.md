@@ -52,8 +52,8 @@
 [ ] The chat window should alert the user if there is no Anthropic API ket and OLLAMA isn't accessable -- just saying "Something went wrong" is bad UX.
 [x] When syncing from Spotify, there should be an option to "favorite" matching tracks. But before we do that, how are we currently matching between Spotify and local tracks?
 [x] The AI Assistant configuration is still visible in the Settings panel. It should be part of the admin interface.
+[x] The admin interface should display the callback URL for Spotify (and anywhere else appropriate) so that the user knows what to put into https://developer.spotify.com/dashboard/
+[x] The README should mention that is "somewhat" optimized for NAS usage (but phrased better than that), because I think it is... Do you see many people using this on a personal computer?
 [ ] "Missing from Library" songs should also appear in AI-generated playlists when relevant
 [ ] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
 [ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 
-[ ] The README should mention that is "somewhat" optimized for NAS usage (but phrased better than that), because I think it is... Do you see many people using this on a personal computer?
-[ ] The admin interface should display the callback URL for Spotify (and anywhere else appropriate) so that the user knows what to put into https://developer.spotify.com/dashboard/

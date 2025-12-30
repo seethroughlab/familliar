@@ -6,6 +6,8 @@
 
 An LLM-powered local music player that combines library management with AI-powered discovery. Your music, your server, your data.
 
+**Designed for home servers and NAS devices.** Familiar runs as a web service, making your music library accessible from any device on your network. The multi-profile support means everyone in your household gets their own favorites and listening history. While it can run on a personal computer, it really shines on always-on hardware like a Synology, QNAP, Unraid, or Raspberry Pi.
+
 ## Features
 
 ### AI-Powered Music Chat
