@@ -15,10 +15,14 @@ if TYPE_CHECKING:
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    """Get an async database session."""
+    """Get an async database session with proper transaction handling."""
     async with async_session_maker() as session:
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()
 

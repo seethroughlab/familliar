@@ -56,9 +56,10 @@
 [x] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
 [x] Let's examine the UX around what appears in the LLM chat window if neither Anthropic nor Ollama are configured. Just saying "Something went wrong" is bad UX.
 [x] Processing audio is stuck at "0 / 23,318 (0%)". This type of unexplained error with no error message seems to happen all of the time. Is this a fundamental error in the architicture? What can we do to globally prevent this type of problem?
+[x] Please rename _RELEASE_CHECKLIST.md release-checklists/v0.1.1-checklist.md. This file should ONLY include tasks that MUST be done by a human. There are 3 types of tasks (1) fully automatic CI tests that can run on Github, (2) Automated tests that can be run and evaluated locally by Claude Code (3) Tests that require human execution and judgement. release-checklists/v0.1.1-checklist.md should reflect these categories and provide instructions on how to complete all of the tasks in the 3 categories. 
+[x] Please move all of the "_*.md" files to a "plans" subdirectory. They are future plans for major features. 
+[x] PLAN: I want to make a new plan file about the visualizer. I want it to be an API that anyone can contribute to. The API should provide all of the metadata, including ID3 tags, lyrics, album art, YouTube videos, BPM, key, and any other data that Familliar currently has about a particular song. The existing visualizers should be structured in such a way that they provide a model for future contributors. But (1) what does the API look like, and (2) how should people contribute?
 [ ] "Missing from Library" songs should also appear in playlists when relevant
-
-
 
 ## For future releases
 [ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 
