@@ -76,6 +76,11 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
+      - name: Initialize database
+        env:
+          DATABASE_URL: postgresql+asyncpg://familiar:familiar@localhost:5432/familiar
+        run: uv run python -m app.db.init_db
+
       - name: Run tests
         env:
           DATABASE_URL: postgresql+asyncpg://familiar:familiar@localhost:5432/familiar

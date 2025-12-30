@@ -1272,7 +1272,7 @@ def check_new_releases(
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.services.musicbrainz import get_artist_releases_recent, search_artist
-    from app.services.new_releases import NewReleasesService, normalize_artist_name
+    from app.services.new_releases import NewReleasesService
     from app.services.spotify import SpotifyArtistService
 
     progress = NewReleasesProgressReporter(profile_id)

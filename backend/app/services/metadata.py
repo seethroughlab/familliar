@@ -5,12 +5,12 @@ from pathlib import Path
 from typing import Any
 
 import mutagen
-
-logger = logging.getLogger(__name__)
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
 from mutagen.oggvorbis import OggVorbis
+
+logger = logging.getLogger(__name__)
 
 
 def extract_metadata(file_path: Path) -> dict[str, Any]:

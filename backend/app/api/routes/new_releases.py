@@ -1,6 +1,6 @@
 """API routes for new releases discovery."""
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query
@@ -12,9 +12,6 @@ from app.workers.tasks import (
     clear_new_releases_progress,
     get_new_releases_progress,
 )
-
-if TYPE_CHECKING:
-    from app.db.models import Profile
 
 router = APIRouter(prefix="/new-releases", tags=["new-releases"])
 

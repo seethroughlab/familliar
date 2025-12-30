@@ -13,7 +13,7 @@ import numpy as np
 # Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
 # This allows the module to be imported on systems without torch
 _torch_available = False
-if not os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() not in ("1", "true", "yes"):
     try:
         import torch
         _torch_available = True
