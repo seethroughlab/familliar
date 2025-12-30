@@ -326,11 +326,21 @@ async def get_worker_status(db: DbSession) -> WorkerStatus:
 
             active_task_list = []
             for task in worker_tasks:
+                # Convert time_start from float timestamp to ISO string
+                time_start = task.get("time_start")
+                started_at = None
+                if time_start:
+                    from datetime import datetime
+                    try:
+                        started_at = datetime.fromtimestamp(float(time_start)).isoformat()
+                    except (ValueError, TypeError):
+                        pass
+
                 active_task_list.append(WorkerTask(
                     id=task.get("id", ""),
                     name=task.get("name", "").split(".")[-1],  # Short name
                     args=task.get("args", [])[:2],  # Limit args shown
-                    started_at=task.get("time_start"),
+                    started_at=started_at,
                 ))
 
             workers.append(WorkerInfo(
