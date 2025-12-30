@@ -298,3 +298,107 @@ async def get_recent_imports(limit: int = 10) -> list[RecentImport]:
     import_service = ImportService()
     imports = import_service.get_recent_imports(limit)
     return [RecentImport(**i) for i in imports]
+
+
+class AnalysisStatus(BaseModel):
+    """Analysis status response."""
+
+    status: str  # "idle", "running", "stuck", "error"
+    total: int = 0
+    analyzed: int = 0
+    pending: int = 0
+    failed: int = 0
+    percent: float = 0.0
+    current_file: str | None = None
+    error: str | None = None
+    heartbeat: str | None = None
+
+
+@router.get("/analysis/status", response_model=AnalysisStatus)
+async def get_analysis_status(db: DbSession) -> AnalysisStatus:
+    """Get current audio analysis status with stuck detection.
+
+    Returns analysis progress and detects if the worker has stalled.
+    """
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import or_
+
+    from app.config import ANALYSIS_VERSION
+
+    # Get counts from database
+    total = await db.scalar(select(func.count(Track.id))) or 0
+    analyzed = await db.scalar(
+        select(func.count(Track.id)).where(Track.analysis_version >= ANALYSIS_VERSION)
+    ) or 0
+    failed = await db.scalar(
+        select(func.count(Track.id)).where(Track.analysis_failed_at.isnot(None))
+    ) or 0
+
+    # Pending = not analyzed and not recently failed
+    failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+    pending = await db.scalar(
+        select(func.count(Track.id)).where(
+            Track.analysis_version < ANALYSIS_VERSION,
+            or_(
+                Track.analysis_failed_at.is_(None),
+                Track.analysis_failed_at < failure_cutoff,
+            ),
+        )
+    ) or 0
+
+    percent = (analyzed / total * 100) if total > 0 else 100.0
+
+    # Check scan progress for running analysis (scan includes analysis queueing)
+    progress = get_scan_progress()
+
+    if progress and progress.get("status") == "running":
+        # Check for stale heartbeat
+        last_heartbeat = progress.get("last_heartbeat")
+        if last_heartbeat:
+            try:
+                heartbeat_time = datetime.fromisoformat(last_heartbeat)
+                if datetime.now() - heartbeat_time > timedelta(minutes=5):
+                    return AnalysisStatus(
+                        status="stuck",
+                        total=total,
+                        analyzed=analyzed,
+                        pending=pending,
+                        failed=failed,
+                        percent=round(percent, 1),
+                        error="No progress for 5+ minutes - worker may have crashed",
+                        heartbeat=last_heartbeat,
+                    )
+            except (ValueError, TypeError):
+                pass
+
+        return AnalysisStatus(
+            status="running",
+            total=total,
+            analyzed=analyzed,
+            pending=pending,
+            failed=failed,
+            percent=round(percent, 1),
+            current_file=progress.get("current_file"),
+            heartbeat=progress.get("last_heartbeat"),
+        )
+
+    # No active scan - check if there's pending work
+    if pending > 0:
+        return AnalysisStatus(
+            status="idle",
+            total=total,
+            analyzed=analyzed,
+            pending=pending,
+            failed=failed,
+            percent=round(percent, 1),
+        )
+
+    return AnalysisStatus(
+        status="complete",
+        total=total,
+        analyzed=analyzed,
+        pending=0,
+        failed=failed,
+        percent=100.0,
+    )

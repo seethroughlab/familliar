@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle, AlertCircle, Loader2, Music, Activity } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, AlertTriangle, Loader2, Music, Activity } from 'lucide-react';
 import { libraryApi, healthApi, type ScanStatus, type WorkerStatus } from '../../api/client';
 
 export function LibraryScan() {
@@ -119,6 +119,9 @@ export function LibraryScan() {
     if (scanStatus?.status === 'error') {
       return <AlertCircle className="w-5 h-5 text-red-400" />;
     }
+    if (scanStatus?.status === 'interrupted') {
+      return <AlertTriangle className="w-5 h-5 text-amber-400" />;
+    }
 
     // Then check analysis status
     if (hasAnalysisPending) {
@@ -140,6 +143,14 @@ export function LibraryScan() {
 
     if (scanStatus?.status === 'running') {
       return scanStatus.message || 'Scanning...';
+    }
+
+    if (scanStatus?.status === 'error') {
+      return scanStatus.message || 'An error occurred';
+    }
+
+    if (scanStatus?.status === 'interrupted') {
+      return 'Scan was interrupted';
     }
 
     if (hasAnalysisPending && analysisProgress) {
@@ -326,6 +337,60 @@ export function LibraryScan() {
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-red-400 font-medium">{progress.deleted_tracks}</div>
             <div className="text-zinc-500">Deleted</div>
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {scanStatus?.status === 'error' && (
+        <div className="mt-4 p-4 bg-red-900/20 border border-red-800 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-red-400">Processing failed</p>
+              <p className="text-sm text-zinc-400 mt-1">
+                {scanStatus.message || 'An unknown error occurred'}
+              </p>
+              {progress?.errors && progress.errors.length > 0 && (
+                <details className="mt-2">
+                  <summary className="text-sm text-zinc-500 cursor-pointer hover:text-zinc-400">
+                    {progress.errors.length} error(s)
+                  </summary>
+                  <ul className="mt-2 text-xs text-zinc-500 space-y-1 max-h-32 overflow-y-auto">
+                    {progress.errors.map((err, i) => (
+                      <li key={i} className="truncate">{err}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <button
+                onClick={() => startScan(false)}
+                className="mt-3 px-3 py-1.5 bg-red-600 hover:bg-red-500 rounded text-sm"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stuck/Interrupted state */}
+      {scanStatus?.status === 'interrupted' && (
+        <div className="mt-4 p-4 bg-amber-900/20 border border-amber-800 rounded-lg">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium text-amber-400">Processing appears stuck</p>
+              <p className="text-sm text-zinc-400 mt-1">
+                No progress for 5+ minutes. The worker may have crashed or lost connection.
+              </p>
+              <button
+                onClick={() => startScan(false)}
+                className="mt-3 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 rounded text-sm"
+              >
+                Restart
+              </button>
+            </div>
           </div>
         </div>
       )}

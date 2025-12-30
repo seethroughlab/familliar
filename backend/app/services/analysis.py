@@ -26,6 +26,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class AnalysisError(Exception):
+    """Raised when audio analysis fails."""
+    pass
+
+
 def get_acoustid_api_key() -> str:
     """Get AcoustID API key from environment or app settings."""
     # First check environment variable
@@ -146,7 +151,7 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
 
     except Exception as e:
         logger.error(f"Error extracting embedding from {file_path}: {e}")
-        return None
+        raise AnalysisError(f"Embedding extraction failed: {e}") from e
 
 
 def extract_features(file_path: Path) -> dict[str, float | str | None]:
@@ -235,6 +240,7 @@ def extract_features(file_path: Path) -> dict[str, float | str | None]:
 
     except Exception as e:
         logger.error(f"Error extracting features from {file_path}: {e}")
+        raise AnalysisError(f"Feature extraction failed: {e}") from e
 
     return features
 

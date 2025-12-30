@@ -185,6 +185,8 @@ class Track(Base):
     # Analysis status
     analysis_version: Mapped[int] = mapped_column(Integer, default=0)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    analysis_error: Mapped[str | None] = mapped_column(String(500))
+    analysis_failed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     # Timestamps
     file_modified_at: Mapped[datetime | None] = mapped_column(DateTime)

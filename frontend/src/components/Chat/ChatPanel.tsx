@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, Music, Wrench, Plus, History } from 'lucide-react';
+import { Send, Loader2, Music, Wrench, Plus, History, AlertTriangle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore } from '../../stores/playerStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
@@ -21,6 +21,7 @@ export function ChatPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [showSessions, setShowSessions] = useState(false);
+  const [llmStatus, setLlmStatus] = useState<{ configured: boolean; provider: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -44,6 +45,14 @@ export function ChatPanel() {
       }
     };
     init();
+  }, []);
+
+  // Check LLM configuration status on mount
+  useEffect(() => {
+    fetch('/api/v1/chat/status')
+      .then((r) => r.json())
+      .then(setLlmStatus)
+      .catch(() => setLlmStatus({ configured: false, provider: 'unknown' }));
   }, []);
 
   const scrollToBottom = () => {
@@ -151,7 +160,10 @@ export function ChatPanel() {
       });
 
       if (!response.ok) {
-        throw new Error('Chat request failed');
+        // Try to get error detail from response
+        const errorData = await response.json().catch(() => null);
+        const errorMessage = errorData?.detail || 'Chat request failed';
+        throw new Error(errorMessage);
       }
 
       const reader = response.body?.getReader();
@@ -184,8 +196,20 @@ export function ChatPanel() {
       }
     } catch (error) {
       console.error('Chat error:', error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Sorry, something went wrong. Please try again.';
       await chatService.updateLastMessage(session.id, {
-        content: 'Sorry, something went wrong. Please try again.',
+        content: errorMessage,
+      });
+      // Update local state to show the error immediately
+      setCurrentSession((prev) => {
+        if (!prev) return null;
+        const messages = [...prev.messages];
+        const lastIdx = messages.length - 1;
+        messages[lastIdx] = { ...messages[lastIdx], content: errorMessage };
+        return { ...prev, messages };
       });
     } finally {
       setIsLoading(false);
@@ -374,6 +398,19 @@ export function ChatPanel() {
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* LLM configuration warning */}
+          {llmStatus && !llmStatus.configured && (
+            <div className="p-3 bg-amber-900/20 border border-amber-800 rounded-lg flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-amber-400">AI assistant not configured</p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Configure your API key in the Admin panel to enable the chat.
+                </p>
+              </div>
+            </div>
+          )}
+
           {messages.length === 0 && (
             <div className="text-center py-12 text-zinc-500">
               <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />

@@ -1,9 +1,12 @@
 """Metadata extraction service using mutagen."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import mutagen
+
+logger = logging.getLogger(__name__)
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
@@ -68,7 +71,7 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
 
     except Exception as e:
         # Log error but return partial metadata
-        print(f"Error extracting metadata from {file_path}: {e}")
+        logger.warning(f"Error extracting metadata from {file_path}: {e}")
 
     return metadata
 
@@ -159,7 +162,7 @@ def _extract_flac_tags(file_path: Path) -> dict[str, Any]:
             tags["sample_rate"] = audio.info.sample_rate
 
     except Exception as e:
-        print(f"Error reading FLAC tags: {e}")
+        logger.warning(f"Error reading FLAC tags: {e}")
 
     return tags
 
@@ -198,7 +201,7 @@ def _extract_mp4_tags(file_path: Path) -> dict[str, Any]:
             tags["year"] = _parse_year(date_str)
 
     except Exception as e:
-        print(f"Error reading MP4 tags: {e}")
+        logger.warning(f"Error reading MP4 tags: {e}")
 
     return tags
 
@@ -211,7 +214,7 @@ def _extract_ogg_tags(file_path: Path) -> dict[str, Any]:
         audio = OggVorbis(file_path)  # type: ignore[no-untyped-call]
         return _extract_easy_tags(audio)
     except Exception as e:
-        print(f"Error reading OGG tags: {e}")
+        logger.warning(f"Error reading OGG tags: {e}")
 
     return tags
 

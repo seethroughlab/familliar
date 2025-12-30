@@ -54,9 +54,11 @@
 [x] The admin interface should display the callback URL for Spotify (and anywhere else appropriate) so that the user knows what to put into https://developer.spotify.com/dashboard/
 [x] The README should mention that is "somewhat" optimized for NAS usage (but phrased better than that), because I think it is... Do you see many people using this on a personal computer?
 [x] PLAN: We should add a "New Releases" section to playlists. Let's think about how we can make that happen.
+[x] Let's examine the UX around what appears in the LLM chat window if neither Anthropic nor Ollama are configured. Just saying "Something went wrong" is bad UX.
+[x] Processing audio is stuck at "0 / 23,318 (0%)". This type of unexplained error with no error message seems to happen all of the time. Is this a fundamental error in the architicture? What can we do to globally prevent this type of problem?
 [ ] "Missing from Library" songs should also appear in playlists when relevant
-[ ] Processing audio is stuck at "0 / 23,318 (0%)"
-[ ] Let's examine the UX around what appears in the LLM chat window if neither Anthropic nor Ollama are configured. Just saying "Something went wrong" is bad UX.
+
+
 
 ## For future releases
 [ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 

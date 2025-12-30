@@ -18,6 +18,28 @@ from app.services.llm import LLMService
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
+@router.get("/status")
+async def get_chat_status() -> dict[str, Any]:
+    """Check if LLM is configured and available.
+
+    Returns configuration status so the frontend can show
+    appropriate warnings before the user tries to chat.
+    """
+    app_settings = get_app_settings_service().get()
+    provider = app_settings.llm_provider
+
+    if provider == "claude":
+        configured = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
+    else:
+        # For Ollama, assume configured (would need to ping to verify)
+        configured = True
+
+    return {
+        "configured": configured,
+        "provider": provider,
+    }
+
+
 class ChatMessage(BaseModel):
     """A single chat message."""
     role: str  # "user" or "assistant"
@@ -78,7 +100,7 @@ async def chat_stream(
     if not has_api_key:
         raise HTTPException(
             status_code=503,
-            detail="Anthropic API key not configured. Add it in Settings > AI Assistant."
+            detail="Anthropic API key not configured. Add it in the Admin panel."
         )
 
     # Convert history to format expected by LLM service
@@ -119,7 +141,7 @@ async def chat(
     if not has_api_key:
         raise HTTPException(
             status_code=503,
-            detail="Anthropic API key not configured. Add it in Settings > AI Assistant."
+            detail="Anthropic API key not configured. Add it in the Admin panel."
         )
 
     llm_service = LLMService()  # type: ignore[no-untyped-call]

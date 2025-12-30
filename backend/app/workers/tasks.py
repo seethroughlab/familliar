@@ -159,6 +159,7 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
 
             # Import analysis functions (lazy import to avoid loading models on worker start)
             from app.services.analysis import (
+                AnalysisError,
                 extract_embedding,
                 extract_features,
                 generate_fingerprint,
@@ -234,6 +235,8 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
             # Update track analysis status
             track.analysis_version = ANALYSIS_VERSION
             track.analyzed_at = datetime.utcnow()
+            track.analysis_error = None  # Clear any previous error
+            track.analysis_failed_at = None
 
             db.commit()
 
@@ -261,10 +264,32 @@ def analyze_track(self, track_id: str) -> dict[str, Any]:
         # These are auto-retried by Celery, just re-raise
         raise
     except Exception as e:
-        error_msg = str(e)
+        # Import here to check type (AnalysisError is imported lazily above)
+        from app.services.analysis import AnalysisError
+
+        error_msg = str(e)[:500]  # Truncate to fit DB column
         logger.error(f"Error analyzing track {track_id}: {error_msg}")
         _record_task_failure("analyze_track", error_msg, track_info)
-        # Don't retry on unknown errors - they're likely permanent
+
+        # Record failure in database for visibility
+        try:
+            with sync_session_maker() as db:
+                result = db.execute(
+                    select(Track).where(Track.id == UUID(track_id))
+                )
+                track = result.scalar_one_or_none()
+                if track:
+                    track.analysis_error = error_msg
+                    track.analysis_failed_at = datetime.utcnow()
+                    db.commit()
+        except Exception as db_error:
+            logger.warning(f"Could not record analysis failure to DB: {db_error}")
+
+        # AnalysisError is permanent (file issue), don't retry
+        if isinstance(e, AnalysisError):
+            return {"error": error_msg, "status": "failed", "permanent": True}
+
+        # Unknown errors - also permanent (safer than infinite retries)
         return {"error": error_msg, "status": "failed", "permanent": True}
     finally:
         # Remove from pending set (deduplication tracking)
@@ -316,17 +341,29 @@ def analyze_unanalyzed_tracks(limit: int = 1000) -> dict[str, Any]:
     Returns:
         Dict with queuing results
     """
-    from sqlalchemy import or_
+    from datetime import timedelta
+
+    from sqlalchemy import and_, or_
 
     with sync_session_maker() as db:
+        # Skip tracks that failed recently (within 24 hours)
+        failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+
         # Find tracks with no analysis or outdated analysis
         result = db.execute(
             select(Track.id)
             .where(
-                or_(
-                    Track.analysis_version == 0,
-                    Track.analysis_version < ANALYSIS_VERSION,
-                    Track.analyzed_at.is_(None),
+                and_(
+                    or_(
+                        Track.analysis_version == 0,
+                        Track.analysis_version < ANALYSIS_VERSION,
+                        Track.analyzed_at.is_(None),
+                    ),
+                    # Skip recently failed tracks
+                    or_(
+                        Track.analysis_failed_at.is_(None),
+                        Track.analysis_failed_at < failure_cutoff,
+                    ),
                 )
             )
             .limit(limit)
