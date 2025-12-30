@@ -101,3 +101,7 @@ ignore_errors = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.uv]
+# Use CPU-only PyTorch to reduce Docker image size (no CUDA)
+extra-index-url = ["https://download.pytorch.org/whl/cpu"]
