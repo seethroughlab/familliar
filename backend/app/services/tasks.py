@@ -335,7 +335,13 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
 
     from app.db.models import Track, TrackAnalysis
     from app.db.session import sync_session_maker
-    from app.services.analysis import AnalysisError, extract_embedding, extract_features, generate_fingerprint, identify_track
+    from app.services.analysis import (
+        AnalysisError,
+        extract_embedding,
+        extract_features,
+        generate_fingerprint,
+        identify_track,
+    )
     from app.services.artwork import extract_and_save_artwork
 
     track_info = None
@@ -684,10 +690,10 @@ async def run_spotify_sync(
     from datetime import datetime as dt
 
     from spotipy.exceptions import SpotifyException
-    from sqlalchemy import delete, func, select
+    from sqlalchemy import delete, select
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-    from app.db.models import ProfileFavorite, SpotifyFavorite, SpotifyProfile, Track
+    from app.db.models import ProfileFavorite, SpotifyFavorite, SpotifyProfile
     from app.services.spotify import SpotifyService
 
     progress = SpotifySyncProgressReporter(profile_id)
@@ -1023,7 +1029,6 @@ async def run_new_releases_check(
     force: bool = False,
 ) -> dict[str, Any]:
     """Check for new releases from artists in the library."""
-    import time
 
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

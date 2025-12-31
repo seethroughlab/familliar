@@ -268,7 +268,7 @@ async def get_worker_status(db: DbSession) -> WorkerStatus:
     """Get detailed status of background processing and task queues."""
     from datetime import datetime
 
-    from app.config import ANALYSIS_VERSION, settings
+    from app.config import ANALYSIS_VERSION
     from app.services.background import get_background_manager
     from app.services.tasks import get_recent_failures
 

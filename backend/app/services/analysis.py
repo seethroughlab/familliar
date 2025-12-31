@@ -9,8 +9,6 @@ from typing import TYPE_CHECKING
 import acoustid
 
 # Use billiard (Celery's fork of multiprocessing) which allows daemon processes to spawn children
-import billiard
-import billiard.exceptions
 import librosa
 import numpy as np
 from billiard.pool import Pool as BilliardPool

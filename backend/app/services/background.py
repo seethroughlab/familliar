@@ -10,10 +10,9 @@ import asyncio
 import json
 import logging
 import multiprocessing as mp
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime
-from typing import Any, Callable
-from uuid import UUID
+from typing import Any
 
 import redis
 
