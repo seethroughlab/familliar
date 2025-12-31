@@ -57,7 +57,7 @@ def get_recent_failures(limit: int = 10) -> list[dict[str, Any]]:
     """Get recent task failures from Redis."""
     try:
         r = get_redis()
-        failures = r.lrange(TASK_FAILURES_KEY, 0, limit - 1)
+        failures: list[bytes] = r.lrange(TASK_FAILURES_KEY, 0, limit - 1)  # type: ignore[assignment]
         return [json.loads(f) for f in failures]
     except Exception:
         return []
@@ -171,7 +171,7 @@ class ScanProgressReporter:
 
     def _get_current(self) -> dict[str, Any]:
         """Get current progress from Redis."""
-        data = self.redis.get(SCAN_PROGRESS_KEY)
+        data: bytes | None = self.redis.get(SCAN_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
         return {}
@@ -223,7 +223,7 @@ def get_scan_progress() -> dict[str, Any] | None:
     """Get current scan progress from Redis."""
     try:
         r = get_redis()
-        data = r.get(SCAN_PROGRESS_KEY)
+        data: bytes | None = r.get(SCAN_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
     except Exception as e:
@@ -371,7 +371,7 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
             )
 
             # Extract audio features with librosa
-            features = extract_features(file_path)
+            features: dict[str, Any] = extract_features(file_path)
 
             # Generate CLAP embedding for similarity search
             embedding = extract_embedding(file_path)
@@ -581,7 +581,7 @@ class SpotifySyncProgressReporter:
 
     def _get_current(self) -> dict[str, Any]:
         """Get current progress from Redis."""
-        data = self.redis.get(SPOTIFY_SYNC_PROGRESS_KEY)
+        data: bytes | None = self.redis.get(SPOTIFY_SYNC_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
         return {}
@@ -664,7 +664,7 @@ def get_spotify_sync_progress() -> dict[str, Any] | None:
     """Get current Spotify sync progress from Redis."""
     try:
         r = get_redis()
-        data = r.get(SPOTIFY_SYNC_PROGRESS_KEY)
+        data: bytes | None = r.get(SPOTIFY_SYNC_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
     except Exception as e:
@@ -949,7 +949,7 @@ class NewReleasesProgressReporter:
         self.redis.set(NEW_RELEASES_PROGRESS_KEY, json.dumps(data), ex=3600)
 
     def _get_current(self) -> dict[str, Any]:
-        data = self.redis.get(NEW_RELEASES_PROGRESS_KEY)
+        data: bytes | None = self.redis.get(NEW_RELEASES_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
         return {}
@@ -1006,7 +1006,7 @@ def get_new_releases_progress() -> dict[str, Any] | None:
     """Get current new releases check progress from Redis."""
     try:
         r = get_redis()
-        data = r.get(NEW_RELEASES_PROGRESS_KEY)
+        data: bytes | None = r.get(NEW_RELEASES_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
     except Exception as e:

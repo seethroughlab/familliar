@@ -138,7 +138,7 @@ export function LibraryManagement() {
         setError(data.detail || 'Failed to start scan');
         setScanning(false);
       }
-    } catch (err) {
+    } catch {
       setError('Failed to start scan');
       setScanning(false);
     }

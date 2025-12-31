@@ -126,7 +126,7 @@ class BackgroundManager:
 
         # Also check Redis for stale progress
         try:
-            data = self.redis.get("familiar:scan:progress")
+            data: bytes | None = self.redis.get("familiar:scan:progress")  # type: ignore[assignment]
             if data:
                 progress = json.loads(data)
                 return progress.get("status") == "running"
