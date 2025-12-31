@@ -1,15 +1,19 @@
 """Familiar API - Main FastAPI application."""
 
 import logging
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.routes import (
     bandcamp,
@@ -38,6 +42,39 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%H:%M:%S",
 )
+
+logger = logging.getLogger(__name__)
+
+
+# Request ID middleware for tracing
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """Add unique request ID to each request for tracing."""
+
+    async def dispatch(self, request: Request, call_next):
+        request_id = str(uuid.uuid4())[:8]
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
+def create_error_response(
+    status_code: int,
+    message: str,
+    detail: str | None = None,
+    request_id: str | None = None,
+) -> JSONResponse:
+    """Create a consistent error response."""
+    content = {
+        "error": True,
+        "status_code": status_code,
+        "message": message,
+    }
+    if detail:
+        content["detail"] = detail
+    if request_id:
+        content["request_id"] = request_id
+    return JSONResponse(status_code=status_code, content=content)
 
 
 def migrate_env_to_settings() -> None:
@@ -82,6 +119,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Request ID middleware (must be added first to wrap everything)
+app.add_middleware(RequestIDMiddleware)
+
 # CORS middleware for frontend
 app.add_middleware(
     CORSMiddleware,
@@ -90,6 +130,54 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handlers
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Handle Pydantic validation errors."""
+    request_id = getattr(request.state, "request_id", None)
+    errors = exc.errors()
+    detail = "; ".join(
+        f"{'.'.join(str(loc) for loc in e['loc'])}: {e['msg']}" for e in errors
+    )
+    logger.warning(f"[{request_id}] Validation error: {detail}")
+    return create_error_response(
+        status_code=422,
+        message="Validation error",
+        detail=detail,
+        request_id=request_id,
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+async def sqlalchemy_exception_handler(
+    request: Request, exc: SQLAlchemyError
+) -> JSONResponse:
+    """Handle database errors."""
+    request_id = getattr(request.state, "request_id", None)
+    logger.error(f"[{request_id}] Database error: {exc}", exc_info=True)
+    return create_error_response(
+        status_code=500,
+        message="Database error",
+        detail=str(exc) if app_config.debug else None,
+        request_id=request_id,
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all handler for unhandled exceptions."""
+    request_id = getattr(request.state, "request_id", None)
+    logger.error(f"[{request_id}] Unhandled error: {exc}", exc_info=True)
+    return create_error_response(
+        status_code=500,
+        message="Internal server error",
+        detail=str(exc) if app_config.debug else None,
+        request_id=request_id,
+    )
 
 # Include routers
 app.include_router(health.router, prefix="/api/v1")

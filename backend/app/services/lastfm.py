@@ -30,10 +30,10 @@ class LastfmService:
         self.client = httpx.AsyncClient(timeout=10.0)
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
-        """Get Last.fm credentials from app settings or env fallback."""
-        app_settings = get_app_settings_service().get()
-        api_key = app_settings.lastfm_api_key or settings.lastfm_api_key
-        api_secret = app_settings.lastfm_api_secret or settings.lastfm_api_secret
+        """Get Last.fm credentials with proper precedence."""
+        settings_service = get_app_settings_service()
+        api_key = settings_service.get_effective("lastfm_api_key")
+        api_secret = settings_service.get_effective("lastfm_api_secret")
         return api_key, api_secret
 
     def is_configured(self) -> bool:

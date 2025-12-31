@@ -2,9 +2,11 @@
 
 import json
 import logging
+import time
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 import redis
@@ -17,6 +19,58 @@ from app.services.artwork import extract_and_save_artwork
 from app.workers.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+
+def log_task(func: Callable) -> Callable:
+    """Decorator that adds structured logging to Celery tasks.
+
+    Logs task start, completion, duration, and any errors with task ID.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        task_id = self.request.id[:8] if self.request.id else "no-id"
+        task_name = func.__name__
+        start_time = time.time()
+
+        # Build context string from args/kwargs
+        context_parts = []
+        if args:
+            context_parts.append(f"args={args[:2]}")  # Limit to first 2 args
+        if kwargs:
+            context_parts.append(f"kwargs={list(kwargs.keys())}")
+        context = ", ".join(context_parts) or "no args"
+
+        logger.info(f"[{task_id}] START {task_name} ({context})")
+
+        try:
+            result = func(self, *args, **kwargs)
+            duration = time.time() - start_time
+
+            # Log success with result summary
+            if isinstance(result, dict):
+                status = result.get("status", "ok")
+                if result.get("error"):
+                    logger.error(
+                        f"[{task_id}] FAILED {task_name} after {duration:.2f}s: {result.get('error')}"
+                    )
+                else:
+                    logger.info(
+                        f"[{task_id}] DONE {task_name} in {duration:.2f}s (status={status})"
+                    )
+            else:
+                logger.info(f"[{task_id}] DONE {task_name} in {duration:.2f}s")
+
+            return result
+
+        except Exception as e:
+            duration = time.time() - start_time
+            logger.error(
+                f"[{task_id}] ERROR {task_name} after {duration:.2f}s: {type(e).__name__}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    return wrapper
 
 # Redis client for progress reporting
 _redis_client: redis.Redis | None = None
@@ -104,6 +158,7 @@ def get_recent_failures(limit: int = 10) -> list[dict[str, Any]]:
     retry_backoff_max=300,
     retry_jitter=True,
 )  # type: ignore[misc]
+@log_task
 def analyze_track(self, track_id: str) -> dict[str, Any]:
     """Analyze a track and save results.
 
@@ -552,6 +607,7 @@ def check_worker_availability() -> tuple[bool, list[str]]:
 
 
 @celery_app.task(bind=True)  # type: ignore[misc]
+@log_task
 def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
     """Scan the music library for new/changed/deleted files.
 
@@ -823,6 +879,7 @@ class SpotifySyncProgressReporter:
 
 
 @celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
+@log_task
 def sync_spotify(
     self, profile_id: str, include_top_tracks: bool = True, favorite_matched: bool = False
 ) -> dict[str, Any]:
@@ -1289,6 +1346,7 @@ class NewReleasesProgressReporter:
 
 
 @celery_app.task(bind=True, max_retries=3)  # type: ignore[misc]
+@log_task
 def check_new_releases(
     self,
     profile_id: str | None = None,

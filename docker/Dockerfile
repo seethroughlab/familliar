@@ -69,6 +69,10 @@ COPY --from=python-deps /app/.venv /app/.venv
 # Copy backend application code
 COPY backend/app ./app
 
+# Copy Alembic configuration
+COPY backend/alembic.ini ./
+COPY backend/alembic ./alembic
+
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./static
 

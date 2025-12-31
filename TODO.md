@@ -65,11 +65,21 @@
 [x] Are Music Library Paths currently global or per-profile? If they are global, the interface for adding them should be in the admin settings.
 [x] Before the restart, the alysis was stuck again - this time at 0.7%, and there are errors: 'active' is not among the defined enum values. Enum name: trackstatus. Possible values: ACTIVE, MISSING, PENDING_DEL..
 [x] we add a way to remove API keys in the admin view  - currently you can only replace.
-[ ] We need to clean up my openmediavault. There seem to be a few installs - at /root/familliar, at /opt/familliar, and then some other folders that were accidentally created because of some incorrect paths, like /Volumes/silo/music and /data/music.  Also, nothing on my openmediavault should reference "/Volumes/silo/music" (like /opt/familliar/docker/.env) -- that is ONLY relevant to my local Mac. Please check with me before deleting anything, but it seems we've made quite a mess of my openmediavault in this development effort.
-[ ] It's been very painful debugging on openmediavault. Would it be easier to debug these last few issues building the docker container on my local Mac? Or is it better to work on the Linux machine (openmediavault)?
-[ ] This is turning into a disaster. Things are breaking left and right and we seem to be getting further away from a release instead of closer. I don't know if we've just made some bad architectural decisions or tried to develop too many features at once. Please evaluate the current state of the codebase and give me an honest opinion on whether we'd be better off trying to fix what is broken or starting from scratch and learning from what we've done.
-[ ] The settings view needs an overhaul -- we need to group like things together and explain what sections are. 
-[ ] I had deleted my Anthropic key in the settings panel and the chat window didn't show an error. I thought we had added this.
+[x] This is turning into a disaster. Things are breaking left and right and we seem to be getting further away from a release instead of closer. Perhaps we just made some bad architectural decisions or tried to develop too many features at once. Please evaluate the current state of the codebase and give me an honest opinion on whether we'd be better off trying to fix what is broken or starting from scratch and learning from what we've done. Given what we know after building out the app thus far, are there any major architectural changes you would recommend that would be possible in a complete rewrite that would make it more stable and less susceptible to the problems that have been plaguing this version?
+[x] I had deleted my Anthropic key in the settings panel and the chat window didn't show an error. I thought we had added this.
+[x] I am pretty sure that /Volumes/silo/music, /data/music, and perhaps other folders were accidentally created on my openmediavault (accessable with ssh root@openmediavault) while doing test installs. At some point we had 2 installs: one at /opt/familliad and one at /rootfamilliar. Let's clean that up. Please check with me before deleting anything, but it seems we've made quite a mess of my openmediavault in this development effort.
+
+- Settings view overhaul (item 70)
+  This would reduce user confusion about what settings do. Current issues:
+  - Admin vs profile settings are mixed
+  - Configuration precedence is unclear (env vars vs settings.json vs database)
+- Add basic integration tests
+  The codebase has no tests. Even just testing:
+  - /api/v1/health returns 200
+  - /api/v1/library/stats works
+  - Alembic migrations apply cleanly
+- Test the Docker build locally first
+- Clean reinstall on OMV
 
 ## For future releases
 [ ] Familliar should have a slightly witchy look inspired by the name. It should be subtle. Let's come up with a plan.

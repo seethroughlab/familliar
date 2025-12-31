@@ -1,4 +1,29 @@
-"""App settings service for user-configurable settings stored in a JSON file."""
+"""App settings service for user-configurable settings stored in a JSON file.
+
+Configuration Precedence
+========================
+Settings can come from multiple sources. The precedence (highest to lowest) is:
+
+1. **AppSettings (settings.json)** - User-configured via admin UI
+2. **Environment variables** - Set in docker-compose or .env
+3. **Defaults** - Hardcoded fallbacks
+
+Use `get_app_settings_service().get_effective()` to get the resolved value
+for any setting with proper precedence applied.
+
+Settings by Source
+------------------
+**Admin UI only (settings.json)**:
+- music_library_paths, llm_provider, ollama_url, ollama_model
+
+**Admin UI with env fallback**:
+- anthropic_api_key, spotify_client_id, spotify_client_secret
+- lastfm_api_key, lastfm_api_secret, acoustid_api_key
+
+**Environment only (infrastructure)**:
+- database_url, redis_url, frontend_url
+- art_path, videos_path, profiles_path
+"""
 
 import json
 from pathlib import Path
@@ -113,6 +138,69 @@ class AppSettingsService:
         """Check if at least one music library path is configured."""
         settings = self.get()
         return bool(settings.music_library_paths)
+
+    def get_effective(self, key: str) -> Any:
+        """Get the effective value for a setting with proper precedence.
+
+        Precedence: AppSettings (JSON) > Environment variable > Default
+
+        Args:
+            key: Setting name (e.g., 'anthropic_api_key', 'spotify_client_id')
+
+        Returns:
+            The effective value from the highest-priority source that has it set.
+        """
+        from app.config import settings as env_settings
+
+        app_value = getattr(self.get(), key, None)
+        env_value = getattr(env_settings, key, None)
+
+        # AppSettings takes priority if set (non-None and non-empty)
+        if app_value:
+            return app_value
+
+        # Fall back to environment variable
+        if env_value:
+            return env_value
+
+        return None
+
+    def get_all_effective(self) -> dict[str, Any]:
+        """Get all settings with precedence applied.
+
+        Returns a dict with the effective value for each setting,
+        combining AppSettings and environment variables.
+        """
+        from app.config import settings as env_settings
+
+        app = self.get()
+        result = {}
+
+        # Settings that can come from either source
+        dual_source_keys = [
+            "anthropic_api_key",
+            "spotify_client_id",
+            "spotify_client_secret",
+            "lastfm_api_key",
+            "lastfm_api_secret",
+            "acoustid_api_key",
+        ]
+
+        for key in dual_source_keys:
+            result[key] = self.get_effective(key)
+
+        # Settings from AppSettings only
+        result["music_library_paths"] = app.music_library_paths
+        result["llm_provider"] = app.llm_provider
+        result["ollama_url"] = app.ollama_url
+        result["ollama_model"] = app.ollama_model
+
+        # Settings from environment only
+        result["database_url"] = env_settings.database_url
+        result["redis_url"] = env_settings.redis_url
+        result["frontend_url"] = env_settings.frontend_url
+
+        return result
 
 
 # Singleton instance

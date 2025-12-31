@@ -35,10 +35,10 @@ class SpotifyService:
         self.redirect_uri = settings.spotify_redirect_uri
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
-        """Get Spotify credentials from app settings or env fallback."""
-        app_settings = get_app_settings_service().get()
-        client_id = app_settings.spotify_client_id or settings.spotify_client_id
-        client_secret = app_settings.spotify_client_secret or settings.spotify_client_secret
+        """Get Spotify credentials with proper precedence."""
+        settings_service = get_app_settings_service()
+        client_id = settings_service.get_effective("spotify_client_id")
+        client_secret = settings_service.get_effective("spotify_client_secret")
         return client_id, client_secret
 
     def is_configured(self) -> bool:

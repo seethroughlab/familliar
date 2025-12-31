@@ -36,6 +36,8 @@ dependencies = [
     "rapidfuzz>=3.0.0",
     "pyacoustid>=1.3.0",
     "musicbrainzngs>=0.7.1",
+    # Database migrations
+    "alembic>=1.13.0",
 ]
 
 [project.optional-dependencies]

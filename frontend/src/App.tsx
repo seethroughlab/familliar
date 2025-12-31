@@ -16,6 +16,7 @@ import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
+import { WorkerAlert } from './components/WorkerAlert';
 import { AdminSetup } from './components/Admin';
 import { useScrobbling } from './hooks/useScrobbling';
 import { useListeningSession } from './hooks/useListeningSession';
@@ -326,6 +327,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <WorkerAlert />
       <QueryClientProvider client={queryClient}>
         <Routes>
           <Route path="/admin" element={<AdminSetup />} />

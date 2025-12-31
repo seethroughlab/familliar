@@ -6,35 +6,73 @@ chown -R familiar:familiar /app/data /data/art /data/videos 2>/dev/null || true
 
 # Initialize database on first run (only for API container, not worker)
 if [[ "$1" == "uvicorn"* ]] || [[ "$*" == *"uvicorn"* ]]; then
-    echo "Checking database tables..."
+    echo "Checking database setup..."
+
+    # Ensure pgvector extension exists
     gosu familiar python -c "
 import asyncio
 from sqlalchemy import text
 from app.db.session import engine
-from app.db.models import Base
 
-async def init_if_needed():
+async def ensure_extensions():
     async with engine.begin() as conn:
-        # Check if profiles table exists
+        await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
+        print('PostgreSQL extensions verified.')
+
+asyncio.run(ensure_extensions())
+"
+
+    # Check if alembic_version table exists (indicates Alembic is set up)
+    ALEMBIC_SETUP=$(gosu familiar python -c "
+import asyncio
+from sqlalchemy import text
+from app.db.session import engine
+
+async def check_alembic():
+    async with engine.begin() as conn:
+        result = await conn.execute(text(
+            \"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'alembic_version')\"
+        ))
+        exists = result.scalar()
+        print('yes' if exists else 'no')
+
+asyncio.run(check_alembic())
+" 2>/dev/null || echo "no")
+
+    # Check if this is a fresh database or existing without Alembic
+    TABLES_EXIST=$(gosu familiar python -c "
+import asyncio
+from sqlalchemy import text
+from app.db.session import engine
+
+async def check_tables():
+    async with engine.begin() as conn:
         result = await conn.execute(text(
             \"SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'profiles')\"
         ))
         exists = result.scalar()
+        print('yes' if exists else 'no')
 
-        if not exists:
-            print('Initializing database tables...')
-            await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
-            await conn.run_sync(Base.metadata.create_all)
-            print('Database initialized successfully.')
-        else:
-            print('Database tables already exist.')
+asyncio.run(check_tables())
+" 2>/dev/null || echo "no")
 
-asyncio.run(init_if_needed())
-"
-    # Run schema migrations
-    echo "Running schema migrations..."
-    gosu familiar python -m app.db.migrate_add_track_status 2>/dev/null || true
-    gosu familiar python -m app.db.migrate_fix_playlists 2>/dev/null || true
+    if [ "$ALEMBIC_SETUP" = "no" ]; then
+        if [ "$TABLES_EXIST" = "yes" ]; then
+            # Existing database without Alembic - stamp as baseline
+            echo "Stamping existing database with Alembic baseline..."
+            gosu familiar python -m alembic stamp baseline
+        else
+            # Fresh database - create from scratch with Alembic
+            echo "Initializing fresh database with Alembic..."
+            gosu familiar python -m alembic upgrade head
+        fi
+    else
+        # Alembic is set up - run any pending migrations
+        echo "Running database migrations..."
+        gosu familiar python -m alembic upgrade head
+    fi
+
+    echo "Database ready."
 fi
 
 # Drop to familiar user and run the command

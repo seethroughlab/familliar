@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, DbSession
-from app.config import settings
 from app.services.app_settings import get_app_settings_service
 from app.services.llm import LLMService
 
@@ -25,11 +24,12 @@ async def get_chat_status() -> dict[str, Any]:
     Returns configuration status so the frontend can show
     appropriate warnings before the user tries to chat.
     """
-    app_settings = get_app_settings_service().get()
+    settings_service = get_app_settings_service()
+    app_settings = settings_service.get()
     provider = app_settings.llm_provider
 
     if provider == "claude":
-        configured = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
+        configured = bool(settings_service.get_effective("anthropic_api_key"))
     else:
         # For Ollama, assume configured (would need to ping to verify)
         configured = True
@@ -89,9 +89,10 @@ async def chat_stream(
     - done: Stream complete
     - error: Error occurred
     """
-    # Check for API key in app_settings (user-configured) or env settings
-    app_settings = get_app_settings_service().get()
-    has_api_key = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
+    # Check for API key with proper precedence
+    settings_service = get_app_settings_service()
+    app_settings = settings_service.get()
+    has_api_key = bool(settings_service.get_effective("anthropic_api_key"))
 
     # If using Ollama, we don't need an Anthropic key
     if app_settings.llm_provider == "ollama":
@@ -130,9 +131,10 @@ async def chat(
     Returns the complete response after all tool calls are processed.
     Useful for simpler integrations that don't need streaming.
     """
-    # Check for API key in app_settings (user-configured) or env settings
-    app_settings = get_app_settings_service().get()
-    has_api_key = bool(app_settings.anthropic_api_key or settings.anthropic_api_key)
+    # Check for API key with proper precedence
+    settings_service = get_app_settings_service()
+    app_settings = settings_service.get()
+    has_api_key = bool(settings_service.get_effective("anthropic_api_key"))
 
     # If using Ollama, we don't need an Anthropic key
     if app_settings.llm_provider == "ollama":
