@@ -518,20 +518,13 @@ cp .env.example .env
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://...` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
 | `FRONTEND_URL` | Base URL for OAuth callbacks | `http://localhost:4400` |
-| `ANTHROPIC_API_KEY` | Claude API key for AI chat | - |
-| `SPOTIFY_CLIENT_ID` | Spotify app client ID | - |
-| `SPOTIFY_CLIENT_SECRET` | Spotify app client secret | - |
-| `LASTFM_API_KEY` | Last.fm API key | - |
-| `LASTFM_API_SECRET` | Last.fm API secret | - |
-| `TURN_SERVER_URL` | TURN server for WebRTC | - |
-| `TURN_SERVER_USERNAME` | TURN server username | - |
-| `TURN_SERVER_CREDENTIAL` | TURN server password | - |
 
 **Important:** If accessing Familiar from a remote machine (not localhost), update `FRONTEND_URL` to use your server's hostname or IP address:
 ```
 FRONTEND_URL=http://myserver:4400
 ```
-OAuth callback URLs for Spotify and Last.fm are automatically derived from this setting.
+
+All other settings (API keys, music library paths) are configured via the Admin UI at `/admin`.
 
 ### Getting API Keys
 
