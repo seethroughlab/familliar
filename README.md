@@ -506,11 +506,20 @@ For local development without Docker:
 
 ### Environment Variables
 
+Copy `.env.example` to `.env` and customize for your deployment:
+
+```bash
+cp .env.example .env
+# Edit .env with your settings
+```
+
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MUSIC_LIBRARY_PATH` | Path to music library | `/data/music` |
+| `MUSIC_LIBRARY_PATH` | Host path to mount as music library | (none - required) |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://...` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
+| `SPOTIFY_REDIRECT_URI` | Spotify OAuth callback URL | `http://localhost:4400/api/v1/spotify/callback` |
+| `FRONTEND_URL` | Frontend URL for OAuth callbacks | `http://localhost:4400` |
 | `ANTHROPIC_API_KEY` | Claude API key for AI chat | - |
 | `SPOTIFY_CLIENT_ID` | Spotify app client ID | - |
 | `SPOTIFY_CLIENT_SECRET` | Spotify app client secret | - |
@@ -519,6 +528,12 @@ For local development without Docker:
 | `TURN_SERVER_URL` | TURN server for WebRTC | - |
 | `TURN_SERVER_USERNAME` | TURN server username | - |
 | `TURN_SERVER_CREDENTIAL` | TURN server password | - |
+
+**Important:** If accessing Familiar from a remote machine (not localhost), update `SPOTIFY_REDIRECT_URI` and `FRONTEND_URL` to use your server's hostname or IP address. For example:
+```
+SPOTIFY_REDIRECT_URI=http://myserver:4400/api/v1/spotify/callback
+FRONTEND_URL=http://myserver:4400
+```
 
 ### Getting API Keys
 
@@ -541,7 +556,7 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 **Spotify:**
 1. Go to https://developer.spotify.com/dashboard
 2. Create a new app
-3. Set redirect URI to `http://localhost:4400/api/v1/spotify/callback`
+3. Set redirect URI to match your `SPOTIFY_REDIRECT_URI` env var (e.g., `http://localhost:4400/api/v1/spotify/callback` or `http://yourserver:4400/api/v1/spotify/callback`)
 4. Copy Client ID and Client Secret
 
 **Last.fm:**
