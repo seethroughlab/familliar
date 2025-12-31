@@ -227,7 +227,7 @@ export function AdminSetup() {
       const response = await fetch('/api/v1/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [keyName]: null }),
+        body: JSON.stringify({ [keyName]: '' }),  // Empty string to clear (null is filtered out)
       });
 
       if (response.ok) {
