@@ -113,6 +113,10 @@ services:
       - VIDEOS_PATH=/data/videos
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DISABLE_CLAP_EMBEDDINGS=true
+      # Prevent OpenBLAS crashes in forked Celery workers
+      - OPENBLAS_NUM_THREADS=1
+      - OMP_NUM_THREADS=1
+      - MKL_NUM_THREADS=1
     depends_on:
       postgres:
         condition: service_healthy
