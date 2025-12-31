@@ -81,10 +81,12 @@ class AppSettingsService:
             json.dump(settings.model_dump(), f, indent=2)
 
     def get(self) -> AppSettings:
-        """Get current settings."""
-        if self._settings is None:
-            self._settings = self._load()
-        return self._settings
+        """Get current settings.
+
+        Always reloads from file to ensure consistency across workers.
+        The settings file is small so this is fine for performance.
+        """
+        return self._load()
 
     def update(self, **kwargs: Any) -> AppSettings:
         """Update settings with new values."""
