@@ -273,10 +273,12 @@ def _reset_feature_pool() -> None:
 
 
 def extract_features(file_path: Path) -> dict[str, float | str | None]:
-    """Extract audio features using librosa in an isolated subprocess.
+    """Extract audio features using librosa.
 
-    Runs feature extraction in a subprocess to survive SIGSEGV crashes
-    from librosa/ffmpeg on corrupt audio files.
+    Note: Previously used subprocess isolation, but OpenBLAS crashes when
+    forked regardless of thread settings. Now runs directly in the Celery
+    worker. If a track causes SIGSEGV, Celery's acks_late and
+    reject_on_worker_lost settings ensure the task is requeued.
 
     Args:
         file_path: Path to audio file
@@ -285,34 +287,8 @@ def extract_features(file_path: Path) -> dict[str, float | str | None]:
         Dict with extracted features
     """
     try:
-        pool = _get_feature_pool()
-        # Use apply_async with timeout
-        result = pool.apply_async(_extract_features_impl, (str(file_path),))
-        # 3 minute timeout for feature extraction
-        return result.get(timeout=180)
-    except billiard.exceptions.TimeLimitExceeded:
-        logger.error(f"Feature extraction timed out for {file_path}")
-        raise AnalysisError("Feature extraction timed out after 180s")
-    except TimeoutError:
-        logger.error(f"Feature extraction timed out for {file_path}")
-        raise AnalysisError("Feature extraction timed out after 180s")
+        return _extract_features_impl(str(file_path))
     except Exception as e:
-        error_msg = str(e)
-        error_type = type(e).__name__
-        # Check for subprocess crash indicators
-        if any(x in error_type for x in ["WorkerLostError", "Terminated", "BrokenPool"]):
-            logger.error(f"Feature extraction crashed (worker lost) for {file_path}: {e}")
-            _reset_feature_pool()
-            raise AnalysisError("Feature extraction crashed on corrupt file")
-        if "SIGSEGV" in error_msg or "signal" in error_msg.lower():
-            logger.error(f"Feature extraction crashed (SIGSEGV) for {file_path}: {e}")
-            _reset_feature_pool()
-            raise AnalysisError("Feature extraction crashed on corrupt file")
-        # Check for daemonic process error (shouldn't happen with billiard but just in case)
-        if "daemonic" in error_msg.lower():
-            logger.warning(f"Subprocess spawn failed, running in-process for {file_path}")
-            # Fallback to in-process execution
-            return _extract_features_impl(str(file_path))
         logger.error(f"Error extracting features from {file_path}: {e}")
         raise AnalysisError(f"Feature extraction failed: {e}") from e
 

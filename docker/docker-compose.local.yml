@@ -82,48 +82,8 @@ services:
     networks:
       - familiar-network
 
-  worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: production
-    container_name: familiar-worker
-    restart: unless-stopped
-    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
-    healthcheck:
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "10"]
-      interval: 60s
-      timeout: 30s
-      start_period: 60s
-      retries: 3
-    volumes:
-      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
-      - art_data:/data/art
-      - videos_data:/data/videos
-      - app_data:/app/data  # Shares settings.json with API
-      # Common storage locations (same as API for scanning)
-      - /srv:/srv:ro        # OMV storage
-      - /media:/media:ro    # Common Linux mount point
-      - /mnt:/mnt:ro        # Another common mount point
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
-      - REDIS_URL=redis://redis:6379/0
-      - MUSIC_LIBRARY_PATH=/data/music
-      - ART_PATH=/data/art
-      - VIDEOS_PATH=/data/videos
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - DISABLE_CLAP_EMBEDDINGS=true
-      # Prevent OpenBLAS crashes in forked Celery workers
-      - OPENBLAS_NUM_THREADS=1
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - familiar-network
+  # Note: Worker service removed - background tasks now run in-process in the API container.
+  # This eliminates the fork/OpenBLAS SIGSEGV issues that plagued Celery workers.
 
 volumes:
   postgres_data:

@@ -7,8 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.api.deps import DbSession, RequiredProfile
 from app.services.new_releases import NewReleasesService
-from app.workers.tasks import (
-    check_new_releases,
+from app.services.tasks import (
     clear_new_releases_progress,
     get_new_releases_progress,
 )
@@ -87,28 +86,34 @@ async def trigger_check(
 ) -> dict[str, Any]:
     """Trigger a background check for new releases.
 
-    This queues a Celery task to check Spotify (if connected) and
+    This starts a background task to check Spotify (if connected) and
     MusicBrainz for recent releases from artists in the library.
 
     Query params:
     - days_back: Number of days to look back (1-365)
     - force: If true, check all artists regardless of cache
 
-    Returns task ID for tracking progress.
+    Returns status for tracking progress.
     """
+    import asyncio
+
+    from app.services.background import get_background_manager
+
     # Clear any stale progress
     clear_new_releases_progress()
 
-    # Queue the Celery task
-    task = check_new_releases.delay(
-        profile_id=str(profile.id),
-        days_back=days_back,
-        force=force,
+    # Start background task
+    bg = get_background_manager()
+    asyncio.create_task(
+        bg.run_new_releases_check(
+            profile_id=str(profile.id),
+            days_back=days_back,
+            force=force,
+        )
     )
 
     return {
-        "task_id": task.id,
-        "status": "queued",
+        "status": "started",
         "message": "New releases check started",
     }
 

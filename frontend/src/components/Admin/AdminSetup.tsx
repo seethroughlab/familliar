@@ -29,6 +29,7 @@ import {
   FolderSearch,
 } from 'lucide-react';
 import { FolderBrowser } from './FolderBrowser';
+import { LibraryManagement } from './LibraryManagement';
 
 interface SettingsData {
   spotify_client_id: string | null;
@@ -845,6 +846,9 @@ export function AdminSetup() {
               )}
             </div>
           </section>
+
+          {/* Library Management */}
+          <LibraryManagement />
 
           {/* Save Button */}
           <button

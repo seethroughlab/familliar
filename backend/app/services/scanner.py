@@ -322,24 +322,17 @@ class LibraryScanner:
                 else:
                     results["unchanged"] += 1
 
-            # Commit and queue analysis tasks periodically
-            # This ensures tracks are visible to analyze_track workers BEFORE they're queued
+            # Commit periodically to make tracks visible and free memory
             if processed % 50 == 0:
                 await self.db.commit()
-                # Queue analysis tasks for committed tracks
-                if pending_analysis_ids:
-                    from app.workers.tasks import queue_track_analysis
-                    for track_id in pending_analysis_ids:
-                        queue_track_analysis(track_id)
-                    pending_analysis_ids = []
+                # Note: Analysis is now queued after scan completes via queue_unanalyzed_tracks
+                pending_analysis_ids = []
                 await asyncio.sleep(0)
 
-        # Commit and queue any remaining tracks from the last batch
+        # Commit any remaining tracks from the last batch
         if pending_analysis_ids:
             await self.db.commit()
-            from app.workers.tasks import queue_track_analysis
-            for track_id in pending_analysis_ids:
-                queue_track_analysis(track_id)
+            # Note: Analysis is now queued after scan completes via queue_unanalyzed_tracks
             pending_analysis_ids = []
 
         # Handle missing files - only check files that were under this library_path

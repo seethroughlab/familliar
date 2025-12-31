@@ -130,63 +130,35 @@ async def system_health_check(db: DbSession) -> SystemHealth:
             message=f"Redis error: {str(e)}",
         ))
 
-    # Check Background Processing (Celery Workers)
+    # Check Background Processing (in-process BackgroundManager)
     try:
-        from app.workers.celery_app import celery_app
-        inspect = celery_app.control.inspect(timeout=2.0)
-        active_workers = inspect.active_queues()
+        from app.services.background import get_background_manager
 
-        if active_workers:
-            worker_names = list(active_workers.keys())
+        bg = get_background_manager()
+        is_scan_running = bg.is_scan_running()
+        active_analyses = len(bg._analysis_tasks)
 
-            # Count active tasks across all workers
-            active_tasks = inspect.active() or {}
-            total_tasks = sum(len(tasks) for tasks in active_tasks.values())
-
-            # Build a more informative message
-            if total_tasks > 0:
-                # Get task names for context
-                task_names = []
-                for tasks in active_tasks.values():
-                    for task in tasks:
-                        name = task.get("name", "").split(".")[-1]
-                        if name and name not in task_names:
-                            task_names.append(name)
-
-                if task_names:
-                    message = f"{total_tasks} task(s) running: {', '.join(task_names)}"
-                else:
-                    message = f"{total_tasks} task(s) running"
-            else:
-                message = "Idle"
-
-            services.append(ServiceStatus(
-                name="background_processing",
-                status="healthy",
-                message=message,
-                details={"workers": worker_names, "active_tasks": total_tasks},
-            ))
+        # Build status message
+        if is_scan_running:
+            message = "Library scan in progress"
+        elif active_analyses > 0:
+            message = f"{active_analyses} analysis task(s) running"
         else:
-            services.append(ServiceStatus(
-                name="background_processing",
-                status="unhealthy",
-                message="Background processing stopped",
-            ))
-            warnings.append(
-                "Background processing is not running. Music analysis and library scans "
-                "will not complete. Try restarting Familiar."
-            )
+            message = "Idle"
+
+        services.append(ServiceStatus(
+            name="background_processing",
+            status="healthy",
+            message=message,
+            details={"scan_running": is_scan_running, "active_analyses": active_analyses},
+        ))
     except Exception as e:
         services.append(ServiceStatus(
             name="background_processing",
             status="unhealthy",
-            message="Cannot check status",
+            message=f"Cannot check status: {str(e)}",
         ))
-        logger.warning(f"Cannot check worker status: {e}")
-        warnings.append(
-            "Cannot verify background processing status. "
-            "If analysis seems stuck, try restarting Familiar."
-        )
+        logger.warning(f"Cannot check background processing status: {e}")
 
     # Check Analysis Backlog
     # Note: Analysis progress is informational, not a health concern.
@@ -293,12 +265,12 @@ class WorkerStatus(BaseModel):
 
 @router.get("/health/workers", response_model=WorkerStatus)
 async def get_worker_status(db: DbSession) -> WorkerStatus:
-    """Get detailed status of Celery workers and task queues."""
-    import redis
+    """Get detailed status of background processing and task queues."""
+    from datetime import datetime
 
     from app.config import ANALYSIS_VERSION, settings
-    from app.workers.celery_app import celery_app
-    from app.workers.tasks import get_recent_failures
+    from app.services.background import get_background_manager
+    from app.services.tasks import get_recent_failures
 
     workers: list[WorkerInfo] = []
     queues: list[QueueStats] = []
@@ -311,55 +283,44 @@ async def get_worker_status(db: DbSession) -> WorkerStatus:
     except Exception as e:
         logger.warning(f"Could not get recent failures: {e}")
 
-    # Get worker info from Celery
+    # Get worker info from BackgroundManager
     try:
-        inspect = celery_app.control.inspect(timeout=2.0)
+        bg = get_background_manager()
+        active_task_list = []
 
-        # Get active tasks per worker
-        active = inspect.active() or {}
-        # Get worker stats
-        stats = inspect.stats() or {}
-
-        for worker_name in set(list(active.keys()) + list(stats.keys())):
-            worker_tasks = active.get(worker_name, [])
-            worker_stats = stats.get(worker_name, {})
-
-            active_task_list = []
-            for task in worker_tasks:
-                # Convert time_start from float timestamp to ISO string
-                time_start = task.get("time_start")
-                started_at = None
-                if time_start:
-                    from datetime import datetime
-                    try:
-                        started_at = datetime.fromtimestamp(float(time_start)).isoformat()
-                    except (ValueError, TypeError):
-                        pass
-
-                active_task_list.append(WorkerTask(
-                    id=task.get("id", ""),
-                    name=task.get("name", "").split(".")[-1],  # Short name
-                    args=task.get("args", [])[:2],  # Limit args shown
-                    started_at=started_at,
-                ))
-
-            workers.append(WorkerInfo(
-                name=worker_name.replace("celery@", ""),
-                status="online",
-                active_tasks=active_task_list,
-                processed_total=worker_stats.get("total", {}).get("app.workers.tasks.analyze_track", 0),
-                concurrency=worker_stats.get("pool", {}).get("max-concurrency"),
+        # Report scan as a task if running
+        if bg.is_scan_running() and bg._current_scan_task:
+            active_task_list.append(WorkerTask(
+                id="scan",
+                name="library_scan",
+                args=[],
+                started_at=datetime.now().isoformat(),
             ))
 
-    except Exception as e:
-        logger.warning(f"Could not get worker info: {e}")
+        # Report analysis tasks
+        for track_id, task in bg._analysis_tasks.items():
+            if not task.done():
+                active_task_list.append(WorkerTask(
+                    id=track_id[:8],
+                    name="analyze_track",
+                    args=[track_id[:8]],
+                    started_at=None,
+                ))
 
-    # Get queue depths from Redis
+        workers.append(WorkerInfo(
+            name="in-process",
+            status="online",
+            active_tasks=active_task_list[:10],  # Limit to 10
+            processed_total=0,  # Not tracked in new system
+            concurrency=2,  # ProcessPoolExecutor max_workers
+        ))
+
+    except Exception as e:
+        logger.warning(f"Could not get background processing info: {e}")
+
+    # Get pending analysis count
     try:
-        r = redis.from_url(settings.redis_url)
-        # Default Celery queue
-        default_queue_len = r.llen("celery") or 0
-        queues.append(QueueStats(name="default", pending=default_queue_len))
+        queues.append(QueueStats(name="analysis", pending=len(bg._analysis_tasks) if bg else 0))
     except Exception as e:
         logger.warning(f"Could not get queue stats: {e}")
 

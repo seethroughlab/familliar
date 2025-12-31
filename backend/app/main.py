@@ -107,9 +107,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Migrate env vars to settings on first run
     migrate_env_to_settings()
 
+    # Start background task manager
+    from app.services.background import get_background_manager
+    bg = get_background_manager()
+    await bg.startup()
+    print("Background task manager started")
+
     yield
+
     # Shutdown
     print("Shutting down Familiar API")
+    await bg.shutdown()
+    print("Background task manager stopped")
 
 
 app = FastAPI(

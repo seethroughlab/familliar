@@ -91,47 +91,8 @@ services:
     networks:
       - familiar-network
 
-  worker:
-    image: ghcr.io/seethroughlab/familliar:${FAMILIAR_VERSION:-latest}
-    container_name: familiar-worker
-    restart: unless-stopped
-    command: celery -A app.workers.celery_app worker --loglevel=info
-    healthcheck:
-      # Check if Celery worker is responsive (ping returns pong)
-      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "10"]
-      interval: 60s
-      timeout: 30s
-      start_period: 60s
-      retries: 3
-    volumes:
-      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
-      - app_data:/app/data  # Shares settings.json with api
-      - art_data:/data/art
-      - videos_data:/data/videos
-      # Common NAS storage locations (same as API for scanning)
-      - /srv:/srv:ro               # OpenMediaVault
-      - /media:/media:ro           # Common Linux mount point
-      - /mnt:/mnt:ro               # Another common mount point
-      - /volume1:/volume1:ro       # Synology primary volume
-      - /volume2:/volume2:ro       # Synology secondary volume
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
-      - REDIS_URL=redis://redis:6379/0
-      - MUSIC_LIBRARY_PATH=/data/music
-      - ART_PATH=/data/art
-      - VIDEOS_PATH=/data/videos
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      # Prevent OpenBLAS crashes in forked Celery workers
-      - OPENBLAS_NUM_THREADS=1
-      - OMP_NUM_THREADS=1
-      - MKL_NUM_THREADS=1
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - familiar-network
+  # Note: Worker service removed - background tasks now run in-process in the API container.
+  # This eliminates the fork/OpenBLAS SIGSEGV issues that plagued Celery workers.
 
 volumes:
   postgres_data:

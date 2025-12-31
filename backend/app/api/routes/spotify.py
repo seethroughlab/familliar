@@ -11,7 +11,7 @@ from sqlalchemy import delete
 from app.api.deps import CurrentProfile, DbSession
 from app.db.models import SpotifyFavorite, SpotifyProfile
 from app.services.spotify import SpotifyService, SpotifySyncService
-from app.workers.tasks import get_spotify_sync_progress, sync_spotify
+from app.services.tasks import get_spotify_sync_progress
 
 logger = logging.getLogger(__name__)
 
@@ -190,13 +190,17 @@ async def start_spotify_sync(
     include_top_tracks: bool = Query(True),
     favorite_matched: bool = Query(False, description="Auto-favorite matched tracks in local library"),
 ) -> SpotifySyncStatus:
-    """Start Spotify sync using Celery worker.
+    """Start Spotify sync.
 
-    The sync runs in a separate worker process, so it won't block the API.
+    The sync runs in the background, so this returns immediately.
     Progress is stored in Redis and can be retrieved via GET /spotify/sync/status.
 
     Requires X-Profile-ID header.
     """
+    import asyncio
+
+    from app.services.background import get_background_manager
+
     if not profile:
         raise HTTPException(
             status_code=401,
@@ -212,16 +216,19 @@ async def start_spotify_sync(
             progress=SpotifySyncProgress(**{k: progress.get(k, v) for k, v in SpotifySyncProgress().model_dump().items()}),
         )
 
-    # Dispatch to Celery worker
-    sync_spotify.delay(
-        profile_id=str(profile.id),
-        include_top_tracks=include_top_tracks,
-        favorite_matched=favorite_matched,
+    # Start sync in background
+    bg = get_background_manager()
+    asyncio.create_task(
+        bg.run_spotify_sync(
+            profile_id=str(profile.id),
+            include_top_tracks=include_top_tracks,
+            favorite_matched=favorite_matched,
+        )
     )
 
     return SpotifySyncStatus(
         status="started",
-        message="Sync started in Celery worker",
+        message="Sync started",
     )
 
 
@@ -230,7 +237,7 @@ async def get_sync_status() -> SpotifySyncStatus:
     """Get current Spotify sync status with detailed progress from Redis."""
     from datetime import datetime, timedelta
 
-    from app.workers.tasks import clear_spotify_sync_progress
+    from app.services.tasks import clear_spotify_sync_progress
 
     progress = get_spotify_sync_progress()
 

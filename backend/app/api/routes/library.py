@@ -10,7 +10,7 @@ from app.api.deps import DbSession
 from app.db.models import AlbumType, Track, TrackStatus
 from app.services.import_service import ImportError, ImportService, save_upload_to_temp
 from app.services.scanner import LibraryScanner
-from app.workers.tasks import get_scan_progress, scan_library
+from app.services.tasks import get_scan_progress
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -107,51 +107,34 @@ async def get_library_stats(db: DbSession) -> LibraryStats:
 async def start_scan(
     full: bool = False,
 ) -> ScanStatus:
-    """Start a library scan using Celery worker.
+    """Start a library scan.
 
-    The scan runs in a separate worker process, so it won't block the API.
+    The scan runs in the background, so this returns immediately.
     Progress is stored in Redis and can be retrieved via GET /scan/status.
 
     Args:
         full: If True, rescan all files even if unchanged. Default False (incremental).
     """
-    import redis
+    from app.services.background import get_background_manager
 
-    from app.config import settings
+    bg = get_background_manager()
 
     # Check if a scan is already running
-    progress = get_scan_progress()
-    if progress and progress.get("status") == "running":
+    if bg.is_scan_running():
+        progress = get_scan_progress()
+        if progress:
+            return ScanStatus(
+                status="already_running",
+                message="A scan is already in progress",
+                progress=ScanProgress(**{k: progress.get(k, v) for k, v in ScanProgress().model_dump().items()}),
+            )
         return ScanStatus(
             status="already_running",
             message="A scan is already in progress",
-            progress=ScanProgress(**{k: progress.get(k, v) for k, v in ScanProgress().model_dump().items()}),
         )
 
-    # Check queue depth to warn user if there's a long wait
-    warnings = []
-    queue_depth = 0
-    try:
-        r = redis.from_url(settings.redis_url)
-        queue_depth = r.llen("default") or 0
-        if queue_depth > 100:
-            warnings.append(
-                f"There are {queue_depth:,} analysis tasks ahead in the queue. "
-                "The scan will start once a worker becomes available."
-            )
-    except Exception:
-        pass  # Don't fail if we can't check queue
-
-    # Dispatch to Celery worker
-    scan_library.delay(full_scan=full)
-
-    if queue_depth > 100:
-        return ScanStatus(
-            status="queued",
-            message=f"Scan queued (waiting for {queue_depth:,} tasks to complete)",
-            warnings=warnings,
-            queue_position=queue_depth,
-        )
+    # Start scan in background
+    await bg.run_scan(full_scan=full)
 
     return ScanStatus(
         status="started",
@@ -164,7 +147,7 @@ async def get_scan_status() -> ScanStatus:
     """Get current scan status with detailed progress from Redis."""
     from datetime import datetime, timedelta
 
-    from app.workers.tasks import clear_scan_progress
+    from app.services.tasks import clear_scan_progress
 
     progress = get_scan_progress()
 

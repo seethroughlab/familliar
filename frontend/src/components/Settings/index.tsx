@@ -1,15 +1,12 @@
 import { SpotifySettings } from './SpotifySettings';
 import { LastfmSettings } from './LastfmSettings';
 import { OfflineSettings } from './OfflineSettings';
-import { LibraryOrganizer } from './LibraryOrganizer';
-import { LibraryScan } from './LibraryScan';
-import { MissingTracksPanel } from './MissingTracksPanel';
 import { ThemeSettings } from './ThemeSettings';
 import { PlaybackSettings } from './PlaybackSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
-import { MusicImport } from './MusicImport';
 import { InstallStatus } from '../PWA/InstallPrompt';
+// Note: Library management (scan, import, missing tracks, organizer) moved to /admin
 
 export function SettingsPanel() {
   return (
@@ -85,17 +82,6 @@ export function SettingsPanel() {
           </div>
         </section>
 
-        <section>
-          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
-            Library Management
-          </h3>
-          <div className="space-y-4">
-            <MusicImport />
-            <LibraryScan />
-            <MissingTracksPanel />
-            <LibraryOrganizer />
-          </div>
-        </section>
       </div>
     </div>
   );

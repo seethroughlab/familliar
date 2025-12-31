@@ -14,8 +14,9 @@ dependencies = [
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.0",
     "pgvector>=0.2.0",
-    # Task queue
-    "celery[redis]>=5.3.0",
+    # Background tasks
+    "apscheduler>=3.10.0",
+    "redis>=5.0.0",
     # Audio metadata
     "mutagen>=1.47.0",
     # Image processing
