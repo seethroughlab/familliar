@@ -48,6 +48,7 @@ async def clean_db():
     Creates its own engine per test to avoid event loop conflicts.
     """
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     from app.config import settings
 
     # Create a fresh engine for this test (avoids event loop binding issues)
