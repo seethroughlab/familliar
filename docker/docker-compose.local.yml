@@ -89,7 +89,7 @@ services:
       target: production
     container_name: familiar-worker
     restart: unless-stopped
-    command: celery -A app.workers.celery_app worker --loglevel=info
+    command: celery -A app.workers.celery_app worker --loglevel=info --concurrency=4
     healthcheck:
       test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
       interval: 30s
