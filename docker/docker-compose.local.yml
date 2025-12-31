@@ -48,6 +48,10 @@ services:
       - art_data:/data/art
       - videos_data:/data/videos
       - app_data:/app/data  # Persists settings.json
+      # Common storage locations for folder browser
+      - /srv:/srv:ro        # OMV storage
+      - /media:/media:ro    # Common Linux mount point
+      - /mnt:/mnt:ro        # Another common mount point
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
@@ -96,6 +100,10 @@ services:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
       - art_data:/data/art
       - videos_data:/data/videos
+      # Common storage locations (same as API for scanning)
+      - /srv:/srv:ro        # OMV storage
+      - /media:/media:ro    # Common Linux mount point
+      - /mnt:/mnt:ro        # Another common mount point
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0

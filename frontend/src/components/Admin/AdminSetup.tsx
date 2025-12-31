@@ -26,7 +26,9 @@ import {
   Plus,
   Trash2,
   AlertTriangle,
+  FolderSearch,
 } from 'lucide-react';
+import { FolderBrowser } from './FolderBrowser';
 
 interface SettingsData {
   spotify_client_id: string | null;
@@ -91,6 +93,7 @@ export function AdminSetup() {
   const [newLibraryPath, setNewLibraryPath] = useState('');
   const [validatingPath, setValidatingPath] = useState(false);
   const [pathStatus, setPathStatus] = useState<string | null>(null);
+  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -187,6 +190,32 @@ export function AdminSetup() {
   async function handleRemoveLibraryPath(index: number) {
     const updatedPaths = libraryPaths.filter((_, i) => i !== index);
     setLibraryPaths(updatedPaths);
+    await saveLibraryPaths(updatedPaths);
+  }
+
+  async function handleFolderSelect(path: string) {
+    // Check for duplicates
+    if (libraryPaths.some((p) => p.path === path)) {
+      setPathStatus('Path already added');
+      setTimeout(() => setPathStatus(null), 3000);
+      return;
+    }
+
+    setValidatingPath(true);
+    const result = await validatePath(path);
+    setValidatingPath(false);
+
+    const newPathInfo: PathInfo = {
+      path,
+      valid: result?.exists && result?.is_directory ? true : false,
+      audioCount: result?.audio_file_count ?? undefined,
+      error: result?.error ?? undefined,
+    };
+
+    const updatedPaths = [...libraryPaths, newPathInfo];
+    setLibraryPaths(updatedPaths);
+
+    // Auto-save
     await saveLibraryPaths(updatedPaths);
   }
 
@@ -771,28 +800,42 @@ export function AdminSetup() {
                 </div>
               )}
 
-              {/* Add new path */}
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newLibraryPath}
-                  onChange={(e) => setNewLibraryPath(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddLibraryPath()}
-                  placeholder="/path/to/music"
-                  className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                />
-                <button
-                  onClick={handleAddLibraryPath}
-                  disabled={validatingPath || !newLibraryPath.trim()}
-                  className="px-4 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-2"
-                  title="Add path"
-                >
-                  {validatingPath ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                </button>
-              </div>
+              {/* Browse for folder */}
+              <button
+                onClick={() => setShowFolderBrowser(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors text-white font-medium"
+              >
+                <FolderSearch className="w-5 h-5" />
+                Browse Folders
+              </button>
+
+              {/* Manual path entry (collapsible) */}
+              <details className="group">
+                <summary className="cursor-pointer text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
+                  Or enter path manually...
+                </summary>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newLibraryPath}
+                    onChange={(e) => setNewLibraryPath(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddLibraryPath()}
+                    placeholder="/path/to/music"
+                    className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                  />
+                  <button
+                    onClick={handleAddLibraryPath}
+                    disabled={validatingPath || !newLibraryPath.trim()}
+                    className="px-4 py-3 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-2"
+                    title="Add path"
+                  >
+                    {validatingPath ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                  </button>
+                </div>
+              </details>
 
               <p className="text-xs text-zinc-500">
-                Paths must be accessible from the server. In Docker, use container paths (e.g., /data/music).
+                Don't see your music folder? Make sure it's mounted as a volume in docker-compose.yml
               </p>
 
               {pathStatus && (
@@ -826,6 +869,14 @@ export function AdminSetup() {
           </p>
         </div>
       </div>
+
+      {/* Folder Browser Modal */}
+      <FolderBrowser
+        isOpen={showFolderBrowser}
+        onClose={() => setShowFolderBrowser(false)}
+        onSelect={handleFolderSelect}
+        existingPaths={libraryPaths.map((p) => p.path)}
+      />
     </div>
   );
 }

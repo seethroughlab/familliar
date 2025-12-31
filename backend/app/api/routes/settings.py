@@ -175,3 +175,143 @@ async def validate_path(request: PathValidationRequest) -> PathValidationRespons
             is_directory=True,
             error="Permission denied - cannot read directory contents",
         )
+
+
+class DirectoryEntry(BaseModel):
+    """A directory entry for browsing."""
+
+    name: str
+    path: str
+    is_readable: bool
+    has_audio_hint: bool = False  # Quick check if directory might contain audio
+
+
+class BrowseDirectoriesResponse(BaseModel):
+    """Response with directory listing."""
+
+    current_path: str
+    parent_path: str | None
+    directories: list[DirectoryEntry]
+    error: str | None = None
+
+
+# Paths that should not be browsable for security
+BLOCKED_PATHS = {
+    "/proc",
+    "/sys",
+    "/dev",
+    "/etc",
+    "/root",
+    "/boot",
+    "/bin",
+    "/sbin",
+    "/lib",
+    "/lib64",
+    "/usr",
+    "/var",
+    "/run",
+    "/tmp",
+}
+
+
+def _has_audio_files_quick(path: Path, max_check: int = 20) -> bool:
+    """Quick check if directory has audio files (checks first N files only)."""
+    from app.config import AUDIO_EXTENSIONS
+
+    try:
+        count = 0
+        for item in path.iterdir():
+            if count >= max_check:
+                break
+            if item.is_file() and item.suffix.lower() in AUDIO_EXTENSIONS:
+                return True
+            count += 1
+        return False
+    except (PermissionError, OSError):
+        return False
+
+
+@router.get("/browse-directories", response_model=BrowseDirectoriesResponse)
+async def browse_directories(path: str = "/") -> BrowseDirectoriesResponse:
+    """Browse directories inside the container for library path selection.
+
+    This endpoint allows admins to navigate the filesystem to find their
+    music library folder. Sensitive system paths are blocked for security.
+    """
+    # Normalize path
+    browse_path = Path(path).resolve()
+
+    # Security: Block sensitive paths
+    path_str = str(browse_path)
+    for blocked in BLOCKED_PATHS:
+        if path_str == blocked or path_str.startswith(blocked + "/"):
+            return BrowseDirectoriesResponse(
+                current_path=path_str,
+                parent_path=str(browse_path.parent) if browse_path.parent != browse_path else None,
+                directories=[],
+                error="Access to this path is not allowed",
+            )
+
+    # Check if path exists
+    if not browse_path.exists():
+        return BrowseDirectoriesResponse(
+            current_path=path_str,
+            parent_path=str(browse_path.parent) if browse_path.parent != browse_path else None,
+            directories=[],
+            error="Path does not exist",
+        )
+
+    if not browse_path.is_dir():
+        return BrowseDirectoriesResponse(
+            current_path=path_str,
+            parent_path=str(browse_path.parent),
+            directories=[],
+            error="Path is not a directory",
+        )
+
+    # List directories
+    directories: list[DirectoryEntry] = []
+    try:
+        for item in sorted(browse_path.iterdir(), key=lambda x: x.name.lower()):
+            # Skip hidden files/directories
+            if item.name.startswith("."):
+                continue
+
+            # Only list directories
+            if not item.is_dir():
+                continue
+
+            # Check if readable
+            is_readable = True
+            try:
+                list(item.iterdir())
+            except (PermissionError, OSError):
+                is_readable = False
+
+            # Quick check for audio files
+            has_audio = _has_audio_files_quick(item) if is_readable else False
+
+            directories.append(
+                DirectoryEntry(
+                    name=item.name,
+                    path=str(item),
+                    is_readable=is_readable,
+                    has_audio_hint=has_audio,
+                )
+            )
+    except PermissionError:
+        return BrowseDirectoriesResponse(
+            current_path=path_str,
+            parent_path=str(browse_path.parent) if browse_path.parent != browse_path else None,
+            directories=[],
+            error="Permission denied - cannot read directory",
+        )
+
+    # Calculate parent path (None if at root)
+    parent_path = str(browse_path.parent) if browse_path.parent != browse_path else None
+
+    return BrowseDirectoriesResponse(
+        current_path=path_str,
+        parent_path=parent_path,
+        directories=directories,
+    )
