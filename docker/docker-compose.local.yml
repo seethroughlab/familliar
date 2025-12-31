@@ -82,9 +82,16 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      target: production
     container_name: familiar-worker
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
     volumes:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
       - art_data:/data/art
