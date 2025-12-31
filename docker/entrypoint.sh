@@ -72,6 +72,15 @@ asyncio.run(check_tables())
         gosu familiar python -m alembic upgrade head
     fi
 
+    # Dispose connection pool to clear any stale schema metadata
+    # This ensures the app gets fresh connections after migrations
+    gosu familiar python -c "
+from app.db.session import engine
+import asyncio
+asyncio.run(engine.dispose())
+print('Connection pool cleared.')
+"
+
     echo "Database ready."
 fi
 
