@@ -3,10 +3,10 @@
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 from uuid import UUID
 
