@@ -261,7 +261,7 @@ class TestLibraryScanner:
 
         This simulates the real-world scenario where:
         - Files exist at /srv/dev-disk-by-uuid-.../music/...
-        - Same files are also accessible at /data/music/...
+        - Same files are also accessible via a symlink or different mount
         - Scanner should recognize them as the same files by hash
         """
         with tempfile.TemporaryDirectory() as tmpdir:

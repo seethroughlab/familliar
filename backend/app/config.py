@@ -16,7 +16,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # Music library (comma-separated paths supported)
-    music_library_path: str = "/data/music"
+    # NOTE: No default - must be configured via admin UI or MUSIC_LIBRARY_PATH env var
+    music_library_path: str = ""
 
     @property
     def music_library_paths(self) -> list[Path]:
@@ -25,7 +26,10 @@ class Settings(BaseSettings):
         Priority:
         1. AppSettings (settings.json) if configured via admin UI
         2. Environment variable MUSIC_LIBRARY_PATH (comma-separated)
-        3. Default /data/music
+        3. Empty list (user must configure via /admin)
+
+        There is intentionally NO default path - the user must explicitly
+        configure their music library location via the admin UI.
         """
         # Check AppSettings first (configured via admin UI)
         from app.services.app_settings import get_app_settings_service
@@ -35,7 +39,7 @@ class Settings(BaseSettings):
             return [Path(p) for p in app_settings.music_library_paths if p]
 
         # Fall back to environment variable (for backwards compatibility)
-        if self.music_library_path and self.music_library_path != "/data/music":
+        if self.music_library_path:
             paths = []
             for p in self.music_library_path.split(","):
                 p = p.strip()
@@ -44,8 +48,8 @@ class Settings(BaseSettings):
             if paths:
                 return paths
 
-        # Default
-        return [Path("/data/music")]
+        # No default - user must configure via admin UI
+        return []
 
     # Data paths
     art_path: Path = Path("data/art")

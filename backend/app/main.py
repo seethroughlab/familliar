@@ -90,8 +90,8 @@ def migrate_env_to_settings() -> None:
 
     # Check for MUSIC_LIBRARY_PATH environment variable
     env_path = app_config.music_library_path
-    if env_path and env_path != "/data/music":
-        # User has a custom path configured via env var - migrate it
+    if env_path:
+        # User has a path configured via env var - migrate it to settings
         paths = [p.strip() for p in env_path.split(",") if p.strip()]
         if paths:
             service.update(music_library_paths=paths)
