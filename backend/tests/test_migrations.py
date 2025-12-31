@@ -91,3 +91,46 @@ def test_migrations_history() -> None:
     output = result.stdout.strip()
     assert output, "No migrations found in history"
     assert "baseline" in output.lower() or "->" in output, f"Expected migration history: {output}"
+
+
+def test_models_in_sync_with_migrations(client: TestClient) -> None:
+    """Verify SQLAlchemy models match the database schema after migrations.
+
+    This catches schema drift - when model columns don't have corresponding
+    migrations. Runs alembic autogenerate and fails if changes are detected.
+    """
+    backend_dir = Path(__file__).parent.parent
+
+    # First ensure migrations are applied
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd=backend_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    # Run alembic check to detect schema drift
+    # This compares models against the actual database schema
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "check"],
+        cwd=backend_dir,
+        capture_output=True,
+        text=True,
+    )
+
+    # alembic check returns 0 if no changes needed, 1 if changes detected
+    if result.returncode != 0:
+        # Get details about what's out of sync
+        autogen_result = subprocess.run(
+            [sys.executable, "-m", "alembic", "revision", "--autogenerate", "-m", "test_check", "--sql"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+        )
+        diff_info = autogen_result.stdout or autogen_result.stderr
+
+        assert False, (
+            f"Models are out of sync with migrations!\n"
+            f"Run 'alembic revision --autogenerate -m \"description\"' to create a migration.\n"
+            f"Detected changes:\n{diff_info}"
+        )
