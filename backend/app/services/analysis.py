@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import acoustid
-
 import librosa
 import numpy as np
 
