@@ -68,6 +68,8 @@
 [ ] We need to clean up my openmediavault. There seem to be a few installs - at /root/familliar, at /opt/familliar, and then some other folders that were accidentally created because of some incorrect paths, like /Volumes/silo/music and /data/music.  Also, nothing on my openmediavault should reference "/Volumes/silo/music" (like /opt/familliar/docker/.env) -- that is ONLY relevant to my local Mac. Please check with me before deleting anything, but it seems we've made quite a mess of my openmediavault in this development effort.
 [ ] It's been very painful debugging on openmediavault. Would it be easier to debug these last few issues building the docker container on my local Mac? Or is it better to work on the Linux machine (openmediavault)?
 [ ] This is turning into a disaster. Things are breaking left and right and we seem to be getting further away from a release instead of closer. I don't know if we've just made some bad architectural decisions or tried to develop too many features at once. Please evaluate the current state of the codebase and give me an honest opinion on whether we'd be better off trying to fix what is broken or starting from scratch and learning from what we've done.
+[ ] The settings view needs an overhaul -- we need to group like things together and explain what sections are. 
+[ ] I had deleted my Anthropic key in the settings panel and the chat window didn't show an error. I thought we had added this.
 
 ## For future releases
 [ ] Familliar should have a slightly witchy look inspired by the name. It should be subtle. Let's come up with a plan.

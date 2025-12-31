@@ -31,6 +31,10 @@ async def init_if_needed():
 
 asyncio.run(init_if_needed())
 "
+    # Run schema migrations
+    echo "Running schema migrations..."
+    gosu familiar python -m app.db.migrate_add_track_status 2>/dev/null || true
+    gosu familiar python -m app.db.migrate_fix_playlists 2>/dev/null || true
 fi
 
 # Drop to familiar user and run the command
