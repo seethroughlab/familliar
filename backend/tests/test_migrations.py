@@ -1,9 +1,11 @@
 """
-Tests for Alembic migrations.
+Tests for Alembic migrations and deployment readiness.
 
-Verifies that migrations are properly configured and applied.
+Verifies that migrations are properly configured and applied,
+and that Docker health checks will work correctly.
 """
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -120,17 +122,37 @@ def test_models_in_sync_with_migrations(client: TestClient) -> None:
 
     # alembic check returns 0 if no changes needed, 1 if changes detected
     if result.returncode != 0:
-        # Get details about what's out of sync
-        autogen_result = subprocess.run(
-            [sys.executable, "-m", "alembic", "revision", "--autogenerate", "-m", "test_check", "--sql"],
-            cwd=backend_dir,
-            capture_output=True,
-            text=True,
-        )
-        diff_info = autogen_result.stdout or autogen_result.stderr
-
         assert False, (
             f"Models are out of sync with migrations!\n"
             f"Run 'alembic revision --autogenerate -m \"description\"' to create a migration.\n"
-            f"Detected changes:\n{diff_info}"
+            f"alembic check output:\n{result.stdout}\n{result.stderr}"
         )
+
+
+def test_docker_health_check_endpoint(client: TestClient) -> None:
+    """Verify the health endpoint used in Docker health checks actually exists.
+
+    The Dockerfile and docker-compose files reference a specific health endpoint.
+    This test ensures that endpoint exists and returns 200 OK.
+    """
+    # Read the Dockerfile to find what endpoint the health check uses
+    repo_root = Path(__file__).parent.parent.parent
+    dockerfile_path = repo_root / "docker" / "Dockerfile"
+
+    assert dockerfile_path.exists(), f"Dockerfile not found at {dockerfile_path}"
+
+    dockerfile_content = dockerfile_path.read_text()
+
+    # Extract health check URL from Dockerfile
+    # Matches patterns like: httpx.get('http://localhost:8000/api/v1/health'
+    match = re.search(r"httpx\.get\(['\"]http://localhost:\d+(/[^'\"]+)['\"]", dockerfile_content)
+    assert match, "Could not find health check URL in Dockerfile"
+
+    health_path = match.group(1)
+
+    # Test that the endpoint exists and returns success
+    response = client.get(health_path)
+    assert response.status_code == 200, (
+        f"Health check endpoint {health_path} returned {response.status_code}. "
+        f"Docker health checks will fail!"
+    )

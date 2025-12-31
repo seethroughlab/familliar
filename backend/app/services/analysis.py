@@ -1,16 +1,19 @@
 """Audio analysis service using CLAP embeddings and librosa features."""
 
 import logging
-import multiprocessing
 import os
-from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import acoustid
+
+# Use billiard (Celery's fork of multiprocessing) which allows daemon processes to spawn children
+import billiard
+import billiard.exceptions
 import librosa
 import numpy as np
+from billiard.pool import Pool as BilliardPool
 
 # Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
 # This allows the module to be imported on systems without torch
@@ -162,9 +165,9 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     This runs in a subprocess to isolate crashes (SIGSEGV) from the main worker.
     """
     # Re-import in subprocess to ensure fresh state
-    import librosa
-    import numpy as np
     from pathlib import Path
+
+    import librosa
 
     file_path = Path(file_path_str)
     features: dict[str, float | str | None] = {
@@ -245,17 +248,28 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
 
 
 # Process pool for isolated feature extraction (survives SIGSEGV crashes)
-_feature_executor: ProcessPoolExecutor | None = None
+# Using billiard which allows daemon processes (Celery workers) to spawn children
+_feature_pool: BilliardPool | None = None
 
 
-def _get_feature_executor() -> ProcessPoolExecutor:
+def _get_feature_pool() -> BilliardPool:
     """Get or create the process pool for feature extraction."""
-    global _feature_executor
-    if _feature_executor is None:
+    global _feature_pool
+    if _feature_pool is None:
         # Use spawn to get clean processes (fork can inherit corrupted state)
-        ctx = multiprocessing.get_context("spawn")
-        _feature_executor = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
-    return _feature_executor
+        _feature_pool = BilliardPool(processes=1, maxtasksperchild=10)
+    return _feature_pool
+
+
+def _reset_feature_pool() -> None:
+    """Reset the feature pool after a crash."""
+    global _feature_pool
+    if _feature_pool is not None:
+        try:
+            _feature_pool.terminate()
+        except Exception:
+            pass
+        _feature_pool = None
 
 
 def extract_features(file_path: Path) -> dict[str, float | str | None]:
@@ -271,22 +285,34 @@ def extract_features(file_path: Path) -> dict[str, float | str | None]:
         Dict with extracted features
     """
     try:
-        executor = _get_feature_executor()
-        future = executor.submit(_extract_features_impl, str(file_path))
+        pool = _get_feature_pool()
+        # Use apply_async with timeout
+        result = pool.apply_async(_extract_features_impl, (str(file_path),))
         # 3 minute timeout for feature extraction
-        return future.result(timeout=180)
-    except FuturesTimeoutError:
+        return result.get(timeout=180)
+    except billiard.exceptions.TimeLimitExceeded:
         logger.error(f"Feature extraction timed out for {file_path}")
-        raise AnalysisError(f"Feature extraction timed out after 180s")
+        raise AnalysisError("Feature extraction timed out after 180s")
+    except TimeoutError:
+        logger.error(f"Feature extraction timed out for {file_path}")
+        raise AnalysisError("Feature extraction timed out after 180s")
     except Exception as e:
-        # BrokenProcessPool means subprocess crashed (SIGSEGV)
         error_msg = str(e)
-        if "BrokenProcessPool" in type(e).__name__ or "SIGSEGV" in error_msg:
-            logger.error(f"Feature extraction crashed (SIGSEGV) for {file_path}")
-            # Reset the executor for next call
-            global _feature_executor
-            _feature_executor = None
-            raise AnalysisError(f"Feature extraction crashed on corrupt file")
+        error_type = type(e).__name__
+        # Check for subprocess crash indicators
+        if any(x in error_type for x in ["WorkerLostError", "Terminated", "BrokenPool"]):
+            logger.error(f"Feature extraction crashed (worker lost) for {file_path}: {e}")
+            _reset_feature_pool()
+            raise AnalysisError("Feature extraction crashed on corrupt file")
+        if "SIGSEGV" in error_msg or "signal" in error_msg.lower():
+            logger.error(f"Feature extraction crashed (SIGSEGV) for {file_path}: {e}")
+            _reset_feature_pool()
+            raise AnalysisError("Feature extraction crashed on corrupt file")
+        # Check for daemonic process error (shouldn't happen with billiard but just in case)
+        if "daemonic" in error_msg.lower():
+            logger.warning(f"Subprocess spawn failed, running in-process for {file_path}")
+            # Fallback to in-process execution
+            return _extract_features_impl(str(file_path))
         logger.error(f"Error extracting features from {file_path}: {e}")
         raise AnalysisError(f"Feature extraction failed: {e}") from e
 

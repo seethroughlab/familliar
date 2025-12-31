@@ -83,10 +83,10 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/health')"]
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/v1/health', timeout=20)"]
       interval: 30s
-      timeout: 10s
-      start_period: 10s
+      timeout: 30s
+      start_period: 30s
       retries: 3
     networks:
       - familiar-network
@@ -96,6 +96,13 @@ services:
     container_name: familiar-worker
     restart: unless-stopped
     command: celery -A app.workers.celery_app worker --loglevel=info
+    healthcheck:
+      # Check if Celery worker is responsive (ping returns pong)
+      test: ["CMD", "celery", "-A", "app.workers.celery_app", "inspect", "ping", "--timeout", "10"]
+      interval: 60s
+      timeout: 30s
+      start_period: 60s
+      retries: 3
     volumes:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
       - app_data:/app/data  # Shares settings.json with api

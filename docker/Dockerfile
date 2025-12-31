@@ -102,9 +102,9 @@ ENV DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar \
 # Expose API port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import httpx; httpx.get('http://localhost:8000/health')" || exit 1
+# Health check for API (worker overrides this in docker-compose)
+HEALTHCHECK --interval=30s --timeout=30s --start-period=30s --retries=3 \
+    CMD python -c "import httpx; httpx.get('http://localhost:8000/api/v1/health', timeout=20)" || exit 1
 
 # Default command runs the API server
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
