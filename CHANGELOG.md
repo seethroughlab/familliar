@@ -5,6 +5,21 @@ All notable changes to Familiar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-12-31
+
+### Fixed
+- **Docker health check URL** - Changed from `/health` to `/api/v1/health`
+- **Worker health check** - Now uses `celery inspect ping` instead of HTTP (workers don't serve HTTP)
+- **Subprocess isolation in Celery** - Switched from `multiprocessing` to `billiard` (Celery's fork that allows daemon processes to spawn children)
+- **Health check timeouts** - Increased to 30s with 30s start period (prevents false unhealthy during heavy load)
+
+### Added
+- Test to verify Docker health check endpoint exists (`test_docker_health_check_endpoint`)
+- Worker process recycling (`maxtasksperchild=10`) to prevent memory leaks
+
+### Changed
+- Feature extraction now runs in isolated subprocess to survive SIGSEGV crashes from corrupt audio files
+
 ## [0.1.1] - 2025-12-31
 
 ### Added
@@ -58,5 +73,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CPU-only PyTorch for smaller Docker images (~200MB vs ~5GB)
 - `DISABLE_CLAP_EMBEDDINGS` environment variable for systems where torch is problematic
 
+[0.1.2]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.2
 [0.1.1]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.1
 [0.1.0]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.0
