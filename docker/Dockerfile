@@ -71,8 +71,9 @@ COPY --from=python-deps /app/.venv /app/.venv
 COPY backend/app ./app
 
 # Copy Alembic configuration
+# Note: migrations/ instead of alembic/ to avoid shadowing the alembic package
 COPY backend/alembic.ini ./
-COPY backend/alembic ./alembic
+COPY backend/migrations ./migrations
 
 # Copy built frontend
 COPY --from=frontend-builder /app/frontend/dist ./static
