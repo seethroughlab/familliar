@@ -120,20 +120,53 @@ class BackgroundManager:
         logger.info("BackgroundManager shutdown complete")
 
     def is_scan_running(self) -> bool:
-        """Check if a library scan is currently running."""
+        """Check if a library scan is currently running (across all workers).
+
+        Uses Redis to coordinate across multiple uvicorn workers.
+        """
+        # Check local task first
         if self._current_scan_task and not self._current_scan_task.done():
             return True
 
-        # Also check Redis for stale progress
+        # Check Redis lock (shared across all workers)
         try:
+            if self.redis.get("familiar:scan:lock"):
+                return True
+
+            # Also check progress status
             data: bytes | None = self.redis.get("familiar:scan:progress")  # type: ignore[assignment]
             if data:
                 progress = json.loads(data)
-                return progress.get("status") == "running"
+                if progress.get("status") == "running":
+                    # Check if heartbeat is recent (within 2 minutes)
+                    heartbeat = progress.get("last_heartbeat")
+                    if heartbeat:
+                        from datetime import datetime, timedelta
+                        try:
+                            hb_time = datetime.fromisoformat(heartbeat)
+                            if datetime.now() - hb_time < timedelta(minutes=2):
+                                return True
+                        except (ValueError, TypeError):
+                            pass
         except Exception:
             pass
 
         return False
+
+    def _acquire_scan_lock(self) -> bool:
+        """Try to acquire the scan lock in Redis. Returns True if acquired."""
+        try:
+            # SET NX (only if not exists) with 1 hour expiry
+            return bool(self.redis.set("familiar:scan:lock", "1", nx=True, ex=3600))
+        except Exception:
+            return False
+
+    def _release_scan_lock(self) -> None:
+        """Release the scan lock in Redis."""
+        try:
+            self.redis.delete("familiar:scan:lock")
+        except Exception:
+            pass
 
     async def run_cpu_bound(self, func: Callable, *args: Any) -> Any:
         """Run CPU-bound function in process pool (spawned, not forked).
@@ -148,9 +181,15 @@ class BackgroundManager:
         """Start a library scan in the background.
 
         Returns immediately with status. Progress is reported via Redis.
+        Uses Redis-based locking to prevent concurrent scans across workers.
         """
         async with self._lock:
+            # Check if already running (local or other worker)
             if self.is_scan_running():
+                return {"status": "already_running"}
+
+            # Try to acquire Redis lock
+            if not self._acquire_scan_lock():
                 return {"status": "already_running"}
 
             # Create task and store reference
@@ -178,6 +217,7 @@ class BackgroundManager:
             return {"status": "error", "error": str(e)}
         finally:
             self._current_scan_task = None
+            self._release_scan_lock()
 
     async def run_analysis(self, track_id: str) -> dict[str, Any]:
         """Queue a track for analysis.

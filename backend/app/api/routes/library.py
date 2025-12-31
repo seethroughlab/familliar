@@ -393,6 +393,44 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
     )
 
 
+class AnalysisStartResponse(BaseModel):
+    """Response for starting analysis."""
+
+    status: str
+    queued: int = 0
+    message: str
+
+
+@router.post("/analysis/start", response_model=AnalysisStartResponse)
+async def start_analysis(limit: int = 500) -> AnalysisStartResponse:
+    """Manually trigger analysis for unanalyzed tracks.
+
+    This queues tracks for analysis in the background. Use GET /analysis/status
+    to monitor progress.
+    """
+    from app.services.tasks import queue_unanalyzed_tracks
+
+    try:
+        queued = await queue_unanalyzed_tracks(limit=limit)
+        if queued == 0:
+            return AnalysisStartResponse(
+                status="complete",
+                queued=0,
+                message="All tracks are already analyzed",
+            )
+        return AnalysisStartResponse(
+            status="started",
+            queued=queued,
+            message=f"Queued {queued} tracks for analysis",
+        )
+    except Exception as e:
+        return AnalysisStartResponse(
+            status="error",
+            queued=0,
+            message=f"Failed to start analysis: {e}",
+        )
+
+
 # ============================================================================
 # Missing Tracks API
 # ============================================================================
