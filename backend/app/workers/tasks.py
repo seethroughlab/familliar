@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 
 from app.config import ANALYSIS_VERSION, settings
@@ -154,10 +155,14 @@ def get_recent_failures(limit: int = 10) -> list[dict[str, Any]]:
 @celery_app.task(
     bind=True,
     max_retries=3,
-    autoretry_for=(OSError, IOError, ConnectionError),
+    autoretry_for=(OSError, IOError, ConnectionError, SoftTimeLimitExceeded),
     retry_backoff=True,
     retry_backoff_max=300,
     retry_jitter=True,
+    acks_late=True,  # Don't ack until complete - requeues on worker crash
+    reject_on_worker_lost=True,  # Requeue if worker dies (SIGSEGV)
+    time_limit=300,  # Kill task after 5 minutes
+    soft_time_limit=240,  # Raise exception after 4 minutes
 )  # type: ignore[misc]
 @log_task
 def analyze_track(self, track_id: str) -> dict[str, Any]:
