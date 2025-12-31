@@ -1,7 +1,9 @@
 """Audio analysis service using CLAP embeddings and librosa features."""
 
 import logging
+import multiprocessing
 import os
+from concurrent.futures import ProcessPoolExecutor, TimeoutError as FuturesTimeoutError
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -154,15 +156,17 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
         raise AnalysisError(f"Embedding extraction failed: {e}") from e
 
 
-def extract_features(file_path: Path) -> dict[str, float | str | None]:
-    """Extract audio features using librosa.
+def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
+    """Internal implementation of feature extraction.
 
-    Args:
-        file_path: Path to audio file
-
-    Returns:
-        Dict with extracted features
+    This runs in a subprocess to isolate crashes (SIGSEGV) from the main worker.
     """
+    # Re-import in subprocess to ensure fresh state
+    import librosa
+    import numpy as np
+    from pathlib import Path
+
+    file_path = Path(file_path_str)
     features: dict[str, float | str | None] = {
         "bpm": None,
         "key": None,
@@ -174,75 +178,117 @@ def extract_features(file_path: Path) -> dict[str, float | str | None]:
         "speechiness": None,
     }
 
-    try:
-        # Load audio
-        y, sr = librosa.load(file_path, sr=22050, mono=True)
+    # Load audio
+    y, sr = librosa.load(file_path, sr=22050, mono=True)
 
-        # BPM detection
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-        features["bpm"] = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0])
+    # BPM detection
+    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    features["bpm"] = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0])
 
-        # Key detection using chroma features
-        chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
-        key_idx = np.argmax(np.mean(chroma, axis=1))
-        key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-        features["key"] = key_names[key_idx]
+    # Key detection using chroma features
+    chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+    key_idx = np.argmax(np.mean(chroma, axis=1))
+    key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+    features["key"] = key_names[key_idx]
 
-        # Energy (RMS energy normalized)
-        rms = librosa.feature.rms(y=y)[0]
-        features["energy"] = float(np.mean(rms))
+    # Energy (RMS energy normalized)
+    rms = librosa.feature.rms(y=y)[0]
+    features["energy"] = float(np.mean(rms))
 
-        # Spectral features for danceability approximation
-        spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-        _spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]  # For future use
+    # Spectral features for danceability approximation
+    spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
+    _spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]  # For future use
 
-        # Danceability: combination of tempo regularity and beat strength
-        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
-        pulse = librosa.beat.plp(onset_envelope=onset_env, sr=sr)
-        features["danceability"] = float(np.mean(pulse))
+    # Danceability: combination of tempo regularity and beat strength
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    pulse = librosa.beat.plp(onset_envelope=onset_env, sr=sr)
+    features["danceability"] = float(np.mean(pulse))
 
-        # Zero crossing rate (indicator of percussiveness/noisiness)
-        zcr = librosa.feature.zero_crossing_rate(y)[0]
+    # Zero crossing rate (indicator of percussiveness/noisiness)
+    zcr = librosa.feature.zero_crossing_rate(y)[0]
 
-        # MFCC for timbral features (computed for future embedding use)
-        _mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
+    # MFCC for timbral features (computed for future embedding use)
+    _mfcc = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=13)
 
-        # Spectral contrast (computed for future use)
-        _contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
+    # Spectral contrast (computed for future use)
+    _contrast = librosa.feature.spectral_contrast(y=y, sr=sr)
 
-        # Acousticness: based on spectral features
-        # Higher spectral centroid and rolloff usually indicate electric/produced sound
-        centroid_norm = np.mean(spectral_centroid) / (sr / 2)
-        features["acousticness"] = float(max(0, 1 - centroid_norm * 2))
+    # Acousticness: based on spectral features
+    # Higher spectral centroid and rolloff usually indicate electric/produced sound
+    centroid_norm = np.mean(spectral_centroid) / (sr / 2)
+    features["acousticness"] = float(max(0, 1 - centroid_norm * 2))
 
-        # Instrumentalness: based on vocal frequency presence
-        # This is a rough approximation - vocals typically have energy in 300-3000 Hz
-        spec = np.abs(librosa.stft(y))
-        freqs = librosa.fft_frequencies(sr=sr)
-        vocal_mask = (freqs >= 300) & (freqs <= 3000)
-        vocal_energy = np.mean(spec[vocal_mask, :])
-        total_energy = np.mean(spec)
-        vocal_ratio = vocal_energy / (total_energy + 1e-6)
-        features["instrumentalness"] = float(max(0, 1 - vocal_ratio))
+    # Instrumentalness: based on vocal frequency presence
+    # This is a rough approximation - vocals typically have energy in 300-3000 Hz
+    spec = np.abs(librosa.stft(y))
+    freqs = librosa.fft_frequencies(sr=sr)
+    vocal_mask = (freqs >= 300) & (freqs <= 3000)
+    vocal_energy = np.mean(spec[vocal_mask, :])
+    total_energy = np.mean(spec)
+    vocal_ratio = vocal_energy / (total_energy + 1e-6)
+    features["instrumentalness"] = float(max(0, 1 - vocal_ratio))
 
-        # Valence: rough approximation based on mode (major/minor)
-        # Major keys tend to sound "happier"
-        # Using tonnetz features for mode detection
-        tonnetz = librosa.feature.tonnetz(y=y, sr=sr)
-        # Positive tonnetz values in certain dimensions indicate major
-        features["valence"] = float((np.mean(tonnetz[0]) + 1) / 2)
+    # Valence: rough approximation based on mode (major/minor)
+    # Major keys tend to sound "happier"
+    # Using tonnetz features for mode detection
+    tonnetz = librosa.feature.tonnetz(y=y, sr=sr)
+    # Positive tonnetz values in certain dimensions indicate major
+    features["valence"] = float((np.mean(tonnetz[0]) + 1) / 2)
 
-        # Speechiness: based on zero crossing rate and spectral flatness
-        _flatness = librosa.feature.spectral_flatness(y=y)[0]  # For future use
-        zcr_mean = np.mean(zcr)
-        # Speech typically has high ZCR and moderate spectral flatness
-        features["speechiness"] = float(min(1, zcr_mean * 2))
-
-    except Exception as e:
-        logger.error(f"Error extracting features from {file_path}: {e}")
-        raise AnalysisError(f"Feature extraction failed: {e}") from e
+    # Speechiness: based on zero crossing rate and spectral flatness
+    _flatness = librosa.feature.spectral_flatness(y=y)[0]  # For future use
+    zcr_mean = np.mean(zcr)
+    # Speech typically has high ZCR and moderate spectral flatness
+    features["speechiness"] = float(min(1, zcr_mean * 2))
 
     return features
+
+
+# Process pool for isolated feature extraction (survives SIGSEGV crashes)
+_feature_executor: ProcessPoolExecutor | None = None
+
+
+def _get_feature_executor() -> ProcessPoolExecutor:
+    """Get or create the process pool for feature extraction."""
+    global _feature_executor
+    if _feature_executor is None:
+        # Use spawn to get clean processes (fork can inherit corrupted state)
+        ctx = multiprocessing.get_context("spawn")
+        _feature_executor = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
+    return _feature_executor
+
+
+def extract_features(file_path: Path) -> dict[str, float | str | None]:
+    """Extract audio features using librosa in an isolated subprocess.
+
+    Runs feature extraction in a subprocess to survive SIGSEGV crashes
+    from librosa/ffmpeg on corrupt audio files.
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Dict with extracted features
+    """
+    try:
+        executor = _get_feature_executor()
+        future = executor.submit(_extract_features_impl, str(file_path))
+        # 3 minute timeout for feature extraction
+        return future.result(timeout=180)
+    except FuturesTimeoutError:
+        logger.error(f"Feature extraction timed out for {file_path}")
+        raise AnalysisError(f"Feature extraction timed out after 180s")
+    except Exception as e:
+        # BrokenProcessPool means subprocess crashed (SIGSEGV)
+        error_msg = str(e)
+        if "BrokenProcessPool" in type(e).__name__ or "SIGSEGV" in error_msg:
+            logger.error(f"Feature extraction crashed (SIGSEGV) for {file_path}")
+            # Reset the executor for next call
+            global _feature_executor
+            _feature_executor = None
+            raise AnalysisError(f"Feature extraction crashed on corrupt file")
+        logger.error(f"Error extracting features from {file_path}: {e}")
+        raise AnalysisError(f"Feature extraction failed: {e}") from e
 
 
 def generate_fingerprint(file_path: Path) -> tuple[int, str] | None:
