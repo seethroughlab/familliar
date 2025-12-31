@@ -9,7 +9,7 @@
 # Environment variables:
 #   - MUSIC_LIBRARY_PATH: Host path to mount as /data/music (for Docker volume)
 #   - FAMILIAR_VERSION: Docker image version (default: latest)
-#   - SPOTIFY_REDIRECT_URI: Spotify OAuth callback URL (e.g., https://your-domain.ts.net/api/v1/spotify/callback)
+#   - FRONTEND_URL: Base URL for OAuth callbacks (e.g., http://myserver:4400)
 
 services:
   postgres:
@@ -71,7 +71,7 @@ services:
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
       - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
-      - SPOTIFY_REDIRECT_URI=${SPOTIFY_REDIRECT_URI:-http://127.0.0.1:4400/api/v1/spotify/callback}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:4400}
       - LASTFM_API_KEY=${LASTFM_API_KEY:-}
       - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
       - TURN_SERVER_URL=${TURN_SERVER_URL:-}

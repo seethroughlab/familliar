@@ -98,15 +98,10 @@ async def get_auth_url(profile: CurrentProfile) -> LastfmAuthResponse:
             detail="Last.fm API not configured. Add credentials in Settings."
         )
 
-    # Get frontend URL from settings (same as Spotify)
+    # Get frontend URL from settings
     from app.config import settings
-    base_url = settings.frontend_url
-    if not base_url:
-        # Production: derive from Spotify redirect URI (same host pattern)
-        redirect_uri = settings.spotify_redirect_uri
-        base_url = redirect_uri.rsplit("/api/", 1)[0] if "/api/" in redirect_uri else "http://localhost:3000"
-
-    callback_url = f"{base_url}/settings?lastfm_callback=true"
+    base_url = settings.frontend_url or "http://localhost:4400"
+    callback_url = f"{base_url.rstrip('/')}/settings?lastfm_callback=true"
     auth_url = lastfm.get_auth_url(callback_url)
 
     return LastfmAuthResponse(auth_url=auth_url)

@@ -63,8 +63,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
-    spotify_redirect_uri: str = "http://127.0.0.1:4400/api/v1/spotify/callback"
-    frontend_url: str | None = None  # For OAuth callback redirect in dev (e.g., http://localhost:3000)
+    frontend_url: str | None = None  # Base URL for OAuth callbacks (e.g., http://myserver:4400)
     lastfm_api_key: str | None = None
     lastfm_api_secret: str | None = None
 

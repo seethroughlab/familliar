@@ -152,15 +152,10 @@ async def spotify_callback(
 
     The profile_id is encoded in the state parameter from the auth request.
     """
-    # Get frontend URL from settings, with fallback for development
+    # Get frontend URL from settings
     from app.config import settings
-    # Use configured frontend URL if available, otherwise derive from redirect URI
-    # In development, frontend runs on a different port than the API
-    base_url = getattr(settings, 'frontend_url', None)
-    if not base_url:
-        # Production: derive from redirect URI (same host)
-        redirect_uri = settings.spotify_redirect_uri
-        base_url = redirect_uri.rsplit("/api/", 1)[0] if "/api/" in redirect_uri else "http://localhost:3000"
+    base_url = settings.frontend_url or "http://localhost:4400"
+    base_url = base_url.rstrip('/')
 
     if error:
         # Redirect to frontend with error

@@ -515,11 +515,9 @@ cp .env.example .env
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MUSIC_LIBRARY_PATH` | Host path to mount as music library | (none - required) |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://...` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
-| `SPOTIFY_REDIRECT_URI` | Spotify OAuth callback URL | `http://localhost:4400/api/v1/spotify/callback` |
-| `FRONTEND_URL` | Frontend URL for OAuth callbacks | `http://localhost:4400` |
+| `FRONTEND_URL` | Base URL for OAuth callbacks | `http://localhost:4400` |
 | `ANTHROPIC_API_KEY` | Claude API key for AI chat | - |
 | `SPOTIFY_CLIENT_ID` | Spotify app client ID | - |
 | `SPOTIFY_CLIENT_SECRET` | Spotify app client secret | - |
@@ -529,11 +527,11 @@ cp .env.example .env
 | `TURN_SERVER_USERNAME` | TURN server username | - |
 | `TURN_SERVER_CREDENTIAL` | TURN server password | - |
 
-**Important:** If accessing Familiar from a remote machine (not localhost), update `SPOTIFY_REDIRECT_URI` and `FRONTEND_URL` to use your server's hostname or IP address. For example:
+**Important:** If accessing Familiar from a remote machine (not localhost), update `FRONTEND_URL` to use your server's hostname or IP address:
 ```
-SPOTIFY_REDIRECT_URI=http://myserver:4400/api/v1/spotify/callback
 FRONTEND_URL=http://myserver:4400
 ```
+OAuth callback URLs for Spotify and Last.fm are automatically derived from this setting.
 
 ### Getting API Keys
 
@@ -556,7 +554,7 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 **Spotify:**
 1. Go to https://developer.spotify.com/dashboard
 2. Create a new app
-3. Set redirect URI to match your `SPOTIFY_REDIRECT_URI` env var (e.g., `http://localhost:4400/api/v1/spotify/callback` or `http://yourserver:4400/api/v1/spotify/callback`)
+3. Set redirect URI to `{FRONTEND_URL}/api/v1/spotify/callback` (e.g., `http://localhost:4400/api/v1/spotify/callback`)
 4. Copy Client ID and Client Secret
 
 **Last.fm:**

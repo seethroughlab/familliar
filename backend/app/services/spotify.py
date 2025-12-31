@@ -31,8 +31,9 @@ class SpotifyService:
 
     def __init__(self) -> None:
         # Redirect to backend OAuth callback endpoint
-        # Configurable via SPOTIFY_REDIRECT_URI env var for custom deployments
-        self.redirect_uri = settings.spotify_redirect_uri
+        # Derived from FRONTEND_URL setting
+        base_url = settings.frontend_url or "http://localhost:4400"
+        self.redirect_uri = f"{base_url.rstrip('/')}/api/v1/spotify/callback"
 
     def _get_credentials(self) -> tuple[str | None, str | None]:
         """Get Spotify credentials with proper precedence."""
