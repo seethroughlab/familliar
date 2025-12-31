@@ -64,7 +64,7 @@
 [x] One time the Music Library path wasn't set properly, and thousands of tracks were deleted. This SHOULDN'T be able to happen. Let's think about how we can prevent this. Perhaps there should be a check before a scan that makes sure the music folder is available. And let's also think about asking the user for confirmation before deleting tracks from the database, and an opportunity to locate the files IF they can't automatically be found. I like the Adobe approach to missing assets - you can spcify a new folder to look in, or locate individual files. 
 [x] Are Music Library Paths currently global or per-profile? If they are global, the interface for adding them should be in the admin settings.
 [x] Before the restart, the alysis was stuck again - this time at 0.7%, and there are errors: 'active' is not among the defined enum values. Enum name: trackstatus. Possible values: ACTIVE, MISSING, PENDING_DEL..
-[ ] we need a way to remove API keys in the admin view  - currently you can only replace.
+[x] we add a way to remove API keys in the admin view  - currently you can only replace.
 
 
 
