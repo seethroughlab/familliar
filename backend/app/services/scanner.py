@@ -412,6 +412,43 @@ class LibraryScanner:
 
         return results
 
+    async def cleanup_orphaned_tracks(self, configured_paths: list[Path]) -> dict[str, int]:
+        """Mark tracks as missing if they're not under any configured library path.
+
+        This handles the case where a library path is removed from config -
+        tracks from that path should be marked as missing.
+        """
+        from datetime import datetime
+
+        results = {"orphaned": 0}
+        now = datetime.now()
+
+        # Get all active tracks
+        result = await self.db.execute(
+            select(Track).where(Track.status == TrackStatus.ACTIVE)
+        )
+        active_tracks = list(result.scalars().all())
+
+        # Convert configured paths to strings for prefix matching
+        path_prefixes = [str(p) for p in configured_paths]
+
+        for track in active_tracks:
+            # Check if track is under any configured path
+            is_under_configured_path = any(
+                track.file_path.startswith(prefix) for prefix in path_prefixes
+            )
+
+            if not is_under_configured_path:
+                logger.info(f"ORPHANED: {track.file_path} (not under any configured library path)")
+                track.status = TrackStatus.MISSING
+                track.missing_since = now
+                results["orphaned"] += 1
+
+        if results["orphaned"] > 0:
+            await self.db.commit()
+            logger.info(f"Marked {results['orphaned']} orphaned tracks as missing")
+
+        return results
 
     async def _get_existing_tracks(self) -> list[Track]:
         """Get all tracks currently in database."""

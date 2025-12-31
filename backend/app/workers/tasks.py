@@ -600,6 +600,10 @@ def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
             "updated": 0,
             "unchanged": 0,
             "deleted": 0,
+            "marked_missing": 0,
+            "still_missing": 0,
+            "relocated": 0,
+            "recovered": 0,
         }
 
         # Create a fresh async engine for this event loop
@@ -629,8 +633,16 @@ def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
                         results["updated"] += scan_results.get("updated", 0)
                         results["unchanged"] += scan_results.get("unchanged", 0)
                         results["deleted"] += scan_results.get("deleted", 0)
+                        results["marked_missing"] += scan_results.get("marked_missing", 0)
+                        results["still_missing"] += scan_results.get("still_missing", 0)
+                        results["relocated"] += scan_results.get("relocated", 0)
+                        results["recovered"] += scan_results.get("recovered", 0)
                     else:
                         logger.warning(f"Library path does not exist: {library_path}")
+
+                # Cleanup orphaned tracks (not under any configured library path)
+                orphan_results = await scanner.cleanup_orphaned_tracks(settings.music_library_paths)
+                results["marked_missing"] = results.get("marked_missing", 0) + orphan_results.get("orphaned", 0)
         finally:
             await local_engine.dispose()
 
