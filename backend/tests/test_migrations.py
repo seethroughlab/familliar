@@ -156,3 +156,22 @@ def test_docker_health_check_endpoint(client: TestClient) -> None:
         f"Health check endpoint {health_path} returned {response.status_code}. "
         f"Docker health checks will fail!"
     )
+
+
+def test_uvicorn_has_workers() -> None:
+    """Verify uvicorn is configured with multiple workers.
+
+    A single uvicorn process can become unresponsive under load, causing
+    health checks to timeout even when the server is technically running.
+    Multiple workers ensure there's always capacity to handle health checks.
+    """
+    repo_root = Path(__file__).parent.parent.parent
+    dockerfile_path = repo_root / "docker" / "Dockerfile"
+
+    dockerfile_content = dockerfile_path.read_text()
+
+    # Check that uvicorn CMD includes --workers
+    assert "--workers" in dockerfile_content, (
+        "uvicorn should be configured with --workers to prevent health check "
+        "timeouts under load. Add '--workers', '4' to the CMD in Dockerfile."
+    )
