@@ -21,7 +21,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Python base with uv
 # =============================================================================
-FROM python:3.12-slim AS python-base
+FROM python:3.11-slim AS python-base
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
@@ -46,10 +46,11 @@ COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production, with analysis extras)
 # Install CPU-only PyTorch first (~200MB vs ~5GB for CUDA version)
+# Note: We install torch separately to avoid CUDA dependencies, then sync other packages
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv && \
     uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
-    uv sync --frozen --no-dev --extra analysis
+    uv sync --frozen --no-dev --extra analysis --no-install-package torch
 
 # =============================================================================
 # Stage 4: Production image

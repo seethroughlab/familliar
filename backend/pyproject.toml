@@ -105,5 +105,6 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 
 [tool.uv]
-# Use CPU-only PyTorch to reduce Docker image size (no CUDA)
-extra-index-url = ["https://download.pytorch.org/whl/cpu"]
+# Note: torch is installed separately in Docker with CPU-only version
+# Do NOT add extra-index-url for PyTorch here - it causes other packages
+# to resolve from PyTorch's limited index (missing wheels for some Python versions)
