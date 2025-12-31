@@ -355,11 +355,10 @@ async def run_library_scan(full_scan: bool = False) -> dict[str, Any]:
             recovered=results.get("recovered", 0),
         )
 
-        # Queue analysis for unanalyzed tracks (new, updated, or relocated)
-        # Also catches any tracks that were missed in previous scans
-        unanalyzed_count = results["new"] + results["updated"] + results.get("relocated", 0)
-        if unanalyzed_count > 0:
-            queued_count = await queue_unanalyzed_tracks(limit=max(unanalyzed_count, 500))
+        # Always queue analysis for any unanalyzed tracks after scan completes
+        # This catches new/updated/relocated tracks as well as any previously missed
+        queued_count = await queue_unanalyzed_tracks(limit=500)
+        if queued_count > 0:
             logger.info(f"Queued {queued_count} tracks for analysis")
 
         logger.info(f"Scan complete: {results}")
