@@ -88,7 +88,7 @@ export function MissingTracksPanel() {
         const error = await response.json();
         setStatus({ type: 'error', message: error.detail || 'Failed to search' });
       }
-    } catch (error) {
+    } catch {
       setStatus({ type: 'error', message: 'Failed to search folder' });
     } finally {
       setRelocating(false);
@@ -115,7 +115,7 @@ export function MissingTracksPanel() {
         const error = await response.json();
         setStatus({ type: 'error', message: error.detail || 'Failed to locate' });
       }
-    } catch (error) {
+    } catch {
       setStatus({ type: 'error', message: 'Failed to locate track' });
     } finally {
       setTimeout(() => setStatus(null), 5000);
@@ -177,7 +177,7 @@ export function MissingTracksPanel() {
       } else {
         setStatus({ type: 'error', message: 'Failed to delete tracks' });
       }
-    } catch (error) {
+    } catch {
       setStatus({ type: 'error', message: 'Failed to delete tracks' });
     } finally {
       setTimeout(() => setStatus(null), 5000);
