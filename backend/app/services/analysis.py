@@ -8,10 +8,8 @@ from typing import TYPE_CHECKING
 
 import acoustid
 
-# Use billiard (Celery's fork of multiprocessing) which allows daemon processes to spawn children
 import librosa
 import numpy as np
-from billiard.pool import Pool as BilliardPool
 
 # Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
 # This allows the module to be imported on systems without torch
@@ -245,38 +243,11 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     return features
 
 
-# Process pool for isolated feature extraction (survives SIGSEGV crashes)
-# Using billiard which allows daemon processes (Celery workers) to spawn children
-_feature_pool: BilliardPool | None = None
-
-
-def _get_feature_pool() -> BilliardPool:
-    """Get or create the process pool for feature extraction."""
-    global _feature_pool
-    if _feature_pool is None:
-        # Use spawn to get clean processes (fork can inherit corrupted state)
-        _feature_pool = BilliardPool(processes=1, maxtasksperchild=10)
-    return _feature_pool
-
-
-def _reset_feature_pool() -> None:
-    """Reset the feature pool after a crash."""
-    global _feature_pool
-    if _feature_pool is not None:
-        try:
-            _feature_pool.terminate()
-        except Exception:
-            pass
-        _feature_pool = None
-
-
 def extract_features(file_path: Path) -> dict[str, float | str | None]:
     """Extract audio features using librosa.
 
-    Note: Previously used subprocess isolation, but OpenBLAS crashes when
-    forked regardless of thread settings. Now runs directly in the Celery
-    worker. If a track causes SIGSEGV, Celery's acks_late and
-    reject_on_worker_lost settings ensure the task is requeued.
+    Analysis runs in a spawned subprocess via ProcessPoolExecutor to isolate
+    potential crashes from the main API process.
 
     Args:
         file_path: Path to audio file

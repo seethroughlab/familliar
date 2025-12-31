@@ -39,7 +39,6 @@ dependencies = [
     "musicbrainzngs>=0.7.1",
     # Database migrations
     "alembic>=1.13.0",
-    "billiard>=4.2.4",
 ]
 
 [project.optional-dependencies]
