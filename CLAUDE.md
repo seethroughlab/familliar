@@ -106,3 +106,5 @@ npm run dev
 - Profile-based multi-user (no traditional auth) - profile ID in header
 - Audio features stored as JSONB for flexibility
 - Embeddings stored in pgvector for similarity search
+
+- When fixing a bug, ask yourself: can we add a test that could have caught this?
