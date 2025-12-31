@@ -237,7 +237,15 @@ class LibraryScanner:
         logger.info("Loading existing tracks from database...")
         existing_tracks = await self._get_existing_tracks()
         existing_paths = {t.file_path: t for t in existing_tracks}
-        logger.info(f"Found {len(existing_tracks)} existing tracks in database")
+
+        # Build hash lookup for detecting relocated files (same content, different path)
+        # First track wins in case of hash collisions (shouldn't happen normally)
+        existing_hashes: dict[str, Track] = {}
+        for t in existing_tracks:
+            if t.file_hash and t.file_hash not in existing_hashes:
+                existing_hashes[t.file_hash] = t
+
+        logger.info(f"Found {len(existing_tracks)} existing tracks in database ({len(existing_hashes)} unique hashes)")
 
         # Find all audio files (in thread pool to not block)
         logger.info(f"Discovering audio files in {library_path}...")
@@ -296,12 +304,29 @@ class LibraryScanner:
             )
 
             if path_str not in existing_paths:
-                # New file
-                logger.info(f"NEW: {file_path.name}")
-                track = await self._create_track(file_path, file_hash, file_mtime)
-                pending_analysis_ids.append(str(track.id))
-                results["new"] += 1
-                results["queued"] += 1
+                # Path not found - check if same file exists at different path (by hash)
+                if file_hash in existing_hashes:
+                    # Found by hash - this is a relocated file, update its path
+                    existing = existing_hashes[file_hash]
+                    old_path = existing.file_path
+                    logger.info(f"RELOCATED (by hash): {Path(old_path).name} -> {path_str}")
+                    existing.file_path = path_str
+                    existing.status = TrackStatus.ACTIVE
+                    existing.missing_since = None
+                    results["relocated"] += 1
+                    # Update path lookup so we don't process old path as missing
+                    existing_paths[path_str] = existing
+                    if old_path in existing_paths:
+                        del existing_paths[old_path]
+                else:
+                    # Truly new file
+                    logger.info(f"NEW: {file_path.name}")
+                    track = await self._create_track(file_path, file_hash, file_mtime)
+                    pending_analysis_ids.append(str(track.id))
+                    results["new"] += 1
+                    results["queued"] += 1
+                    # Add to hash lookup so subsequent files with same hash are detected
+                    existing_hashes[file_hash] = track
             else:
                 existing = existing_paths[path_str]
 
