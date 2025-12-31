@@ -56,6 +56,12 @@ services:
       - app_data:/app/data  # Persists settings.json
       - art_data:/data/art
       - videos_data:/data/videos
+      # Common NAS storage locations for folder browser
+      - /srv:/srv:ro               # OpenMediaVault
+      - /media:/media:ro           # Common Linux mount point
+      - /mnt:/mnt:ro               # Another common mount point
+      - /volume1:/volume1:ro       # Synology primary volume
+      - /volume2:/volume2:ro       # Synology secondary volume
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
@@ -95,6 +101,12 @@ services:
       - app_data:/app/data  # Shares settings.json with api
       - art_data:/data/art
       - videos_data:/data/videos
+      # Common NAS storage locations (same as API for scanning)
+      - /srv:/srv:ro               # OpenMediaVault
+      - /media:/media:ro           # Common Linux mount point
+      - /mnt:/mnt:ro               # Another common mount point
+      - /volume1:/volume1:ro       # Synology primary volume
+      - /volume2:/volume2:ro       # Synology secondary volume
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
