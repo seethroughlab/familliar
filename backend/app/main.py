@@ -98,6 +98,52 @@ def migrate_env_to_settings() -> None:
             logging.info(f"Migrated MUSIC_LIBRARY_PATH to settings: {paths}")
 
 
+def validate_library_paths() -> None:
+    """Validate library paths on startup and log warnings for issues."""
+    from app.config import AUDIO_EXTENSIONS
+
+    paths = app_config.music_library_paths
+
+    if not paths:
+        logging.warning(
+            "⚠️  NO MUSIC LIBRARY CONFIGURED. "
+            "Go to /admin to set up your music library path."
+        )
+        return
+
+    all_empty = True
+    for path in paths:
+        if not path.exists():
+            logging.warning(
+                f"⚠️  Library path does not exist: {path}. "
+                "Check that the volume is mounted correctly in docker-compose.yml"
+            )
+        elif not path.is_dir():
+            logging.warning(f"⚠️  Library path is not a directory: {path}")
+        else:
+            # Check if directory has any audio files (quick check)
+            has_audio = False
+            try:
+                for ext in AUDIO_EXTENSIONS:
+                    if any(path.rglob(f"*{ext}")):
+                        has_audio = True
+                        all_empty = False
+                        break
+                if not has_audio:
+                    logging.warning(
+                        f"⚠️  Library path appears empty (no audio files): {path}. "
+                        "This may indicate a volume mount issue - check docker-compose.yml"
+                    )
+            except PermissionError:
+                logging.warning(f"⚠️  Cannot read library path (permission denied): {path}")
+
+    if all_empty and paths:
+        logging.error(
+            "❌ ALL LIBRARY PATHS ARE EMPTY OR INACCESSIBLE. "
+            "Library scan will find no files. Check your docker-compose volume mounts."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
@@ -106,6 +152,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Migrate env vars to settings on first run
     migrate_env_to_settings()
+
+    # Validate library paths and log warnings
+    validate_library_paths()
 
     # Start background task manager
     from app.services.background import get_background_manager

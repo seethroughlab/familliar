@@ -82,19 +82,59 @@ async def system_health_check(db: DbSession) -> SystemHealth:
     warnings: list[str] = []
 
     # Check Library Paths (before other checks so we can surface volume issues prominently)
+    library_paths = settings.music_library_paths
     unmounted_volumes: list[str] = []
-    for library_path in settings.music_library_paths:
-        if not library_path.exists():
-            # Check if it's a volume mount issue
-            parts = library_path.parts
-            if len(parts) > 2 and parts[1] == "Volumes":
-                volume_name = parts[2]
-                if not Path(f"/Volumes/{volume_name}").exists():
-                    unmounted_volumes.append(volume_name)
+    empty_paths: list[str] = []
+    valid_path_count = 0
+
+    if not library_paths:
+        warnings.insert(0, "No music library configured. Go to /admin to set up your music library path.")
+    else:
+        for library_path in library_paths:
+            if not library_path.exists():
+                # Check if it's a volume mount issue
+                parts = library_path.parts
+                if len(parts) > 2 and parts[1] == "Volumes":
+                    volume_name = parts[2]
+                    if not Path(f"/Volumes/{volume_name}").exists():
+                        unmounted_volumes.append(volume_name)
+                else:
+                    warnings.append(f"Library path does not exist: {library_path}")
+            elif library_path.is_dir():
+                # Check if directory has any content
+                try:
+                    has_content = any(library_path.iterdir())
+                    if not has_content:
+                        empty_paths.append(str(library_path))
+                    else:
+                        valid_path_count += 1
+                except PermissionError:
+                    warnings.append(f"Cannot read library path (permission denied): {library_path}")
 
     if unmounted_volumes:
         volume_list = ", ".join(unmounted_volumes)
         warnings.insert(0, f"Music library volume(s) not mounted: {volume_list}. Connect the drive to continue.")
+
+    if empty_paths:
+        path_list = ", ".join(empty_paths)
+        warnings.insert(0, f"Library path(s) empty (possible volume mount issue): {path_list}")
+
+    # Add library status to services
+    if library_paths:
+        lib_status = "healthy" if valid_path_count > 0 else "unhealthy"
+        lib_message = f"{valid_path_count}/{len(library_paths)} paths accessible"
+        if valid_path_count == 0:
+            lib_message = "No accessible library paths - check docker-compose volume mounts"
+        services.append(ServiceStatus(
+            name="library",
+            status=lib_status,
+            message=lib_message,
+            details={
+                "configured_paths": [str(p) for p in library_paths],
+                "valid_paths": valid_path_count,
+                "empty_paths": empty_paths,
+            },
+        ))
 
     # Check Database
     try:

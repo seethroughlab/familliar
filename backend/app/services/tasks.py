@@ -262,6 +262,55 @@ async def run_library_scan(full_scan: bool = False) -> dict[str, Any]:
         "recovered": 0,
     }
 
+    # Pre-scan validation: check all paths before starting
+    library_paths = settings.music_library_paths
+    if not library_paths:
+        error_msg = (
+            "No music library paths configured. "
+            "Go to /admin to set up your music library path, "
+            "or check MUSIC_LIBRARY_PATH in your docker-compose.yml"
+        )
+        logger.error(error_msg)
+        progress.error(error_msg)
+        return {"status": "error", "error": error_msg}
+
+    valid_paths = []
+    for path in library_paths:
+        if not path.exists():
+            logger.warning(
+                f"Library path does not exist: {path}. "
+                "Check that the volume is mounted correctly."
+            )
+            continue
+        if not path.is_dir():
+            logger.warning(f"Library path is not a directory: {path}")
+            continue
+        # Check if directory has any content
+        try:
+            has_content = any(path.iterdir())
+            if not has_content:
+                logger.warning(
+                    f"Library path is empty: {path}. "
+                    "This may indicate a Docker volume mount issue."
+                )
+                continue
+            valid_paths.append(path)
+        except PermissionError:
+            logger.warning(f"Cannot read library path (permission denied): {path}")
+            continue
+
+    if not valid_paths:
+        error_msg = (
+            f"No valid library paths found. Checked: {[str(p) for p in library_paths]}. "
+            "All paths are either missing, empty, or inaccessible. "
+            "Check your docker-compose volume mounts."
+        )
+        logger.error(error_msg)
+        progress.error(error_msg)
+        return {"status": "error", "error": error_msg}
+
+    logger.info(f"Starting scan with {len(valid_paths)} valid library path(s)")
+
     # Create a fresh async engine for this task
     local_engine = create_async_engine(
         settings.database_url,
@@ -280,23 +329,20 @@ async def run_library_scan(full_scan: bool = False) -> dict[str, Any]:
         async with local_session_maker() as db:
             scanner = LibraryScanner(db, scan_state=progress)
 
-            for library_path in settings.music_library_paths:
-                if library_path.exists():
-                    logger.info(f"Scanning library path: {library_path}")
-                    scan_results = await scanner.scan(library_path, full_scan=full_scan)
-                    results["new"] += scan_results.get("new", 0)
-                    results["updated"] += scan_results.get("updated", 0)
-                    results["unchanged"] += scan_results.get("unchanged", 0)
-                    results["deleted"] += scan_results.get("deleted", 0)
-                    results["marked_missing"] += scan_results.get("marked_missing", 0)
-                    results["still_missing"] += scan_results.get("still_missing", 0)
-                    results["relocated"] += scan_results.get("relocated", 0)
-                    results["recovered"] += scan_results.get("recovered", 0)
-                else:
-                    logger.warning(f"Library path does not exist: {library_path}")
+            for library_path in valid_paths:
+                logger.info(f"Scanning library path: {library_path}")
+                scan_results = await scanner.scan(library_path, full_scan=full_scan)
+                results["new"] += scan_results.get("new", 0)
+                results["updated"] += scan_results.get("updated", 0)
+                results["unchanged"] += scan_results.get("unchanged", 0)
+                results["deleted"] += scan_results.get("deleted", 0)
+                results["marked_missing"] += scan_results.get("marked_missing", 0)
+                results["still_missing"] += scan_results.get("still_missing", 0)
+                results["relocated"] += scan_results.get("relocated", 0)
+                results["recovered"] += scan_results.get("recovered", 0)
 
-            # Cleanup orphaned tracks (not under any configured library path)
-            orphan_results = await scanner.cleanup_orphaned_tracks(settings.music_library_paths)
+            # Cleanup orphaned tracks (not under any valid library path)
+            orphan_results = await scanner.cleanup_orphaned_tracks(valid_paths)
             results["marked_missing"] = results.get("marked_missing", 0) + orphan_results.get("orphaned", 0)
 
         progress.complete(
