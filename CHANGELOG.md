@@ -5,13 +5,35 @@ All notable changes to Familiar will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.1] - 2025-12-30
+## [0.1.1] - 2025-12-31
+
+### Added
+- **Admin setup page** at `/admin` for API key and library configuration
+- Plex-style folder browser for library path selection
+- "New Releases from Your Artists" feature
+- Backend API test suite with 40+ tests
+- Alembic migration tests
+- ARM64 Docker image support (Synology NAS, Raspberry Pi)
+
+### Changed
+- Moved Library Paths and LLM settings to Admin interface (cleaner Settings panel)
+- Python 3.11 in Docker image (better PyTorch wheel compatibility)
+- Limit Celery worker concurrency to 4 (reduces memory usage)
+- Renamed `alembic/` to `migrations/` to avoid package shadowing
 
 ### Fixed
+- Database connection leak causing API slowdown over time
 - Scanner progress reporting error (`ScanProgressReporter` attribute error)
-- Tracks not appearing after scan (transaction not committed before analysis tasks ran)
-- Torch import error when `DISABLE_CLAP_EMBEDDINGS=true` (now conditionally imported)
-- AcoustID fingerprint storage error (column too small for fingerprint data)
+- Tracks not appearing after scan (transaction timing issue)
+- Torch import error when `DISABLE_CLAP_EMBEDDINGS=true`
+- AcoustID fingerprint storage error (column too small)
+- WorkerTask.started_at type error
+- Celery health check for worker container
+- Orphaned tracks cleanup when library paths are removed
+- Playlists table schema migration
+
+### Security
+- Removed settings.json with API keys from git tracking
 
 ## [0.1.0] - 2025-12-30
 
