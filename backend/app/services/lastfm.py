@@ -9,7 +9,6 @@ from uuid import UUID
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.services.app_settings import get_app_settings_service
 
 
