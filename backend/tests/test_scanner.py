@@ -482,3 +482,109 @@ class TestLibraryScanner:
             # 8 unique files (electronic_short_relocated is a duplicate)
             assert results["new"] == 8
             assert results["relocated"] == 1  # The duplicate
+
+
+@pytest.mark.asyncio(loop_scope="function")
+class TestConcurrentScanPrevention:
+    """Tests for preventing concurrent scans (prevents duplicate tracks bug).
+
+    The duplicate tracks bug occurred when two scans ran concurrently:
+    - Both scans discovered files before either committed
+    - Hash matching couldn't work because tracks weren't committed yet
+    - Result: duplicate tracks in database
+
+    Fix: Redis-based locking prevents concurrent scans across workers.
+    """
+
+    async def test_concurrent_scan_is_rejected(self, clean_db):
+        """Second scan attempt should be rejected while first is running.
+
+        This is the key test that prevents the duplicate tracks bug.
+        """
+        import redis
+
+        from app.config import settings
+        from app.services.background import get_background_manager
+
+        r = redis.from_url(settings.redis_url)
+        bg = get_background_manager()
+
+        # Clean up any stale lock
+        r.delete("familiar:scan:lock")
+
+        try:
+            # Simulate a scan already running by acquiring the lock
+            lock_acquired = r.set("familiar:scan:lock", "1", nx=True, ex=60)
+            assert lock_acquired, "Should acquire fresh lock"
+
+            # is_scan_running should detect the lock
+            assert bg.is_scan_running() is True, "Should detect running scan via Redis lock"
+
+            # Attempting to start another scan should fail
+            result = await bg.run_scan(full_scan=False)
+            assert result["status"] == "already_running", (
+                "Second scan should be rejected when lock is held"
+            )
+
+        finally:
+            # Clean up
+            r.delete("familiar:scan:lock")
+
+    async def test_scan_lock_is_released_after_completion(self, clean_db):
+        """Scan lock should be released after scan completes (success or failure)."""
+        import redis
+
+        from app.config import settings
+
+        r = redis.from_url(settings.redis_url)
+
+        # Clean up any stale lock
+        r.delete("familiar:scan:lock")
+
+        try:
+            # Acquire lock manually
+            r.set("familiar:scan:lock", "1", nx=True, ex=60)
+            assert r.get("familiar:scan:lock") is not None
+
+            # Release lock (as would happen after scan)
+            r.delete("familiar:scan:lock")
+
+            # Verify lock is released
+            assert r.get("familiar:scan:lock") is None
+
+        finally:
+            r.delete("familiar:scan:lock")
+
+    async def test_stale_lock_detection_via_heartbeat(self, clean_db):
+        """Stale scans (no heartbeat) should not block new scans."""
+        import json
+        from datetime import datetime, timedelta
+
+        import redis
+
+        from app.config import settings
+        from app.services.background import get_background_manager
+
+        r = redis.from_url(settings.redis_url)
+        bg = get_background_manager()
+
+        # Clean up
+        r.delete("familiar:scan:lock")
+        r.delete("familiar:scan:progress")
+
+        try:
+            # Create stale progress (old heartbeat, no lock)
+            stale_progress = {
+                "status": "running",
+                "last_heartbeat": (datetime.now() - timedelta(minutes=10)).isoformat(),
+            }
+            r.set("familiar:scan:progress", json.dumps(stale_progress))
+
+            # Should NOT detect as running (heartbeat too old)
+            assert bg.is_scan_running() is False, (
+                "Stale scan (old heartbeat) should not block new scans"
+            )
+
+        finally:
+            r.delete("familiar:scan:lock")
+            r.delete("familiar:scan:progress")
