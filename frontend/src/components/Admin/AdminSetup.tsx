@@ -190,6 +190,29 @@ export function AdminSetup() {
     await saveLibraryPaths(updatedPaths);
   }
 
+  async function clearApiKey(keyName: string) {
+    const confirmed = window.confirm(`Are you sure you want to remove this API key?`);
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch('/api/v1/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [keyName]: null }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setSettings(data);
+        setStatus({ type: 'success', message: 'API key removed' });
+      } else {
+        setStatus({ type: 'error', message: 'Failed to remove API key' });
+      }
+    } catch {
+      setStatus({ type: 'error', message: 'Error removing API key' });
+    }
+  }
+
   async function saveLibraryPaths(pathsToSave: PathInfo[]) {
     setPathStatus('Saving...');
     try {
@@ -328,9 +351,18 @@ export function AdminSetup() {
                 <p className="text-sm text-zinc-500">For AI-powered playlist generation</p>
               </div>
               {anthropicConfigured ? (
-                <span className="flex items-center gap-1 text-sm text-green-400">
-                  <CheckCircle className="w-4 h-4" /> Configured
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm text-green-400">
+                    <CheckCircle className="w-4 h-4" /> Configured
+                  </span>
+                  <button
+                    onClick={() => clearApiKey('anthropic_api_key')}
+                    className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Remove API key"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <span className="flex items-center gap-1 text-sm text-zinc-500">
                   <XCircle className="w-4 h-4" /> Not configured
@@ -478,9 +510,18 @@ export function AdminSetup() {
                 <p className="text-sm text-zinc-500">For syncing Spotify favorites</p>
               </div>
               {settings?.spotify_configured ? (
-                <span className="flex items-center gap-1 text-sm text-green-400">
-                  <CheckCircle className="w-4 h-4" /> Configured
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm text-green-400">
+                    <CheckCircle className="w-4 h-4" /> Configured
+                  </span>
+                  <button
+                    onClick={() => clearApiKey('spotify_client_id')}
+                    className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Remove Spotify credentials"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <span className="flex items-center gap-1 text-sm text-zinc-500">
                   <XCircle className="w-4 h-4" /> Not configured
@@ -552,9 +593,18 @@ export function AdminSetup() {
                 <p className="text-sm text-zinc-500">For scrobbling and now playing</p>
               </div>
               {settings?.lastfm_configured ? (
-                <span className="flex items-center gap-1 text-sm text-green-400">
-                  <CheckCircle className="w-4 h-4" /> Configured
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm text-green-400">
+                    <CheckCircle className="w-4 h-4" /> Configured
+                  </span>
+                  <button
+                    onClick={() => clearApiKey('lastfm_api_key')}
+                    className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Remove Last.fm credentials"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <span className="flex items-center gap-1 text-sm text-zinc-500">
                   <XCircle className="w-4 h-4" /> Not configured
@@ -610,9 +660,18 @@ export function AdminSetup() {
                 <p className="text-sm text-zinc-500">For audio fingerprinting (optional)</p>
               </div>
               {acoustidConfigured ? (
-                <span className="flex items-center gap-1 text-sm text-green-400">
-                  <CheckCircle className="w-4 h-4" /> Configured
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-1 text-sm text-green-400">
+                    <CheckCircle className="w-4 h-4" /> Configured
+                  </span>
+                  <button
+                    onClick={() => clearApiKey('acoustid_api_key')}
+                    className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+                    title="Remove AcoustID key"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               ) : (
                 <span className="flex items-center gap-1 text-sm text-zinc-500">
                   <XCircle className="w-4 h-4" /> Not configured
