@@ -209,7 +209,9 @@ class Track(Base):
 
     # File availability status (prevents catastrophic deletion)
     status: Mapped[TrackStatus] = mapped_column(
-        Enum(TrackStatus), default=TrackStatus.ACTIVE, index=True
+        Enum(TrackStatus, values_callable=lambda obj: [e.value for e in obj]),
+        default=TrackStatus.ACTIVE,
+        index=True,
     )
     missing_since: Mapped[datetime | None] = mapped_column(DateTime)  # When file was first not found
 
