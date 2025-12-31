@@ -339,8 +339,11 @@ export interface ScanProgress {
   new_tracks: number;
   updated_tracks: number;
   relocated_tracks: number;
-  deleted_tracks: number;
   unchanged_tracks: number;
+  marked_missing: number;
+  still_missing: number;
+  recovered: number;
+  deleted_tracks: number;  // Legacy, always 0
   current_file: string | null;
   started_at: string | null;
   errors: string[];

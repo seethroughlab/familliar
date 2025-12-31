@@ -64,17 +64,26 @@ frontend/
 2. Export from `Settings/index.tsx`
 3. Add to settings tabs in main Settings component
 
+## Configuration
+
+Most settings are configured via the admin UI (Settings panel):
+- **Music library paths** - Settings > Library Management
+- **API keys** - Admin page (Anthropic, Spotify, Last.fm, AcoustID)
+- **LLM provider** - Settings > AI Assistant
+
+Settings are stored in `data/settings.json` and persist across restarts.
+
 ## Environment Variables
 
+Only infrastructure settings require environment variables:
+
 ```bash
+# Required (from docker-compose or shell)
 DATABASE_URL=postgresql+asyncpg://familiar:familiar@localhost:5432/familiar
 REDIS_URL=redis://localhost:6379/0
-MUSIC_LIBRARY_PATH=/Volumes/silo/music
-ANTHROPIC_API_KEY=sk-ant-...
-SPOTIFY_CLIENT_ID=...
-SPOTIFY_CLIENT_SECRET=...
-LASTFM_API_KEY=...
-LASTFM_API_SECRET=...
+
+# Optional (for Docker volume mounting only - actual paths configured in UI)
+MUSIC_LIBRARY_PATH=/data/music
 ```
 
 ## Running Locally

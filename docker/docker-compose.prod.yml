@@ -1,15 +1,15 @@
 # Production Docker Compose for Familiar
 # Usage: docker compose -f docker-compose.prod.yml up -d
 #
-# Required environment variables (set in .env or environment):
-#   - MUSIC_LIBRARY_PATH: Path to your music library
+# Configuration:
+#   - Music library paths are configured via the admin UI (Settings > Library Management)
+#   - API keys (Anthropic, Spotify, Last.fm) are configured via the admin UI
+#   - MUSIC_LIBRARY_PATH env var is only used for Docker volume mounting
 #
-# Optional environment variables:
+# Environment variables:
+#   - MUSIC_LIBRARY_PATH: Host path to mount as /data/music (for Docker volume)
 #   - FAMILIAR_VERSION: Docker image version (default: latest)
-#   - ANTHROPIC_API_KEY: For AI chat features
-#   - SPOTIFY_CLIENT_ID/SECRET: For Spotify integration
 #   - SPOTIFY_REDIRECT_URI: Spotify OAuth callback URL (e.g., https://your-domain.ts.net/api/v1/spotify/callback)
-#   - LASTFM_API_KEY/SECRET: For Last.fm scrobbling
 
 services:
   postgres:
@@ -53,6 +53,7 @@ services:
       - "${API_PORT:-4400}:8000"
     volumes:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - app_data:/app/data  # Persists settings.json
       - art_data:/data/art
       - videos_data:/data/videos
     environment:
@@ -91,6 +92,7 @@ services:
     command: celery -A app.workers.celery_app worker --loglevel=info
     volumes:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - app_data:/app/data  # Shares settings.json with api
       - art_data:/data/art
       - videos_data:/data/videos
     environment:
@@ -111,6 +113,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  app_data:      # Settings and configuration
   art_data:
   videos_data:
 

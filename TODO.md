@@ -59,7 +59,13 @@
 [x] Please rename _RELEASE_CHECKLIST.md release-checklists/v0.1.1-checklist.md. This file should ONLY include tasks that MUST be done by a human. There are 3 types of tasks (1) fully automatic CI tests that can run on Github, (2) Automated tests that can be run and evaluated locally by Claude Code (3) Tests that require human execution and judgement. release-checklists/v0.1.1-checklist.md should reflect these categories and provide instructions on how to complete all of the tasks in the 3 categories. 
 [x] Please move all of the "_*.md" files to a "plans" subdirectory. They are future plans for major features. 
 [x] PLAN: I want to make a new plan file about the visualizer. I want it to be an API that anyone can contribute to. The API should provide all of the metadata, including ID3 tags, lyrics, album art, YouTube videos, BPM, key, and any other data that Familliar currently has about a particular song. The existing visualizers should be structured in such a way that they provide a model for future contributors. But (1) what does the API look like, and (2) how should people contribute?
+[x] The Music Library path should be one of the settings in the admin interface. I'm debating whether we should remove the .env file altogether.
+[x] Have you been making changes to the openmediavault install without making them locally?
+[x] One time the Music Library path wasn't set properly, and thousands of tracks were deleted. This SHOULDN'T be able to happen. Let's think about how we can prevent this. Perhaps there should be a check before a scan that makes sure the music folder is available. And let's also think about asking the user for confirmation before deleting tracks from the database, and an opportunity to locate the files IF they can't automatically be found. I like the Adobe approach to missing assets - you can spcify a new folder to look in, or locate individual files. 
 [ ] "Missing from Library" songs should also appear in playlists when relevant
+[ ] update the CHANGELOG before release.
+
 
 ## For future releases
-[ ] I'd like to make the Visulizer a "visualization system", where people can submit their own visualizers. 
+[ ] Familliar should have a slightly witchy look inspired by the name. It should be subtle. Let's come up with a plan.
+[ ] The Library view needs some work. You should be able to browse by artist/album/year/gener, but let's be smart about it and not just adopt an existing paradigm.

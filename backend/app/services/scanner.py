@@ -5,6 +5,7 @@ import hashlib
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,107 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import AUDIO_EXTENSIONS
-from app.db.models import Track
+from app.db.models import Track, TrackStatus
+
+
+class LibraryValidationError(Exception):
+    """Raised when library path validation fails."""
+
+    pass
+
+
+class EmptyLibraryError(LibraryValidationError):
+    """Raised when library path is empty or has no audio files."""
+
+    pass
+
+
+@dataclass
+class LibraryValidation:
+    """Result of library path validation before scan."""
+
+    path: Path
+    exists: bool
+    is_directory: bool
+    is_readable: bool
+    is_empty: bool
+    file_count: int  # Quick count of immediate files (not recursive)
+    dir_count: int  # Quick count of immediate subdirs
+    error: str | None = None
+
+
+def validate_library_path(library_path: Path) -> LibraryValidation:
+    """Validate library path before scanning.
+
+    Performs quick checks to catch misconfigured or unmounted volumes
+    BEFORE attempting a full scan that could delete all tracks.
+
+    Checks:
+    1. Path exists
+    2. Path is a directory
+    3. Path is readable
+    4. Path has content (files or subdirectories)
+    5. For /Volumes/* paths on macOS, warns about potential unmount
+    """
+    if not library_path.exists():
+        return LibraryValidation(
+            path=library_path,
+            exists=False,
+            is_directory=False,
+            is_readable=False,
+            is_empty=True,
+            file_count=0,
+            dir_count=0,
+            error=f"Path does not exist: {library_path}",
+        )
+
+    if not library_path.is_dir():
+        return LibraryValidation(
+            path=library_path,
+            exists=True,
+            is_directory=False,
+            is_readable=False,
+            is_empty=True,
+            file_count=0,
+            dir_count=0,
+            error=f"Path is not a directory: {library_path}",
+        )
+
+    # Check readability
+    try:
+        contents = list(library_path.iterdir())
+    except PermissionError:
+        return LibraryValidation(
+            path=library_path,
+            exists=True,
+            is_directory=True,
+            is_readable=False,
+            is_empty=True,
+            file_count=0,
+            dir_count=0,
+            error=f"Permission denied: cannot read {library_path}",
+        )
+
+    file_count = sum(1 for c in contents if c.is_file())
+    dir_count = sum(1 for c in contents if c.is_dir())
+    is_empty = file_count == 0 and dir_count == 0
+
+    # Check for unmounted volume on macOS
+    error = None
+    path_str = str(library_path)
+    if path_str.startswith("/Volumes/") and is_empty:
+        error = f"Volume appears unmounted or empty: {library_path}"
+
+    return LibraryValidation(
+        path=library_path,
+        exists=True,
+        is_directory=True,
+        is_readable=True,
+        is_empty=is_empty,
+        file_count=file_count,
+        dir_count=dir_count,
+        error=error,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -115,8 +216,20 @@ class LibraryScanner:
         Returns:
             Dict with scan results: total, new, updated, deleted, queued
         """
-        if not library_path.exists():
-            raise ValueError(f"Library path does not exist: {library_path}")
+        # Validate library path before scanning
+        validation = validate_library_path(library_path)
+        if not validation.exists:
+            raise LibraryValidationError(f"Library path does not exist: {library_path}")
+        if not validation.is_directory:
+            raise LibraryValidationError(f"Library path is not a directory: {library_path}")
+        if not validation.is_readable:
+            raise LibraryValidationError(f"Library path is not readable: {library_path}")
+        if validation.is_empty:
+            raise EmptyLibraryError(
+                f"Library path is empty or has no content: {library_path}. "
+                "This may indicate an unmounted volume or misconfigured path. "
+                "Scan aborted to prevent accidental track deletion."
+            )
 
         loop = asyncio.get_event_loop()
 
@@ -144,9 +257,12 @@ class LibraryScanner:
             "total": len(found_files),
             "new": 0,
             "updated": 0,
-            "deleted": 0,
             "unchanged": 0,
             "queued": 0,
+            "marked_missing": 0,  # Newly marked as missing this scan
+            "still_missing": 0,   # Already missing, still not found
+            "recovered": 0,       # Previously missing, now found
+            "relocated": 0,       # Found at different path
         }
 
         # Track IDs to queue for analysis after commit
@@ -167,6 +283,7 @@ class LibraryScanner:
                     updated=results["updated"],
                     unchanged=results["unchanged"],
                     current=file_path.name,
+                    recovered=results["recovered"],
                 )
 
             # Log progress every 100 files
@@ -187,6 +304,14 @@ class LibraryScanner:
                 results["queued"] += 1
             else:
                 existing = existing_paths[path_str]
+
+                # Check if track was previously missing and is now recovered
+                if existing.status in (TrackStatus.MISSING, TrackStatus.PENDING_DELETION):
+                    logger.info(f"RECOVERED: {file_path.name}")
+                    existing.status = TrackStatus.ACTIVE
+                    existing.missing_since = None
+                    results["recovered"] += 1
+
                 if full_scan or existing.file_hash != file_hash:
                     # Changed file (or full scan requested)
                     logger.info(f"UPDATED: {file_path.name}")
@@ -226,8 +351,6 @@ class LibraryScanner:
 
         if missing_paths:
             logger.info(f"Found {len(missing_paths)} missing files, searching for relocated files...")
-            if self.scan_state:
-                self.scan_state.set_cleanup(len(missing_paths))
 
         # Build filename -> path map for relocated file search
         filename_to_path: dict[str, str] = {}
@@ -237,7 +360,7 @@ class LibraryScanner:
             if filename not in filename_to_path:
                 filename_to_path[filename] = path_str
 
-        results["relocated"] = 0
+        now = datetime.now()
         for path_str in missing_paths:
             track = existing_paths[path_str]
             filename = Path(path_str).name.lower()
@@ -249,17 +372,43 @@ class LibraryScanner:
                 if new_path not in existing_paths:
                     logger.info(f"RELOCATED: {Path(path_str).name} -> {new_path}")
                     track.file_path = new_path
+                    # If it was missing, recover it
+                    if track.status in (TrackStatus.MISSING, TrackStatus.PENDING_DELETION):
+                        track.status = TrackStatus.ACTIVE
+                        track.missing_since = None
+                        results["recovered"] += 1
                     results["relocated"] += 1
                     continue
 
-            # File truly deleted
-            logger.info(f"DELETED: {Path(path_str).name}")
-            await self.db.delete(track)
-            results["deleted"] += 1
+            # File not found - mark as missing instead of deleting
+            if track.status == TrackStatus.ACTIVE:
+                # First time this track is missing
+                logger.info(f"MISSING: {Path(path_str).name}")
+                track.status = TrackStatus.MISSING
+                track.missing_since = now
+                results["marked_missing"] += 1
+            elif track.status == TrackStatus.MISSING:
+                # Already missing, check if >30 days
+                if track.missing_since and (now - track.missing_since).days >= 30:
+                    logger.info(f"PENDING_DELETION: {Path(path_str).name} (missing >30 days)")
+                    track.status = TrackStatus.PENDING_DELETION
+                results["still_missing"] += 1
+            else:
+                # PENDING_DELETION - stays in that state until user confirms
+                results["still_missing"] += 1
+
+        # Update cleanup progress with final counts
+        if self.scan_state and (results["marked_missing"] > 0 or results["still_missing"] > 0):
+            self.scan_state.set_cleanup(results["marked_missing"], results["still_missing"])
 
         await self.db.commit()
 
-        logger.info(f"Scan complete: {results['new']} new, {results['updated']} updated, {results['relocated']} relocated, {results['deleted']} deleted, {results['unchanged']} unchanged")
+        logger.info(
+            f"Scan complete: {results['new']} new, {results['updated']} updated, "
+            f"{results['relocated']} relocated, {results['recovered']} recovered, "
+            f"{results['marked_missing']} marked missing, {results['still_missing']} still missing, "
+            f"{results['unchanged']} unchanged"
+        )
 
         return results
 

@@ -40,11 +40,36 @@ logging.basicConfig(
 )
 
 
+def migrate_env_to_settings() -> None:
+    """One-time migration of MUSIC_LIBRARY_PATH env var to AppSettings."""
+    from app.services.app_settings import get_app_settings_service
+
+    service = get_app_settings_service()
+    app_settings = service.get()
+
+    # If music library paths already configured in settings, skip migration
+    if app_settings.music_library_paths:
+        return
+
+    # Check for MUSIC_LIBRARY_PATH environment variable
+    env_path = app_config.music_library_path
+    if env_path and env_path != "/data/music":
+        # User has a custom path configured via env var - migrate it
+        paths = [p.strip() for p in env_path.split(",") if p.strip()]
+        if paths:
+            service.update(music_library_paths=paths)
+            logging.info(f"Migrated MUSIC_LIBRARY_PATH to settings: {paths}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
     # Startup
     print(f"Starting Familiar API (debug={app_config.debug})")
+
+    # Migrate env vars to settings on first run
+    migrate_env_to_settings()
+
     yield
     # Shutdown
     print("Shutting down Familiar API")

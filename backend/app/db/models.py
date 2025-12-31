@@ -40,6 +40,18 @@ class AlbumType(enum.Enum):
     LIVE = "live"
 
 
+class TrackStatus(enum.Enum):
+    """Track file availability status for safe library management.
+
+    Prevents catastrophic deletion when library path is misconfigured.
+    Missing tracks are preserved until user explicitly confirms deletion.
+    """
+
+    ACTIVE = "active"  # File exists at path
+    MISSING = "missing"  # File not found, awaiting user action
+    PENDING_DELETION = "pending_deletion"  # Missing >30 days, suggested for cleanup
+
+
 class Profile(Base):
     """Selectable profile for multi-user support (Netflix-style).
 
@@ -194,6 +206,12 @@ class Track(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    # File availability status (prevents catastrophic deletion)
+    status: Mapped[TrackStatus] = mapped_column(
+        Enum(TrackStatus), default=TrackStatus.ACTIVE, index=True
+    )
+    missing_since: Mapped[datetime | None] = mapped_column(DateTime)  # When file was first not found
 
     # Relationships
     analyses: Mapped[list["TrackAnalysis"]] = relationship(

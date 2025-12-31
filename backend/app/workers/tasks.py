@@ -403,7 +403,11 @@ class ScanProgressReporter:
             "new_tracks": 0,
             "updated_tracks": 0,
             "unchanged_tracks": 0,
-            "deleted_tracks": 0,
+            "relocated_tracks": 0,
+            "marked_missing": 0,
+            "still_missing": 0,
+            "recovered": 0,
+            "deleted_tracks": 0,  # Legacy, always 0
             "current_file": None,
             "started_at": self.started_at,
             "last_heartbeat": datetime.now().isoformat(),
@@ -428,6 +432,10 @@ class ScanProgressReporter:
             "new_tracks": 0,
             "updated_tracks": 0,
             "unchanged_tracks": 0,
+            "relocated_tracks": 0,
+            "marked_missing": 0,
+            "still_missing": 0,
+            "recovered": 0,
             "deleted_tracks": 0,
             "current_file": None,
             "started_at": self.started_at,
@@ -442,6 +450,7 @@ class ScanProgressReporter:
         updated: int,
         unchanged: int,
         current: str | None = None,
+        recovered: int = 0,
     ) -> None:
         """Update processing progress."""
         pct = int(processed / total * 100) if total > 0 else 0
@@ -455,19 +464,24 @@ class ScanProgressReporter:
             "new_tracks": new,
             "updated_tracks": updated,
             "unchanged_tracks": unchanged,
+            "relocated_tracks": 0,
+            "marked_missing": 0,
+            "still_missing": 0,
+            "recovered": recovered,
             "deleted_tracks": 0,
             "current_file": current,
             "started_at": self.started_at,
             "errors": [],
         })
 
-    def set_cleanup(self, deleted: int) -> None:
+    def set_cleanup(self, marked_missing: int, still_missing: int = 0) -> None:
         """Update cleanup progress."""
         # Get current state to preserve counts
         current = self._get_current()
         current["phase"] = "cleanup"
-        current["message"] = f"Cleanup: removed {deleted} deleted files"
-        current["deleted_tracks"] = deleted
+        current["message"] = f"Cleanup: {marked_missing} marked missing, {still_missing} still missing"
+        current["marked_missing"] = marked_missing
+        current["still_missing"] = still_missing
         self._update_progress(current)
 
     def _get_current(self) -> dict[str, Any]:
@@ -477,19 +491,32 @@ class ScanProgressReporter:
             return json.loads(data)
         return {}
 
-    def complete(self, new: int, updated: int, unchanged: int, deleted: int) -> None:
+    def complete(
+        self,
+        new: int,
+        updated: int,
+        unchanged: int,
+        relocated: int = 0,
+        marked_missing: int = 0,
+        still_missing: int = 0,
+        recovered: int = 0,
+    ) -> None:
         """Mark scan as complete."""
         self._update_progress({
             "status": "completed",
             "phase": "complete",
-            "message": f"Complete: {new} new, {updated} updated, {deleted} deleted, {unchanged} unchanged",
+            "message": f"Complete: {new} new, {updated} updated, {relocated} relocated, {recovered} recovered, {marked_missing} missing, {unchanged} unchanged",
             "files_discovered": 0,
             "files_processed": 0,
             "files_total": 0,
             "new_tracks": new,
             "updated_tracks": updated,
             "unchanged_tracks": unchanged,
-            "deleted_tracks": deleted,
+            "relocated_tracks": relocated,
+            "marked_missing": marked_missing,
+            "still_missing": still_missing,
+            "recovered": recovered,
+            "deleted_tracks": 0,  # Legacy, always 0
             "current_file": None,
             "started_at": self.started_at,
             "errors": [],
@@ -622,7 +649,10 @@ def scan_library(self, full_scan: bool = False) -> dict[str, Any]:
             new=results["new"],
             updated=results["updated"],
             unchanged=results["unchanged"],
-            deleted=results["deleted"],
+            relocated=results.get("relocated", 0),
+            marked_missing=results.get("marked_missing", 0),
+            still_missing=results.get("still_missing", 0),
+            recovered=results.get("recovered", 0),
         )
 
         # Add warning if new tracks were queued but analysis may be slow

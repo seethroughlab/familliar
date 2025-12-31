@@ -5,7 +5,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -21,13 +20,32 @@ class Settings(BaseSettings):
 
     @property
     def music_library_paths(self) -> list[Path]:
-        """Get list of music library paths (supports comma-separated values)."""
-        paths = []
-        for p in self.music_library_path.split(","):
-            p = p.strip()
-            if p:
-                paths.append(Path(p))
-        return paths
+        """Get list of music library paths.
+
+        Priority:
+        1. AppSettings (settings.json) if configured via admin UI
+        2. Environment variable MUSIC_LIBRARY_PATH (comma-separated)
+        3. Default /data/music
+        """
+        # Check AppSettings first (configured via admin UI)
+        from app.services.app_settings import get_app_settings_service
+
+        app_settings = get_app_settings_service().get()
+        if app_settings.music_library_paths:
+            return [Path(p) for p in app_settings.music_library_paths if p]
+
+        # Fall back to environment variable (for backwards compatibility)
+        if self.music_library_path and self.music_library_path != "/data/music":
+            paths = []
+            for p in self.music_library_path.split(","):
+                p = p.strip()
+                if p:
+                    paths.append(Path(p))
+            if paths:
+                return paths
+
+        # Default
+        return [Path("/data/music")]
 
     # Data paths
     art_path: Path = Path("data/art")

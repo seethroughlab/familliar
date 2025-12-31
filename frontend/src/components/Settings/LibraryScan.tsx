@@ -276,7 +276,7 @@ export function LibraryScan() {
             </p>
           )}
 
-          <div className="grid grid-cols-5 gap-2 text-center text-xs">
+          <div className="grid grid-cols-6 gap-2 text-center text-xs">
             <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-green-400 font-medium">{progress.new_tracks}</div>
               <div className="text-zinc-500">New</div>
@@ -290,12 +290,16 @@ export function LibraryScan() {
               <div className="text-zinc-500">Relocated</div>
             </div>
             <div className="bg-zinc-700/50 rounded p-2">
+              <div className="text-cyan-400 font-medium">{progress.recovered}</div>
+              <div className="text-zinc-500">Recovered</div>
+            </div>
+            <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-zinc-400 font-medium">{progress.unchanged_tracks}</div>
               <div className="text-zinc-500">Unchanged</div>
             </div>
             <div className="bg-zinc-700/50 rounded p-2">
-              <div className="text-red-400 font-medium">{progress.deleted_tracks}</div>
-              <div className="text-zinc-500">Deleted</div>
+              <div className="text-amber-400 font-medium">{progress.marked_missing}</div>
+              <div className="text-zinc-500">Missing</div>
             </div>
           </div>
 
@@ -317,7 +321,7 @@ export function LibraryScan() {
 
       {/* Summary when completed */}
       {scanStatus?.status === 'completed' && progress && (
-        <div className="mt-3 grid grid-cols-5 gap-2 text-center text-xs">
+        <div className="mt-3 grid grid-cols-6 gap-2 text-center text-xs">
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-green-400 font-medium">{progress.new_tracks}</div>
             <div className="text-zinc-500">New</div>
@@ -331,12 +335,16 @@ export function LibraryScan() {
             <div className="text-zinc-500">Relocated</div>
           </div>
           <div className="bg-zinc-700/50 rounded p-2">
+            <div className="text-cyan-400 font-medium">{progress.recovered}</div>
+            <div className="text-zinc-500">Recovered</div>
+          </div>
+          <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-zinc-400 font-medium">{progress.unchanged_tracks}</div>
             <div className="text-zinc-500">Unchanged</div>
           </div>
           <div className="bg-zinc-700/50 rounded p-2">
-            <div className="text-red-400 font-medium">{progress.deleted_tracks}</div>
-            <div className="text-zinc-500">Deleted</div>
+            <div className="text-amber-400 font-medium">{progress.marked_missing}</div>
+            <div className="text-zinc-500">Missing</div>
           </div>
         </div>
       )}

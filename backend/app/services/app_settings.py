@@ -10,6 +10,9 @@ from pydantic import BaseModel
 class AppSettings(BaseModel):
     """User-configurable app settings."""
 
+    # Music Library
+    music_library_paths: list[str] = []  # List of paths to music libraries
+
     # Spotify
     spotify_client_id: str | None = None
     spotify_client_secret: str | None = None
@@ -105,6 +108,11 @@ class AppSettingsService:
         """Check if Last.fm credentials are configured."""
         settings = self.get()
         return bool(settings.lastfm_api_key and settings.lastfm_api_secret)
+
+    def has_music_library_configured(self) -> bool:
+        """Check if at least one music library path is configured."""
+        settings = self.get()
+        return bool(settings.music_library_paths)
 
 
 # Singleton instance
