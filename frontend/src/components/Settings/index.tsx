@@ -3,7 +3,6 @@ import { LastfmSettings } from './LastfmSettings';
 import { OfflineSettings } from './OfflineSettings';
 import { LibraryOrganizer } from './LibraryOrganizer';
 import { LibraryScan } from './LibraryScan';
-import { LibraryPathsSettings } from './LibraryPathsSettings';
 import { MissingTracksPanel } from './MissingTracksPanel';
 import { ThemeSettings } from './ThemeSettings';
 import { PlaybackSettings } from './PlaybackSettings';
@@ -91,7 +90,6 @@ export function SettingsPanel() {
             Library Management
           </h3>
           <div className="space-y-4">
-            <LibraryPathsSettings />
             <MusicImport />
             <LibraryScan />
             <MissingTracksPanel />
