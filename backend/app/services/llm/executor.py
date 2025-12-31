@@ -61,8 +61,8 @@ class ToolExecutor:
         if handler:
             # Handle methods that take no args vs those that do
             if tool_name in ("get_library_stats", "get_spotify_status", "get_spotify_sync_stats"):
-                return await handler()
-            return await handler(**tool_input)
+                return await handler()  # type: ignore[operator]
+            return await handler(**tool_input)  # type: ignore[operator]
         return {"error": f"Unknown tool: {tool_name}"}
 
     def get_queued_tracks(self) -> list[dict[str, Any]]:
