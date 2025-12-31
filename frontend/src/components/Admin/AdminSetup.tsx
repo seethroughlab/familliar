@@ -677,6 +677,22 @@ export function AdminSetup() {
                 last.fm/api
               </a>
             </p>
+            <div className="mt-3 p-3 bg-zinc-800 rounded-lg">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs text-zinc-400 mb-1">Callback URL (copy this to Last.fm API application):</p>
+                  <code className="text-sm text-red-400 break-all">{window.location.origin}/settings</code>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/settings`)}
+                  className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors flex-shrink-0"
+                  title="Copy to clipboard"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
           </section>
 
           {/* AcoustID API */}

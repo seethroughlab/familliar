@@ -80,7 +80,7 @@ cd familliar
 
 # Copy and configure environment
 cp .env.example .env
-# Edit .env and set MUSIC_LIBRARY_PATH to your music folder
+# Edit .env: set FRONTEND_URL for your server's hostname/IP
 
 # Start all services
 cd docker
@@ -89,14 +89,9 @@ docker compose -f docker-compose.prod.yml up -d
 # Initialize the database (first run only)
 docker exec familiar-api python -m app.db.init_db
 
-# Scan your music library
-docker exec familiar-api python -c "
-from app.workers.tasks import scan_library
-scan_library.delay()
-"
 ```
 
-Access the web UI at http://localhost:4400
+Access the web UI at http://localhost:4400, then go to Settings to configure your music library and start a scan.
 
 ## Installation
 
@@ -129,23 +124,15 @@ Access the web UI at http://localhost:4400
 4. **Create environment file:**
    ```bash
    cat > .env << 'EOF'
-   # Required: Path to your music library
+   # Path to your music library (for Docker volume mount)
    MUSIC_LIBRARY_PATH=/path/to/your/music
 
-   # Optional: API keys for integrations
-   # ANTHROPIC_API_KEY=your-key-here
-   # SPOTIFY_CLIENT_ID=your-id
-   # SPOTIFY_CLIENT_SECRET=your-secret
-   # LASTFM_API_KEY=your-key
-   # LASTFM_API_SECRET=your-secret
-
-   # Optional: Custom port (default: 4400)
-   # API_PORT=4400
-
-   # Optional: Database password (default: familiar)
-   # POSTGRES_PASSWORD=secure-password
+   # Frontend URL (change for remote access - used for OAuth callbacks)
+   FRONTEND_URL=http://localhost:4400
    EOF
    ```
+
+   > **Note:** `MUSIC_LIBRARY_PATH` is only used for the Docker volume mount. The actual library path and API keys are configured via the Admin UI at `/admin` after startup.
 
 5. **Start the services:**
    ```bash
@@ -173,11 +160,11 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
    - Install `openmediavault-compose` plugin from omv-extras
    - Go to Services → Compose → Settings and enable it
 
-2. **Create shared folders:**
-   ```
-   /srv/dev-disk-by-uuid-xxx/familiar/       # App data
-   /srv/dev-disk-by-uuid-xxx/music/          # Your music library
-   ```
+2. **Create a shared folder for app data:**
+
+   Create a folder called `familiar` on your data disk for app data (postgres, redis, settings).
+
+   Your music library should already exist somewhere on your NAS.
 
 3. **Create the compose file:**
 
@@ -185,7 +172,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
 
    **Name:** `familiar`
 
-   **File content:**
+   **File content:** (replace `/path/to` placeholders with your actual paths)
    ```yaml
    services:
      postgres:
@@ -197,7 +184,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
          POSTGRES_PASSWORD: familiar
          POSTGRES_DB: familiar
        volumes:
-         - /srv/dev-disk-by-uuid-xxx/familiar/postgres:/var/lib/postgresql/data
+         - /path/to/familiar/postgres:/var/lib/postgresql/data
        healthcheck:
          test: ["CMD-SHELL", "pg_isready -U familiar"]
          interval: 10s
@@ -209,7 +196,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
        container_name: familiar-redis
        restart: unless-stopped
        volumes:
-         - /srv/dev-disk-by-uuid-xxx/familiar/redis:/data
+         - /path/to/familiar/redis:/data
        healthcheck:
          test: ["CMD", "redis-cli", "ping"]
          interval: 10s
@@ -223,40 +210,20 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
        ports:
          - "4400:8000"
        volumes:
-         - /srv/dev-disk-by-uuid-xxx/music:/data/music:ro
-         - /srv/dev-disk-by-uuid-xxx/familiar/art:/data/art
-         - /srv/dev-disk-by-uuid-xxx/familiar/videos:/data/videos
+         - /path/to/music:/data/music:ro
+         - /path/to/familiar/data:/app/data
+         - /path/to/familiar/art:/data/art
+         - /path/to/familiar/videos:/data/videos
        environment:
          - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
          - REDIS_URL=redis://redis:6379/0
-         - MUSIC_LIBRARY_PATH=/data/music
-       depends_on:
-         postgres:
-           condition: service_healthy
-         redis:
-           condition: service_healthy
-
-     worker:
-       image: ghcr.io/seethroughlab/familliar:latest
-       container_name: familiar-worker
-       restart: unless-stopped
-       command: celery -A app.workers.celery_app worker --loglevel=info
-       volumes:
-         - /srv/dev-disk-by-uuid-xxx/music:/data/music:ro
-         - /srv/dev-disk-by-uuid-xxx/familiar/art:/data/art
-         - /srv/dev-disk-by-uuid-xxx/familiar/videos:/data/videos
-       environment:
-         - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
-         - REDIS_URL=redis://redis:6379/0
-         - MUSIC_LIBRARY_PATH=/data/music
+         - FRONTEND_URL=http://your-omv-ip:4400
        depends_on:
          postgres:
            condition: service_healthy
          redis:
            condition: service_healthy
    ```
-
-   **Note:** Replace `/srv/dev-disk-by-uuid-xxx/` with your actual disk path.
 
 4. **Start the stack:**
    - Click the "Up" button in Compose → Files
@@ -307,10 +274,10 @@ docker logs familiar-postgres
 docker exec familiar-api python -m app.db.init_db
 ```
 
-**Worker not processing tasks:**
+**Background tasks not processing:**
 ```bash
-# Check worker logs
-docker logs familiar-worker
+# Check API logs (background tasks run in-process)
+docker logs familiar-api
 
 # Ensure Redis is running
 docker exec familiar-redis redis-cli ping
@@ -340,7 +307,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
    - Search for "Container Manager" (DSM 7.2+) or "Docker" (older DSM)
    - Install and open it
 
-2. **Create folders for Familiar:**
+2. **Create folders for Familiar app data:**
    ```
    /volume1/docker/familiar/          # App data
    /volume1/docker/familiar/postgres  # Database
@@ -348,6 +315,8 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
    /volume1/docker/familiar/art       # Album artwork
    /volume1/docker/familiar/videos    # Music videos
    ```
+
+   Your music library should already exist somewhere on your NAS (e.g., `/volume1/music/`).
 
 3. **Create a Project in Container Manager:**
    - Go to Project → Create
@@ -394,37 +363,13 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
          - "4400:8000"
        volumes:
          - /volume1/music:/data/music:ro
+         - /volume1/docker/familiar/data:/app/data
          - /volume1/docker/familiar/art:/data/art
          - /volume1/docker/familiar/videos:/data/videos
        environment:
          - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
          - REDIS_URL=redis://redis:6379/0
-         - MUSIC_LIBRARY_PATH=/data/music
-         # Optional: Add your API keys
-         # - ANTHROPIC_API_KEY=your-key
-         # - SPOTIFY_CLIENT_ID=your-id
-         # - SPOTIFY_CLIENT_SECRET=your-secret
-       depends_on:
-         postgres:
-           condition: service_healthy
-         redis:
-           condition: service_healthy
-
-     worker:
-       image: ghcr.io/seethroughlab/familliar:latest
-       container_name: familiar-worker
-       restart: unless-stopped
-       command: celery -A app.workers.celery_app worker --loglevel=info
-       volumes:
-         - /volume1/music:/data/music:ro
-         - /volume1/docker/familiar/art:/data/art
-         - /volume1/docker/familiar/videos:/data/videos
-       environment:
-         - DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar
-         - REDIS_URL=redis://redis:6379/0
-         - MUSIC_LIBRARY_PATH=/data/music
-         # Disable CLAP embeddings on ARM if needed
-         # - DISABLE_CLAP_EMBEDDINGS=true
+         - FRONTEND_URL=http://your-synology-ip:4400
        depends_on:
          postgres:
            condition: service_healthy
@@ -432,7 +377,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
            condition: service_healthy
    ```
 
-   **Note:** Adjust `/volume1/music` to match your music library location.
+   **Note:** Adjust `/volume1/music` to your music library and `FRONTEND_URL` to your Synology's IP.
 
 5. **Build and start:**
    - Click "Build" to pull images and start containers
@@ -440,7 +385,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
 
 6. **Access Familiar:**
    - Open `http://your-synology-ip:4400`
-   - Go to Settings to add API keys and start a library scan
+   - Go to Settings to configure API keys and start a library scan
 
 #### Updating on Synology
 
@@ -452,7 +397,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
 
 **ARM64 audio analysis issues:**
 
-If audio analysis fails on ARM-based Synology, disable CLAP embeddings:
+If audio analysis fails on ARM-based Synology, add this to your api service environment:
 ```yaml
 environment:
   - DISABLE_CLAP_EMBEDDINGS=true
@@ -537,10 +482,7 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 3. Navigate to **Settings** → **API Keys**
 4. Click **Create Key** and give it a name (e.g., "Familiar")
 5. Copy the key (starts with `sk-ant-...`)
-6. Add to your `.env` file:
-   ```
-   ANTHROPIC_API_KEY=sk-ant-api03-xxxxx...
-   ```
+6. Add it in Familiar's Admin UI at `/admin`
 
 **Pricing note:** Anthropic charges per token. Typical music library queries cost fractions of a cent. See [anthropic.com/pricing](https://www.anthropic.com/pricing) for current rates.
 
@@ -549,11 +491,13 @@ The Anthropic API powers the AI chat feature, allowing you to ask questions abou
 2. Create a new app
 3. Set redirect URI to `{FRONTEND_URL}/api/v1/spotify/callback` (e.g., `http://localhost:4400/api/v1/spotify/callback`)
 4. Copy Client ID and Client Secret
+5. Add them in Familiar's Admin UI at `/admin`
 
 **Last.fm:**
 1. Go to https://www.last.fm/api/account/create
 2. Create a new application
 3. Copy API Key and API Secret
+4. Add them in Familiar's Admin UI at `/admin`
 
 ### Tailscale HTTPS
 
@@ -596,7 +540,7 @@ familiar/
 │   │   ├── api/      # API routes
 │   │   ├── db/       # Database models
 │   │   ├── services/ # Business logic
-│   │   └── workers/  # Celery tasks
+│   │   └── workers/  # Background tasks
 │   └── tests/
 ├── frontend/         # React + TypeScript PWA
 │   ├── src/

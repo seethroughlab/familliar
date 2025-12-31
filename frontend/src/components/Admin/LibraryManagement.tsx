@@ -43,12 +43,15 @@ interface ScanStatus {
 }
 
 interface AnalysisStatus {
-  status: string;
+  status: 'idle' | 'running' | 'stuck' | 'complete';
   total: number;
   analyzed: number;
   pending: number;
   failed: number;
   percent: number;
+  current_file?: string;
+  heartbeat?: string;
+  error?: string;
 }
 
 interface LibraryStats {
@@ -76,6 +79,7 @@ export function LibraryManagement() {
   const [missingTracks, setMissingTracks] = useState<MissingTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchStatus = useCallback(async () => {
@@ -141,6 +145,31 @@ export function LibraryManagement() {
     } catch {
       setError('Failed to start scan');
       setScanning(false);
+    }
+  };
+
+  const startAnalysis = async () => {
+    try {
+      setStartingAnalysis(true);
+      setError(null);
+      const response = await fetch('/api/v1/library/analysis/start?limit=500', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === 'started') {
+          // Refresh status after a moment
+          setTimeout(fetchStatus, 1000);
+        }
+      } else {
+        const data = await response.json();
+        setError(data.detail || 'Failed to start analysis');
+      }
+    } catch {
+      setError('Failed to start analysis');
+    } finally {
+      setStartingAnalysis(false);
     }
   };
 
@@ -326,7 +355,7 @@ export function LibraryManagement() {
               ) : (
                 <>
                   <Clock className="w-4 h-4" />
-                  {analysisStatus.pending} pending
+                  {analysisStatus.pending.toLocaleString()} pending
                 </>
               )}
             </span>
@@ -353,6 +382,23 @@ export function LibraryManagement() {
                 <AlertCircle className="w-4 h-4" />
                 {analysisStatus.failed} failed
               </div>
+            )}
+
+            {/* Start Analysis Button */}
+            {analysisStatus.pending > 0 && (
+              <button
+                onClick={startAnalysis}
+                disabled={scanning || startingAnalysis || analysisStatus.status === 'running'}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
+              >
+                {startingAnalysis || analysisStatus.status === 'running' ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Music className="w-5 h-5" />
+                )}
+                {scanning ? 'Wait for scan to complete' :
+                 analysisStatus.status === 'running' ? 'Analysis in progress...' : 'Start Analysis'}
+              </button>
             )}
           </div>
         )}
@@ -406,7 +452,7 @@ export function LibraryManagement() {
       {/* Info */}
       <p className="text-sm text-zinc-500 text-center">
         Library scans run automatically every 6 hours.
-        Audio analysis runs in the background after scans complete.
+        Audio analysis queues new batches every 5 minutes.
       </p>
     </div>
   );

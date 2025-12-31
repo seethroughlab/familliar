@@ -77,10 +77,10 @@ class BackgroundManager:
                 replace_existing=True,
             )
 
-            # Catch-up analysis every hour at :30
+            # Catch-up analysis every 5 minutes
             self._scheduler.add_job(
                 self._analyze_catchup,
-                CronTrigger(minute=30),
+                CronTrigger(minute="*/5"),
                 id="analyze_catchup",
                 replace_existing=True,
             )
