@@ -106,5 +106,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=30s --start-period=30s --retries=3 \
     CMD python -c "import httpx; httpx.get('http://localhost:8000/api/v1/health', timeout=20)" || exit 1
 
-# Default command runs the API server
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Default command runs the API server with multiple workers
+# Multiple workers prevent health check timeouts when server is under load
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]

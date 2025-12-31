@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Worker health check** - Now uses `celery inspect ping` instead of HTTP (workers don't serve HTTP)
 - **Subprocess isolation in Celery** - Switched from `multiprocessing` to `billiard` (Celery's fork that allows daemon processes to spawn children)
 - **Health check timeouts** - Increased to 30s with 30s start period (prevents false unhealthy during heavy load)
+- **API unresponsive under load** - Added 4 uvicorn workers (was single-threaded, causing health check timeouts)
 
 ### Added
 - Test to verify Docker health check endpoint exists (`test_docker_health_check_endpoint`)
