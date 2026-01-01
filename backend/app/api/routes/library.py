@@ -606,41 +606,7 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
             current_file=f"Processing {active_tasks} tracks...",
         )
 
-    # Check scan progress for running analysis (scan includes analysis queueing)
-    progress = get_scan_progress()
-
-    if progress and progress.get("status") == "running":
-        # Check for stale heartbeat
-        last_heartbeat = progress.get("last_heartbeat")
-        if last_heartbeat:
-            try:
-                heartbeat_time = datetime.fromisoformat(last_heartbeat)
-                if datetime.now() - heartbeat_time > timedelta(minutes=5):
-                    return AnalysisStatus(
-                        status="stuck",
-                        total=total,
-                        analyzed=analyzed,
-                        pending=pending,
-                        failed=failed,
-                        percent=round(percent, 1),
-                        error="No progress for 5+ minutes - worker may have crashed",
-                        heartbeat=last_heartbeat,
-                    )
-            except (ValueError, TypeError):
-                pass
-
-        return AnalysisStatus(
-            status="running",
-            total=total,
-            analyzed=analyzed,
-            pending=pending,
-            failed=failed,
-            percent=round(percent, 1),
-            current_file=progress.get("current_file"),
-            heartbeat=progress.get("last_heartbeat"),
-        )
-
-    # No active tasks - check if there's pending work
+    # No active analysis tasks - check if there's pending work
     if pending > 0:
         return AnalysisStatus(
             status="idle",
