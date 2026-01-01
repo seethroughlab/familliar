@@ -283,6 +283,16 @@ docker logs familiar-api
 docker exec familiar-redis redis-cli ping
 ```
 
+**ARM64 audio analysis crashes (Raspberry Pi, ARM-based boards):**
+
+If running on ARM64 hardware, add these environment variables to prevent analysis crashes:
+```yaml
+environment:
+  - DISABLE_CLAP_EMBEDDINGS=true
+  - OPENBLAS_NUM_THREADS=1
+  - OMP_NUM_THREADS=1
+```
+
 ### Synology NAS Installation
 
 Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (older DSM).
@@ -397,11 +407,15 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
 
 **ARM64 audio analysis issues:**
 
-If audio analysis fails on ARM-based Synology, add this to your api service environment:
+Audio analysis may crash on ARM-based devices due to OpenBLAS/numpy threading issues. Add these environment variables to your api service:
 ```yaml
 environment:
   - DISABLE_CLAP_EMBEDDINGS=true
+  - OPENBLAS_NUM_THREADS=1
+  - OMP_NUM_THREADS=1
 ```
+
+This disables the heavy CLAP model and limits thread usage to prevent crashes. Basic audio analysis (BPM, key detection) will still work.
 
 **Permission denied errors:**
 
@@ -555,6 +569,18 @@ familiar/
     ├── art/          # Extracted album art
     └── videos/       # Downloaded music videos
 ```
+
+## Reporting Issues
+
+Found a bug or have a feature request? Please open an issue:
+
+**[GitHub Issues](https://github.com/seethroughlab/familliar/issues)**
+
+When reporting bugs, please include:
+- Your platform (OS, NAS model if applicable, Docker version)
+- Steps to reproduce the issue
+- Container logs: `docker logs familiar-api`
+- Browser console errors (if frontend issue)
 
 ## Contributing
 

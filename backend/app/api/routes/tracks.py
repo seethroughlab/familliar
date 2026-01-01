@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -36,8 +36,7 @@ class TrackResponse(BaseModel):
     format: str | None
     analysis_version: int
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TrackDetailResponse(TrackResponse):
@@ -263,7 +262,7 @@ async def stream_track(
 async def get_track_artwork(
     db: DbSession,
     track_id: UUID,
-    size: str = Query("full", regex="^(full|thumb)$"),
+    size: str = Query("full", pattern="^(full|thumb)$"),
 ) -> StreamingResponse:
     """Get album artwork for a track.
 
