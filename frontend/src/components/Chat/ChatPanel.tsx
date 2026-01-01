@@ -340,6 +340,15 @@ export function ChatPanel() {
       case 'playlist_created': {
         // Invalidate playlists query so the new playlist appears in the list
         queryClient.invalidateQueries({ queryKey: ['playlists'] });
+        // Navigate to the playlists view and highlight the new playlist
+        window.dispatchEvent(
+          new CustomEvent('show-playlist', {
+            detail: {
+              playlistId: event.playlist_id as string,
+              playlistName: event.playlist_name as string,
+            },
+          })
+        );
         break;
       }
     }
@@ -348,24 +357,31 @@ export function ChatPanel() {
   const messages = currentSession?.messages || [];
 
   return (
-    <div className="flex h-full">
-      {/* History sidebar */}
+    <div className="relative h-full">
+      {/* History panel - overlay that slides out */}
       {showSessions && profileId && (
-        <div className="w-72 flex-shrink-0">
-          <ChatHistoryPanel
-            sessions={sessions}
-            currentSessionId={currentSession?.id || null}
-            profileId={profileId}
-            onSelectSession={selectSession}
-            onNewSession={createNewSession}
-            onSessionsChanged={handleSessionsChanged}
-            onClose={() => setShowSessions(false)}
+        <>
+          {/* Backdrop to close on click outside */}
+          <div
+            className="absolute inset-0 bg-black/30 z-10"
+            onClick={() => setShowSessions(false)}
           />
-        </div>
+          <div className="absolute inset-y-0 left-0 w-72 z-20 shadow-xl">
+            <ChatHistoryPanel
+              sessions={sessions}
+              currentSessionId={currentSession?.id || null}
+              profileId={profileId}
+              onSelectSession={selectSession}
+              onNewSession={createNewSession}
+              onSessionsChanged={handleSessionsChanged}
+              onClose={() => setShowSessions(false)}
+            />
+          </div>
+        </>
       )}
 
       {/* Main chat area */}
-      <div className="flex-1 flex flex-col bg-zinc-900">
+      <div className="h-full flex flex-col bg-zinc-900">
         {/* Header */}
         <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-3">

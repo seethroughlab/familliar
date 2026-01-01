@@ -83,15 +83,22 @@ class LLMService:
             {"role": "user", "content": message}
         ]
 
+        first_turn = True
         while True:
             try:
-                response = self.claude_client.messages.create(
-                    model="claude-sonnet-4-5-20250929",
-                    max_tokens=2048,
-                    system=SYSTEM_PROMPT,
-                    tools=cast(Any, MUSIC_TOOLS),
-                    messages=cast(Any, messages),
-                )
+                # Force tool use on first turn to prevent hallucination
+                create_kwargs: dict[str, Any] = {
+                    "model": "claude-sonnet-4-5-20250929",
+                    "max_tokens": 2048,
+                    "system": SYSTEM_PROMPT,
+                    "tools": cast(Any, MUSIC_TOOLS),
+                    "messages": cast(Any, messages),
+                }
+                if first_turn:
+                    create_kwargs["tool_choice"] = {"type": "any"}
+                    first_turn = False
+
+                response = self.claude_client.messages.create(**create_kwargs)
             except anthropic.BadRequestError as e:
                 logger.error(f"Anthropic BadRequestError: {e}")
                 yield {"type": "error", "content": f"API error: {e.message}"}

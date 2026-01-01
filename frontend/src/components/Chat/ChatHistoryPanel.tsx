@@ -152,7 +152,7 @@ export function ChatHistoryPanel({
   ];
 
   return (
-    <div className="flex flex-col h-full bg-zinc-900 border-l border-zinc-800">
+    <div className="flex flex-col h-full bg-zinc-900 border-r border-zinc-800">
       {/* Header */}
       <div className="p-3 border-b border-zinc-800 flex items-center justify-between">
         <h3 className="font-medium text-sm">Chat History</h3>

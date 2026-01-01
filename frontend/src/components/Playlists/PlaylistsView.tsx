@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, Play, MoreVertical, Trash2, Loader2,
@@ -18,7 +18,12 @@ interface SelectedPlaylist {
   id: string;
 }
 
-export function PlaylistsView() {
+interface Props {
+  selectedPlaylistId?: string | null;
+  onPlaylistViewed?: () => void;
+}
+
+export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = {}) {
   const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
 
@@ -26,6 +31,16 @@ export function PlaylistsView() {
   const [selectedPlaylist, setSelectedPlaylist] = useState<SelectedPlaylist | null>(null);
   const [showAiPlaylists, setShowAiPlaylists] = useState(true);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+
+  // Auto-navigate to playlist when selectedPlaylistId is provided (e.g., from LLM creation)
+  useEffect(() => {
+    if (selectedPlaylistId) {
+      setSelectedPlaylist({ type: 'static', id: selectedPlaylistId });
+      setViewMode('detail');
+      setShowAiPlaylists(true);
+      onPlaylistViewed?.();
+    }
+  }, [selectedPlaylistId, onPlaylistViewed]);
 
   // Fetch AI-generated playlists (static playlists)
   const { data: aiPlaylists, isLoading: loadingAi } = useQuery({

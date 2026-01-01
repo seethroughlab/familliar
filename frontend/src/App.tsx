@@ -99,6 +99,20 @@ function AppContent() {
     return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings);
   }, []);
 
+  // Listen for show-playlist event from ChatPanel when LLM creates a playlist
+  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
+  useEffect(() => {
+    const handleShowPlaylist = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.playlistId) {
+        setSelectedPlaylistId(detail.playlistId);
+        setRightPanelTab('playlists');
+      }
+    };
+    window.addEventListener('show-playlist', handleShowPlaylist);
+    return () => window.removeEventListener('show-playlist', handleShowPlaylist);
+  }, []);
+
   // Hydrate player state from IndexedDB
   const hydrate = usePlayerStore((state) => state.hydrate);
   useEffect(() => {
@@ -226,7 +240,10 @@ function AppContent() {
             )}
             {rightPanelTab === 'playlists' && (
               <div className="px-4 py-6">
-                <PlaylistsView />
+                <PlaylistsView
+                  selectedPlaylistId={selectedPlaylistId}
+                  onPlaylistViewed={() => setSelectedPlaylistId(null)}
+                />
               </div>
             )}
             {rightPanelTab === 'visualizer' && (

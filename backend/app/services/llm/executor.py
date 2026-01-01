@@ -220,6 +220,12 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _search_library(self, query: str, limit: int = 20) -> dict[str, Any]:
         """Search tracks by text query with diversity across artists/albums."""
+        # Convert limit to int (LLM may pass string)
+        try:
+            limit = int(float(limit)) if limit else 20
+        except (ValueError, TypeError):
+            limit = 20
+
         variations = self._normalize_query_variations(query)
 
         conditions = []
@@ -248,6 +254,12 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _find_similar_tracks(self, track_id: str, limit: int = 10) -> dict[str, Any]:
         """Find similar tracks using embedding similarity."""
+        # Convert limit to int (LLM may pass string)
+        try:
+            limit = int(float(limit)) if limit else 10
+        except (ValueError, TypeError):
+            limit = 10
+
         stmt = (
             select(TrackAnalysis.embedding)
             .where(TrackAnalysis.track_id == UUID(track_id))
@@ -284,6 +296,7 @@ Respond with ONLY the playlist name, nothing else."""
         self,
         bpm_min: float | None = None,
         bpm_max: float | None = None,
+        key: str | None = None,
         energy_min: float | None = None,
         energy_max: float | None = None,
         danceability_min: float | None = None,
@@ -294,7 +307,7 @@ Respond with ONLY the playlist name, nothing else."""
         limit: int = 20,
     ) -> dict[str, Any]:
         """Filter tracks by audio features stored in JSONB."""
-        # Convert string params to float (LLM tool calls may pass strings)
+        # Convert string params to proper types (LLM tool calls may pass strings)
         def to_float(v: Any) -> float | None:
             if v is None:
                 return None
@@ -302,6 +315,14 @@ Respond with ONLY the playlist name, nothing else."""
                 return float(v)
             except (ValueError, TypeError):
                 return None
+
+        def to_int(v: Any, default: int) -> int:
+            if v is None:
+                return default
+            try:
+                return int(float(v))  # Handle "20.0" strings
+            except (ValueError, TypeError):
+                return default
 
         bpm_min = to_float(bpm_min)
         bpm_max = to_float(bpm_max)
@@ -312,7 +333,7 @@ Respond with ONLY the playlist name, nothing else."""
         valence_max = to_float(valence_max)
         acousticness_min = to_float(acousticness_min)
         instrumentalness_min = to_float(instrumentalness_min)
-        limit = int(limit) if limit else 20
+        limit = to_int(limit, 20)
 
         stmt = select(Track).join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
 
@@ -324,6 +345,25 @@ Respond with ONLY the playlist name, nothing else."""
         if bpm_max is not None:
             conditions.append(
                 text("(features->>'bpm')::float <= :bpm_max").bindparams(bpm_max=bpm_max)
+            )
+        if key is not None:
+            # Normalize key input - handle "F", "F major", "F minor", "F#", "F sharp", etc.
+            key_normalized = key.strip().upper()
+            # Extract just the note (e.g., "F MAJOR" -> "F", "F# MINOR" -> "F#", "F SHARP" -> "F#")
+            key_root = key_normalized.split()[0].rstrip("M")  # Remove trailing M from "FM"
+            # Handle "SHARP" and "FLAT" in the input
+            if "SHARP" in key_normalized:
+                key_root = key_root.rstrip("#") + "#"
+            elif "FLAT" in key_normalized or "B" in key_normalized.split()[-1:]:
+                # Convert flats to sharps: Bb -> A#, Eb -> D#, etc.
+                flat_to_sharp = {"BB": "A#", "EB": "D#", "AB": "G#", "DB": "C#", "GB": "F#"}
+                if key_root + "B" in flat_to_sharp:
+                    key_root = flat_to_sharp[key_root + "B"]
+                elif key_root in flat_to_sharp:
+                    key_root = flat_to_sharp[key_root]
+            # Exact match for the key
+            conditions.append(
+                text("features->>'key' = :key_value").bindparams(key_value=key_root)
             )
         if energy_min is not None:
             conditions.append(
@@ -418,6 +458,11 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _get_library_genres(self, limit: int = 50) -> dict[str, Any]:
         """Get all genres in the library with track counts."""
+        try:
+            limit = int(float(limit)) if limit else 50
+        except (ValueError, TypeError):
+            limit = 50
+
         genres_result = await self.db.execute(
             select(Track.genre, func.count(Track.id).label("count"))
             .where(Track.genre.isnot(None))
@@ -514,6 +559,11 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _get_spotify_favorites(self, limit: int = 50) -> dict[str, Any]:
         """Get Spotify favorites that are matched to local library."""
+        try:
+            limit = int(float(limit)) if limit else 50
+        except (ValueError, TypeError):
+            limit = 50
+
         if not self.profile_id:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
@@ -545,6 +595,11 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _get_unmatched_spotify_favorites(self, limit: int = 50) -> dict[str, Any]:
         """Get Spotify favorites that don't have local matches."""
+        try:
+            limit = int(float(limit)) if limit else 50
+        except (ValueError, TypeError):
+            limit = 50
+
         if not self.profile_id:
             return {"tracks": [], "count": 0, "note": "No profile ID provided"}
 
@@ -631,6 +686,11 @@ Respond with ONLY the playlist name, nothing else."""
         limit: int = 10,
     ) -> dict[str, Any]:
         """Search Bandcamp for albums/tracks."""
+        try:
+            limit = int(float(limit)) if limit else 10
+        except (ValueError, TypeError):
+            limit = 10
+
         from app.services.bandcamp import BandcampService
 
         type_map = {"album": "a", "track": "t", "artist": "b"}
@@ -659,6 +719,11 @@ Respond with ONLY the playlist name, nothing else."""
 
     async def _recommend_bandcamp_purchases(self, limit: int = 5) -> dict[str, Any]:
         """Recommend Bandcamp albums based on unmatched Spotify favorites."""
+        try:
+            limit = int(float(limit)) if limit else 5
+        except (ValueError, TypeError):
+            limit = 5
+
         from app.services.bandcamp import BandcampService
 
         if not self.profile_id:
@@ -779,6 +844,17 @@ Respond with ONLY the playlist name, nothing else."""
         max_per_album: int = 2,
     ) -> dict[str, Any]:
         """Select a diverse subset from given track IDs."""
+        # Convert params to int (LLM may pass strings)
+        def safe_int(v: Any, default: int) -> int:
+            try:
+                return int(float(v)) if v else default
+            except (ValueError, TypeError):
+                return default
+
+        limit = safe_int(limit, 20)
+        max_per_artist = safe_int(max_per_artist, 2)
+        max_per_album = safe_int(max_per_album, 2)
+
         if not track_ids:
             return {"tracks": [], "count": 0, "note": "No tracks provided"}
 
