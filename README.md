@@ -75,6 +75,9 @@ Play to Sonos speakers and AirPlay devices in addition to browser audio. Control
 ### Visualizer API
 An open API for community-contributed audio visualizers. Create custom visualizations using track metadata, audio features (BPM, key, energy), real-time frequency data, and timed lyrics.
 
+### Additional LLM Providers
+Support for more AI providers beyond Claude and Ollama, including OpenAI (ChatGPT), Google Gemini, and other compatible APIs.
+
 ## Quick Start (Docker)
 
 The easiest way to run Familiar is with Docker:
