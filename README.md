@@ -85,7 +85,7 @@ git clone https://github.com/seethroughlab/familliar.git
 cd familliar/docker
 
 # Copy and configure environment
-cp ../.env.example .env
+cp .env.example .env
 # Edit .env: set MUSIC_LIBRARY_PATH and FRONTEND_URL
 
 # Start all services
