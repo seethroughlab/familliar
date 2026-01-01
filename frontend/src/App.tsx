@@ -9,17 +9,20 @@ import { SettingsPanel } from './components/Settings';
 import { FullPlayer } from './components/FullPlayer';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
 import { OfflineIndicator } from './components/PWA/OfflineIndicator';
-import { SessionPanel } from './components/Sessions';
+// Listening sessions disabled for v0.1.0
+// import { SessionPanel } from './components/Sessions';
 import { PlaylistsView } from './components/Playlists';
 import { VisualizerView } from './components/Visualizer';
-import { GuestListener } from './components/Guest';
+// Listening sessions disabled for v0.1.0
+// import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
 import { AdminSetup } from './components/Admin';
 import { useScrobbling } from './hooks/useScrobbling';
-import { useListeningSession } from './hooks/useListeningSession';
+// Listening sessions disabled for v0.1.0
+// import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
 import { usePlayerStore } from './stores/playerStore';
@@ -54,7 +57,8 @@ function AppContent() {
     return tab;
   });
   const [showFullPlayer, setShowFullPlayer] = useState(false);
-  const [showSessionPanel, setShowSessionPanel] = useState(false);
+  // Listening sessions disabled for v0.1.0
+  // const [showSessionPanel, setShowSessionPanel] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
 
   // Initialize Last.fm scrobbling
@@ -70,9 +74,8 @@ function AppContent() {
         setShowShortcutsHelp(false);
       } else if (showFullPlayer) {
         setShowFullPlayer(false);
-      } else if (showSessionPanel) {
-        setShowSessionPanel(false);
       }
+      // Listening sessions disabled for v0.1.0
     },
   });
 
@@ -97,25 +100,24 @@ function AppContent() {
     hydrate();
   }, [hydrate]);
 
-  // Listening session (using a simple user ID for now)
-  const userId = 'user-' + (localStorage.getItem('familiar-user-id') || (() => {
-    const id = Math.random().toString(36).substring(7);
-    localStorage.setItem('familiar-user-id', id);
-    return id;
-  })());
-  const username = localStorage.getItem('familiar-username') || 'Anonymous';
-
-  const {
-    session,
-    isConnecting,
-    error: sessionError,
-    chatMessages,
-    isHost,
-    createSession,
-    joinSession,
-    leaveSession,
-    sendChatMessage,
-  } = useListeningSession({ userId, username });
+  // Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready
+  // const userId = 'user-' + (localStorage.getItem('familiar-user-id') || (() => {
+  //   const id = Math.random().toString(36).substring(7);
+  //   localStorage.setItem('familiar-user-id', id);
+  //   return id;
+  // })());
+  // const username = localStorage.getItem('familiar-username') || 'Anonymous';
+  // const {
+  //   session,
+  //   isConnecting,
+  //   error: sessionError,
+  //   chatMessages,
+  //   isHost,
+  //   createSession,
+  //   joinSession,
+  //   leaveSession,
+  //   sendChatMessage,
+  // } = useListeningSession({ userId, username });
 
   // Get resolved theme for conditional styling
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
@@ -231,9 +233,7 @@ function AppContent() {
       {/* Player bar - fixed at bottom */}
       <PlayerBar
         onExpandClick={() => setShowFullPlayer(true)}
-        onSessionClick={() => setShowSessionPanel(true)}
-        isInSession={!!session}
-        sessionParticipantCount={session?.participant_count || 0}
+        // Listening sessions disabled for v0.1.0
       />
 
       {/* Full player overlay */}
@@ -247,21 +247,7 @@ function AppContent() {
       {/* Offline indicator */}
       <OfflineIndicator />
 
-      {/* Listening session panel */}
-      {showSessionPanel && (
-        <SessionPanel
-          session={session}
-          isHost={isHost}
-          isConnecting={isConnecting}
-          error={sessionError}
-          chatMessages={chatMessages}
-          onCreateSession={createSession}
-          onJoinSession={joinSession}
-          onLeaveSession={leaveSession}
-          onSendMessage={sendChatMessage}
-          onClose={() => setShowSessionPanel(false)}
-        />
-      )}
+      {/* Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready */}
 
       {/* Keyboard shortcuts help */}
       {showShortcutsHelp && (
@@ -331,7 +317,8 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <Routes>
           <Route path="/admin" element={<AdminSetup />} />
-          <Route path="/guest" element={<GuestListener />} />
+          {/* Listening sessions disabled for v0.1.0 */}
+          {/* <Route path="/guest" element={<GuestListener />} /> */}
           <Route path="*" element={<AppContent />} />
         </Routes>
       </QueryClientProvider>

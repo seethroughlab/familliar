@@ -45,13 +45,6 @@ Create dynamic playlists with rules:
 - Recently added, most played, favorites
 - Combine multiple rules with AND/OR logic
 
-### Listening Sessions (WebRTC)
-Listen together with friends in real-time:
-- Host a session and share the link
-- Guests hear synchronized audio
-- Works across the internet (with TURN server)
-- No account required for guests
-
 ### Progressive Web App (PWA)
 - Install on desktop or mobile
 - Offline playback with cached tracks
@@ -68,6 +61,19 @@ Listen together with friends in real-time:
 - Multiple user profiles for household use
 - Each profile has its own favorites and history
 - Simple profile switching (no passwords)
+
+## Coming Soon
+
+Features planned for future releases:
+
+### Listening Sessions (WebRTC)
+Share what you're listening to with friends in real-time. Host a session, share a link, and guests hear synchronized audio - no account required. Requires public signaling server deployment.
+
+### Multi-Room Audio
+Play to Sonos speakers and AirPlay devices in addition to browser audio. Control playback across multiple rooms with per-room volume controls.
+
+### Visualizer API
+An open API for community-contributed audio visualizers. Create custom visualizations using track metadata, audio features (BPM, key, energy), real-time frequency data, and timed lyrics.
 
 ## Quick Start (Docker)
 

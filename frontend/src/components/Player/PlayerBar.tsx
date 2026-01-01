@@ -1,14 +1,15 @@
 import { useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2, Users } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { tracksApi } from '../../api/client';
 
 interface PlayerBarProps {
   onExpandClick?: () => void;
-  onSessionClick?: () => void;
-  isInSession?: boolean;
-  sessionParticipantCount?: number;
+  // Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready
+  // onSessionClick?: () => void;
+  // isInSession?: boolean;
+  // sessionParticipantCount?: number;
 }
 
 function formatTime(seconds: number): string {
@@ -42,9 +43,10 @@ function AlbumArt({ trackId }: { trackId: string }) {
 
 export function PlayerBar({
   onExpandClick,
-  onSessionClick,
-  isInSession = false,
-  sessionParticipantCount = 0,
+  // Listening sessions disabled for v0.1.0
+  // onSessionClick,
+  // isInSession = false,
+  // sessionParticipantCount = 0,
 }: PlayerBarProps) {
   const {
     currentTrack,
@@ -144,25 +146,7 @@ export function PlayerBar({
           </div>
         </div>
 
-        {/* Session button */}
-        {onSessionClick && (
-          <button
-            onClick={onSessionClick}
-            className={`relative p-2 rounded-md transition-colors ${
-              isInSession
-                ? 'bg-green-600/20 text-green-500 hover:bg-green-600/30'
-                : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-            }`}
-            title={isInSession ? `In session (${sessionParticipantCount} listeners)` : 'Start listening session'}
-          >
-            <Users className="w-5 h-5" />
-            {isInSession && sessionParticipantCount > 1 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-black text-xs font-bold rounded-full flex items-center justify-center">
-                {sessionParticipantCount}
-              </span>
-            )}
-          </button>
-        )}
+        {/* Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready */}
 
         {/* Volume */}
         <div className="flex items-center gap-2 w-32">

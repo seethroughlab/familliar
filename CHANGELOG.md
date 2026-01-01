@@ -16,10 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Audio analysis** with librosa for BPM, key, and audio features
 - **CLAP embeddings** for semantic music search (optional, can be disabled)
 - **PWA support** with offline playback and background sync
-- **Listening sessions** for shared playback via WebRTC
 - **Music video downloads** from YouTube
 - **Multi-profile support** for household use
 - **Admin setup page** at `/admin` for API key and library configuration
+- Per-section save buttons in Admin (no more scrolling to save)
+- Library file organizer for renaming files based on metadata
 - Plex-style folder browser for library path selection
 - "New Releases from Your Artists" feature
 - Backend API test suite with 40+ tests

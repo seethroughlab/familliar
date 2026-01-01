@@ -65,9 +65,15 @@ interface ValidationResult {
 export function AdminSetup() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Per-section saving states
+  const [savingAnthropic, setSavingAnthropic] = useState(false);
+  const [savingLlmProvider, setSavingLlmProvider] = useState(false);
+  const [savingSpotify, setSavingSpotify] = useState(false);
+  const [savingLastfm, setSavingLastfm] = useState(false);
+  const [savingAcoustid, setSavingAcoustid] = useState(false);
 
   // Form state - empty strings for new values, undefined to keep existing
   const [anthropicKey, setAnthropicKey] = useState('');
@@ -273,25 +279,17 @@ export function AdminSetup() {
     setTimeout(() => setPathStatus(null), 3000);
   }
 
-  async function handleSave() {
+  // Per-section save functions
+  async function saveSection(
+    updates: Record<string, string>,
+    setSaving: (v: boolean) => void,
+    clearFields: () => void,
+    successMessage: string
+  ) {
     setSaving(true);
     setStatus(null);
 
     try {
-      // Only include non-empty values in the update for API keys
-      const updates: Record<string, string> = {};
-      if (anthropicKey) updates.anthropic_api_key = anthropicKey;
-      if (spotifyClientId) updates.spotify_client_id = spotifyClientId;
-      if (spotifyClientSecret) updates.spotify_client_secret = spotifyClientSecret;
-      if (lastfmApiKey) updates.lastfm_api_key = lastfmApiKey;
-      if (lastfmApiSecret) updates.lastfm_api_secret = lastfmApiSecret;
-      if (acoustidApiKey) updates.acoustid_api_key = acoustidApiKey;
-
-      // Always include LLM provider settings
-      updates.llm_provider = llmProvider;
-      updates.ollama_url = ollamaUrl;
-      updates.ollama_model = ollamaModel;
-
       const response = await fetch('/api/v1/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -301,23 +299,72 @@ export function AdminSetup() {
       if (response.ok) {
         const data = await response.json();
         setSettings(data);
-        // Clear form fields after successful save
-        setAnthropicKey('');
-        setSpotifyClientId('');
-        setSpotifyClientSecret('');
-        setLastfmApiKey('');
-        setLastfmApiSecret('');
-        setAcoustidApiKey('');
-        setStatus({ type: 'success', message: 'Settings saved successfully' });
+        clearFields();
+        setStatus({ type: 'success', message: successMessage });
       } else {
-        setStatus({ type: 'error', message: 'Failed to save settings' });
+        setStatus({ type: 'error', message: 'Failed to save' });
       }
     } catch (err) {
-      console.error('Failed to save settings:', err);
-      setStatus({ type: 'error', message: 'Error saving settings' });
+      console.error('Failed to save:', err);
+      setStatus({ type: 'error', message: 'Error saving' });
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleSaveAnthropic() {
+    if (!anthropicKey) return;
+    await saveSection(
+      { anthropic_api_key: anthropicKey },
+      setSavingAnthropic,
+      () => setAnthropicKey(''),
+      'Anthropic API key saved'
+    );
+  }
+
+  async function handleSaveLlmProvider() {
+    await saveSection(
+      { llm_provider: llmProvider, ollama_url: ollamaUrl, ollama_model: ollamaModel },
+      setSavingLlmProvider,
+      () => {},
+      'AI provider settings saved'
+    );
+  }
+
+  async function handleSaveSpotify() {
+    if (!spotifyClientId && !spotifyClientSecret) return;
+    const updates: Record<string, string> = {};
+    if (spotifyClientId) updates.spotify_client_id = spotifyClientId;
+    if (spotifyClientSecret) updates.spotify_client_secret = spotifyClientSecret;
+    await saveSection(
+      updates,
+      setSavingSpotify,
+      () => { setSpotifyClientId(''); setSpotifyClientSecret(''); },
+      'Spotify credentials saved'
+    );
+  }
+
+  async function handleSaveLastfm() {
+    if (!lastfmApiKey && !lastfmApiSecret) return;
+    const updates: Record<string, string> = {};
+    if (lastfmApiKey) updates.lastfm_api_key = lastfmApiKey;
+    if (lastfmApiSecret) updates.lastfm_api_secret = lastfmApiSecret;
+    await saveSection(
+      updates,
+      setSavingLastfm,
+      () => { setLastfmApiKey(''); setLastfmApiSecret(''); },
+      'Last.fm credentials saved'
+    );
+  }
+
+  async function handleSaveAcoustid() {
+    if (!acoustidApiKey) return;
+    await saveSection(
+      { acoustid_api_key: acoustidApiKey },
+      setSavingAcoustid,
+      () => setAcoustidApiKey(''),
+      'AcoustID API key saved'
+    );
   }
 
   if (loading) {
@@ -415,17 +462,29 @@ export function AdminSetup() {
                 {showAnthropicKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-            <p className="text-xs text-zinc-500 mt-2">
-              Get your API key from{' '}
-              <a
-                href="https://console.anthropic.com/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-purple-400 hover:underline"
-              >
-                console.anthropic.com
-              </a>
-            </p>
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-xs text-zinc-500">
+                Get your API key from{' '}
+                <a
+                  href="https://console.anthropic.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-400 hover:underline"
+                >
+                  console.anthropic.com
+                </a>
+              </p>
+              {anthropicKey && (
+                <button
+                  onClick={handleSaveAnthropic}
+                  disabled={savingAnthropic}
+                  className="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+                >
+                  {savingAnthropic ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Save
+                </button>
+              )}
+            </div>
           </section>
 
           {/* AI Provider Settings */}
@@ -525,8 +584,19 @@ export function AdminSetup() {
                     Use a model with tool/function calling support (e.g., llama3.2, mistral)
                   </p>
                 </div>
+
               </div>
             )}
+
+            {/* Save button for provider selection */}
+            <button
+              onClick={handleSaveLlmProvider}
+              disabled={savingLlmProvider}
+              className="w-full mt-4 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors flex items-center justify-center gap-2"
+            >
+              {savingLlmProvider ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Save Provider Settings
+            </button>
           </section>
 
           {/* Spotify API */}
@@ -610,6 +680,16 @@ export function AdminSetup() {
                 </button>
               </div>
             </div>
+            {(spotifyClientId || spotifyClientSecret) && (
+              <button
+                onClick={handleSaveSpotify}
+                disabled={savingSpotify}
+                className="w-full mt-3 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors flex items-center justify-center gap-2"
+              >
+                {savingSpotify ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save Spotify Credentials
+              </button>
+            )}
           </section>
 
           {/* Last.fm API */}
@@ -693,6 +773,16 @@ export function AdminSetup() {
                 </button>
               </div>
             </div>
+            {(lastfmApiKey || lastfmApiSecret) && (
+              <button
+                onClick={handleSaveLastfm}
+                disabled={savingLastfm}
+                className="w-full mt-3 px-4 py-2 bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors flex items-center justify-center gap-2"
+              >
+                {savingLastfm ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Save Last.fm Credentials
+              </button>
+            )}
           </section>
 
           {/* AcoustID API */}
@@ -740,17 +830,29 @@ export function AdminSetup() {
                 {showAcoustidKey ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
               </button>
             </div>
-            <p className="text-xs text-zinc-500 mt-2">
-              Register at{' '}
-              <a
-                href="https://acoustid.org/api-key"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-400 hover:underline"
-              >
-                acoustid.org
-              </a>
-            </p>
+            <div className="flex items-center justify-between mt-3">
+              <p className="text-xs text-zinc-500">
+                Register at{' '}
+                <a
+                  href="https://acoustid.org/api-key"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:underline"
+                >
+                  acoustid.org
+                </a>
+              </p>
+              {acoustidApiKey && (
+                <button
+                  onClick={handleSaveAcoustid}
+                  disabled={savingAcoustid}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+                >
+                  {savingAcoustid ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                  Save
+                </button>
+              )}
+            </div>
           </section>
 
           {/* Music Library Paths */}
@@ -865,22 +967,6 @@ export function AdminSetup() {
 
           {/* Library Management */}
           <LibraryManagement />
-
-          {/* Save Button */}
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2"
-          >
-            {saving ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                Saving...
-              </>
-            ) : (
-              'Save Settings'
-            )}
-          </button>
 
           {/* Info */}
           <p className="text-sm text-zinc-500 text-center">
