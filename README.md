@@ -82,22 +82,20 @@ The easiest way to run Familiar is with Docker:
 ```bash
 # Clone the repository
 git clone https://github.com/seethroughlab/familliar.git
-cd familliar
+cd familliar/docker
 
 # Copy and configure environment
-cp .env.example .env
-# Edit .env: set FRONTEND_URL for your server's hostname/IP
+cp ../.env.example .env
+# Edit .env: set MUSIC_LIBRARY_PATH and FRONTEND_URL
 
 # Start all services
-cd docker
 docker compose -f docker-compose.prod.yml up -d
 
 # Initialize the database (first run only)
 docker exec familiar-api python -m app.db.init_db
-
 ```
 
-Access the web UI at http://localhost:4400, then go to Settings to configure your music library and start a scan.
+Access the web UI at http://localhost:4400, then go to `/admin` to configure API keys and start a library scan.
 
 ## Installation
 
@@ -111,44 +109,34 @@ Access the web UI at http://localhost:4400, then go to Settings to configure you
 
 #### Standard Installation
 
-1. **Pull the image:**
+1. **Clone the repository:**
    ```bash
-   docker pull ghcr.io/seethroughlab/familliar:latest
+   git clone https://github.com/seethroughlab/familliar.git
+   cd familliar/docker
    ```
 
-2. **Create a directory for Familiar:**
+2. **Create environment file:**
    ```bash
-   mkdir -p ~/familiar && cd ~/familiar
+   cp ../.env.example .env
    ```
 
-3. **Download the compose file:**
-   ```bash
-   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/master/docker/docker-compose.prod.yml
-   curl -O https://raw.githubusercontent.com/seethroughlab/familliar/master/docker/init-pgvector.sql
-   ```
+   Edit `.env` and set:
+   - `MUSIC_LIBRARY_PATH` - path to your music library
+   - `FRONTEND_URL` - your server's URL (e.g., `http://myserver:4400`)
 
-4. **Create environment file:**
-   ```bash
-   cat > .env << 'EOF'
-   # Path to your music library (for Docker volume mount)
-   MUSIC_LIBRARY_PATH=/path/to/your/music
+   > **Note:** `MUSIC_LIBRARY_PATH` is only used for the Docker volume mount. API keys are configured via the Admin UI at `/admin` after startup.
 
-   # Frontend URL (change for remote access - used for OAuth callbacks)
-   FRONTEND_URL=http://localhost:4400
-   EOF
-   ```
-
-   > **Note:** `MUSIC_LIBRARY_PATH` is only used for the Docker volume mount. The actual library path and API keys are configured via the Admin UI at `/admin` after startup.
-
-5. **Start the services:**
+3. **Start the services:**
    ```bash
    docker compose -f docker-compose.prod.yml up -d
    ```
 
-6. **Initialize database and scan library:**
+4. **Initialize database:**
    ```bash
    docker exec familiar-api python -m app.db.init_db
    ```
+
+5. **Access the UI** at http://localhost:4400 and go to `/admin` to configure API keys.
 
 ### OpenMediaVault Installation
 
