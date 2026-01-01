@@ -294,6 +294,26 @@ Respond with ONLY the playlist name, nothing else."""
         limit: int = 20,
     ) -> dict[str, Any]:
         """Filter tracks by audio features stored in JSONB."""
+        # Convert string params to float (LLM tool calls may pass strings)
+        def to_float(v: Any) -> float | None:
+            if v is None:
+                return None
+            try:
+                return float(v)
+            except (ValueError, TypeError):
+                return None
+
+        bpm_min = to_float(bpm_min)
+        bpm_max = to_float(bpm_max)
+        energy_min = to_float(energy_min)
+        energy_max = to_float(energy_max)
+        danceability_min = to_float(danceability_min)
+        valence_min = to_float(valence_min)
+        valence_max = to_float(valence_max)
+        acousticness_min = to_float(acousticness_min)
+        instrumentalness_min = to_float(instrumentalness_min)
+        limit = int(limit) if limit else 20
+
         stmt = select(Track).join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
 
         conditions = []

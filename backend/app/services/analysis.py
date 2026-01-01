@@ -179,8 +179,10 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     # Load audio
     y, sr = librosa.load(file_path, sr=22050, mono=True)
 
-    # BPM detection
-    tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+    # BPM detection using tempo estimation (beat_track crashes on macOS Accelerate)
+    # First compute onset envelope, then estimate tempo
+    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    tempo = librosa.feature.tempo(onset_envelope=onset_env, sr=sr)
     features["bpm"] = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0])
 
     # Compute STFT once for reuse (avoids crashes in chroma_cqt/chroma_stft)
@@ -208,7 +210,7 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
 
     # Danceability: combination of tempo regularity and beat strength
-    onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+    # Reuse onset_env computed earlier for BPM detection
     pulse = librosa.beat.plp(onset_envelope=onset_env, sr=sr)
     features["danceability"] = float(np.mean(pulse))
 

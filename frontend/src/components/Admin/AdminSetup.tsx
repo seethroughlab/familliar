@@ -94,6 +94,8 @@ export function AdminSetup() {
   const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
   const [ollamaModel, setOllamaModel] = useState('llama3.2');
   const [ollamaStatus, setOllamaStatus] = useState<'unknown' | 'connected' | 'error'>('unknown');
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [ollamaLoading, setOllamaLoading] = useState(false);
 
   // Library paths
   const [libraryPaths, setLibraryPaths] = useState<PathInfo[]>([]);
@@ -135,15 +137,28 @@ export function AdminSetup() {
   }
 
   async function checkOllamaConnection() {
+    setOllamaLoading(true);
     try {
       const response = await fetch(`${ollamaUrl}/api/tags`);
       if (response.ok) {
+        const data = await response.json();
+        // Extract model names from the response
+        const models = (data.models || []).map((m: { name: string }) => m.name);
+        setOllamaModels(models);
         setOllamaStatus('connected');
+        // If current model isn't in the list and we have models, select the first one
+        if (models.length > 0 && !models.includes(ollamaModel)) {
+          setOllamaModel(models[0]);
+        }
       } else {
         setOllamaStatus('error');
+        setOllamaModels([]);
       }
     } catch {
       setOllamaStatus('error');
+      setOllamaModels([]);
+    } finally {
+      setOllamaLoading(false);
     }
   }
 
@@ -557,10 +572,11 @@ export function AdminSetup() {
                     />
                     <button
                       onClick={checkOllamaConnection}
-                      className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-lg transition-colors"
-                      title="Test connection"
+                      disabled={ollamaLoading}
+                      className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors"
+                      title="Test connection and load models"
                     >
-                      <RefreshCw className="w-4 h-4" />
+                      <RefreshCw className={`w-4 h-4 ${ollamaLoading ? 'animate-spin' : ''}`} />
                     </button>
                   </div>
                   {ollamaStatus === 'connected' && (
@@ -573,15 +589,31 @@ export function AdminSetup() {
 
                 <div>
                   <label className="block text-sm text-zinc-400 mb-2">Model</label>
-                  <input
-                    type="text"
-                    value={ollamaModel}
-                    onChange={(e) => setOllamaModel(e.target.value)}
-                    placeholder="llama3.2"
-                    className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
+                  {ollamaModels.length > 0 ? (
+                    <select
+                      value={ollamaModel}
+                      onChange={(e) => setOllamaModel(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      {ollamaModels.map((model) => (
+                        <option key={model} value={model}>
+                          {model}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      value={ollamaModel}
+                      onChange={(e) => setOllamaModel(e.target.value)}
+                      placeholder="llama3.2"
+                      className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  )}
                   <p className="text-xs text-zinc-500 mt-1">
-                    Use a model with tool/function calling support (e.g., llama3.2, mistral)
+                    {ollamaModels.length > 0
+                      ? `${ollamaModels.length} model${ollamaModels.length === 1 ? '' : 's'} available. Use one with tool/function calling support.`
+                      : 'Click refresh to load available models, or enter a model name manually.'}
                   </p>
                 </div>
 

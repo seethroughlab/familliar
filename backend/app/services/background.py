@@ -195,12 +195,27 @@ class BackgroundManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, func, *args)
 
-    async def run_scan(self, full_scan: bool = False) -> dict[str, Any]:
+    async def run_scan(
+        self,
+        reread_unchanged: bool = False,
+        reanalyze_changed: bool = True,
+        # Legacy parameter
+        full_scan: bool | None = None,
+    ) -> dict[str, Any]:
         """Start a library scan in the background.
 
         Returns immediately with status. Progress is reported via Redis.
         Uses Redis-based locking to prevent concurrent scans across workers.
+
+        Args:
+            reread_unchanged: Re-read metadata for files even if unchanged.
+            reanalyze_changed: Queue changed files for audio analysis.
+            full_scan: Deprecated. Use reread_unchanged instead.
         """
+        # Handle legacy parameter
+        if full_scan is not None:
+            reread_unchanged = full_scan
+
         async with self._lock:
             # Check if already running (local or other worker)
             if self.is_scan_running():
@@ -212,17 +227,24 @@ class BackgroundManager:
 
             # Create task and store reference
             self._current_scan_task = asyncio.create_task(
-                self._do_scan(full_scan)
+                self._do_scan(reread_unchanged, reanalyze_changed)
             )
 
         return {"status": "started"}
 
-    async def _do_scan(self, full_scan: bool) -> dict[str, Any]:
+    async def _do_scan(
+        self,
+        reread_unchanged: bool,
+        reanalyze_changed: bool,
+    ) -> dict[str, Any]:
         """Execute the library scan."""
         from app.services.tasks import run_library_scan
 
         try:
-            result = await run_library_scan(full_scan=full_scan)
+            result = await run_library_scan(
+                reread_unchanged=reread_unchanged,
+                reanalyze_changed=reanalyze_changed,
+            )
             return result
         except Exception as e:
             logger.error(f"Scan failed: {e}", exc_info=True)

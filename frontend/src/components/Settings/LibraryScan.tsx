@@ -71,12 +71,15 @@ export function LibraryScan() {
     return () => clearInterval(interval);
   }, [isPolling, isPending, hasAnalysisPending, fetchStatus]);
 
-  const startScan = async (full: boolean = false) => {
+  const startScan = async (rereadUnchanged: boolean = false) => {
     setIsStarting(true);
     setIsPending(true);
     setPendingRetries(0);
     try {
-      const result = await libraryApi.scan(full);
+      const result = await libraryApi.scan({
+        rereadUnchanged,
+        reanalyzeChanged: true,
+      });
       if (result.status === 'already_running') {
         setIsPending(false);
         setIsPolling(true);
@@ -186,28 +189,18 @@ export function LibraryScan() {
           </div>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => startScan(false)}
-            disabled={isRunning || isStarting}
-            className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center gap-2"
-          >
-            {isStarting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            Quick Scan
-          </button>
-          <button
-            onClick={() => startScan(true)}
-            disabled={isRunning || isStarting}
-            className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center gap-2"
-          >
-            {isStarting && <Loader2 className="w-4 h-4 animate-spin" />}
-            Full Scan
-          </button>
-        </div>
+        <button
+          onClick={() => startScan(false)}
+          disabled={isRunning || isStarting}
+          className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-md flex items-center gap-2"
+        >
+          {isStarting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <RefreshCw className="w-4 h-4" />
+          )}
+          Scan Library
+        </button>
       </div>
 
       {/* Queued state - waiting behind other tasks */}

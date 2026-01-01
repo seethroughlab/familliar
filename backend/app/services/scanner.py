@@ -206,16 +206,28 @@ class LibraryScanner:
         self.db = db
         self.scan_state = scan_state  # Optional ScanState for progress updates
 
-    async def scan(self, library_path: Path, full_scan: bool = False) -> dict[str, Any]:
+    async def scan(
+        self,
+        library_path: Path,
+        reread_unchanged: bool = False,
+        reanalyze_changed: bool = True,
+        # Legacy parameter
+        full_scan: bool | None = None,
+    ) -> dict[str, Any]:
         """Scan library for new, changed, or deleted files.
 
         Args:
             library_path: Root directory to scan
-            full_scan: If True, reprocess all files even if unchanged
+            reread_unchanged: Re-read metadata for files even if unchanged
+            reanalyze_changed: Queue changed files for audio analysis
+            full_scan: Deprecated. Use reread_unchanged instead.
 
         Returns:
             Dict with scan results: total, new, updated, deleted, queued
         """
+        # Handle legacy parameter
+        if full_scan is not None:
+            reread_unchanged = full_scan
         # Validate library path before scanning
         validation = validate_library_path(library_path)
         if not validation.exists:
@@ -337,13 +349,19 @@ class LibraryScanner:
                     existing.missing_since = None
                     results["recovered"] += 1
 
-                if full_scan or existing.file_hash != file_hash:
-                    # Changed file (or full scan requested)
+                file_changed = existing.file_hash != file_hash
+                if reread_unchanged or file_changed:
+                    # Re-read metadata (reread_unchanged=True or file changed)
                     logger.info(f"UPDATED: {file_path.name}")
-                    track = await self._update_track(existing, file_hash, file_mtime)
-                    pending_analysis_ids.append(str(track.id))
+                    # Only reset analysis if file content actually changed AND reanalyze_changed is True
+                    reset_analysis = file_changed and reanalyze_changed
+                    track = await self._update_track(
+                        existing, file_hash, file_mtime, reset_analysis=reset_analysis
+                    )
+                    if reset_analysis:
+                        pending_analysis_ids.append(str(track.id))
+                        results["queued"] += 1
                     results["updated"] += 1
-                    results["queued"] += 1
                 else:
                     results["unchanged"] += 1
 
@@ -535,9 +553,20 @@ class LibraryScanner:
         return track
 
     async def _update_track(
-        self, track: Track, file_hash: str, file_mtime: datetime
+        self,
+        track: Track,
+        file_hash: str,
+        file_mtime: datetime,
+        reset_analysis: bool = True,
     ) -> Track:
-        """Update an existing track record."""
+        """Update an existing track record.
+
+        Args:
+            track: Existing track to update
+            file_hash: New file hash
+            file_mtime: New file modification time
+            reset_analysis: If True, reset analysis status to trigger re-analysis
+        """
         loop = asyncio.get_event_loop()
 
         # Re-extract metadata (in thread pool)
@@ -561,9 +590,10 @@ class LibraryScanner:
         track.bitrate = metadata.get("bitrate")
         track.format = metadata.get("format")
 
-        # Reset analysis status to trigger re-analysis
-        track.analysis_version = 0
-        track.analyzed_at = None
+        # Only reset analysis status if requested (when file content changed)
+        if reset_analysis:
+            track.analysis_version = 0
+            track.analyzed_at = None
 
         # Note: Analysis is queued by the caller after commit
         return track

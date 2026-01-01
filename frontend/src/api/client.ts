@@ -53,6 +53,7 @@ export const tracksApi = {
     artist?: string;
     album?: string;
     genre?: string;
+    include_features?: boolean;
   }): Promise<TrackListResponse> => {
     const { data } = await api.get('/tracks', { params });
     return data;
@@ -363,9 +364,15 @@ export const libraryApi = {
     return data;
   },
 
-  scan: async (full = false): Promise<ScanStatus> => {
+  scan: async (options: {
+    rereadUnchanged?: boolean;
+    reanalyzeChanged?: boolean;
+  } = {}): Promise<ScanStatus> => {
     const { data } = await api.post('/library/scan', null, {
-      params: { full },
+      params: {
+        reread_unchanged: options.rereadUnchanged ?? false,
+        reanalyze_changed: options.reanalyzeChanged ?? true,
+      },
     });
     return data;
   },

@@ -7,8 +7,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
+from app.config import settings
 from app.db.models import AlbumType, Track, TrackStatus
-from app.services.import_service import ImportError, ImportService, save_upload_to_temp
+from app.services.import_service import MusicImportError, ImportService, save_upload_to_temp
 from app.services.scanner import LibraryScanner
 from app.services.tasks import get_scan_progress
 
@@ -106,7 +107,10 @@ async def get_library_stats(db: DbSession) -> LibraryStats:
 
 @router.post("/scan", response_model=ScanStatus)
 async def start_scan(
-    full: bool = False,
+    reread_unchanged: bool = False,
+    reanalyze_changed: bool = True,
+    # Legacy parameter for backwards compatibility
+    full: bool | None = None,
 ) -> ScanStatus:
     """Start a library scan.
 
@@ -116,9 +120,15 @@ async def start_scan(
     Scans and analysis cannot run simultaneously - they share resources.
 
     Args:
-        full: If True, rescan all files even if unchanged. Default False (incremental).
+        reread_unchanged: Re-read metadata for files even if unchanged. Default False.
+        reanalyze_changed: Queue changed files for audio analysis. Default True.
+        full: Deprecated. Use reread_unchanged instead.
     """
     from app.services.background import get_background_manager
+
+    # Handle legacy 'full' parameter
+    if full is not None:
+        reread_unchanged = full
 
     bg = get_background_manager()
 
@@ -144,7 +154,10 @@ async def start_scan(
         )
 
     # Start scan in background
-    await bg.run_scan(full_scan=full)
+    await bg.run_scan(
+        reread_unchanged=reread_unchanged,
+        reanalyze_changed=reanalyze_changed,
+    )
 
     return ScanStatus(
         status="started",
@@ -338,7 +351,7 @@ async def import_music(
             files=result.get("files", []),
         )
 
-    except ImportError as e:
+    except MusicImportError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Import failed: {e}")
@@ -353,6 +366,174 @@ async def get_recent_imports(limit: int = 10) -> list[RecentImport]:
     import_service = ImportService()
     imports = import_service.get_recent_imports(limit)
     return [RecentImport(**i) for i in imports]
+
+
+# ============================================================================
+# Enhanced Import with Preview
+# ============================================================================
+
+
+class ImportTrackPreview(BaseModel):
+    """Preview info for a single track."""
+    filename: str
+    relative_path: str
+    detected_artist: str | None
+    detected_album: str | None
+    detected_title: str | None
+    detected_track_num: int | None
+    detected_year: int | None = None
+    format: str
+    duration_seconds: float | None
+    file_size_bytes: int
+    sample_rate: int | None = None
+    bit_depth: int | None = None
+
+
+class ImportPreviewResponse(BaseModel):
+    """Response from import preview endpoint."""
+    session_id: str
+    tracks: list[ImportTrackPreview]
+    total_size_bytes: int
+    estimated_sizes: dict[str, int]
+    has_convertible_formats: bool
+
+
+class ImportTrackInput(BaseModel):
+    """User-edited track metadata for import."""
+    filename: str | None = None
+    relative_path: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    title: str | None = None
+    track_num: int | None = None
+    year: int | None = None
+    # Pass through detected values if not edited
+    detected_artist: str | None = None
+    detected_album: str | None = None
+    detected_title: str | None = None
+    detected_track_num: int | None = None
+    detected_year: int | None = None
+
+
+class ImportOptions(BaseModel):
+    """Import execution options."""
+    format: str = "original"  # "original", "flac", "mp3"
+    mp3_quality: int = 320  # 128, 192, 320
+    organization: str = "imports"  # "organized" or "imports"
+    duplicate_handling: str = "rename"  # "skip", "replace", "rename"
+    queue_analysis: bool = True
+
+
+class ImportExecuteRequest(BaseModel):
+    """Request body for import execution."""
+    session_id: str
+    tracks: list[ImportTrackInput]
+    options: ImportOptions
+
+
+class ImportExecuteResponse(BaseModel):
+    """Response from import execute endpoint."""
+    status: str
+    imported_count: int
+    imported_files: list[str]
+    errors: list[str]
+    base_path: str
+    queue_analysis: bool
+
+
+@router.post("/import/preview", response_model=ImportPreviewResponse)
+async def import_preview(
+    file: UploadFile = File(...),
+) -> ImportPreviewResponse:
+    """Preview an import - extract and scan files without importing.
+
+    Uploads file to temp location, extracts if zip, scans metadata,
+    and returns preview with session_id for later execution.
+
+    Session expires after 24 hours if not executed.
+    """
+    from app.services.import_service import ImportPreviewService, save_upload_to_temp, MusicImportError
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    # Read uploaded file
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    # Save to temp file
+    try:
+        temp_path = save_upload_to_temp(content, file.filename)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
+
+    try:
+        preview_service = ImportPreviewService()
+        result = preview_service.create_preview_session(temp_path, file.filename)
+
+        return ImportPreviewResponse(
+            session_id=result["session_id"],
+            tracks=[ImportTrackPreview(**t) for t in result["tracks"]],
+            total_size_bytes=result["total_size_bytes"],
+            estimated_sizes=result["estimated_sizes"],
+            has_convertible_formats=result["has_convertible_formats"],
+        )
+
+    except MusicImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Preview failed: {e}")
+    finally:
+        # Clean up temp file (session has its own copy)
+        temp_path.unlink(missing_ok=True)
+
+
+@router.post("/import/execute", response_model=ImportExecuteResponse)
+async def import_execute(
+    db: DbSession,
+    background_tasks: BackgroundTasks,
+    request: ImportExecuteRequest,
+) -> ImportExecuteResponse:
+    """Execute an import with user-specified options.
+
+    Uses session_id from preview to access uploaded files.
+    Applies user-edited metadata and conversion options.
+    """
+    from app.services.import_service import ImportExecuteService, MusicImportError
+
+    try:
+        execute_service = ImportExecuteService()
+        result = execute_service.execute_import(
+            session_id=request.session_id,
+            tracks=[t.model_dump() for t in request.tracks],
+            options=request.options.model_dump(),
+        )
+
+        # Schedule scan of imported files if requested
+        # Use specific scan_paths to avoid scanning entire library
+        scan_paths = result.get("scan_paths", [])
+        if result["queue_analysis"] and scan_paths and settings.music_library_paths:
+            from app.services.scanner import LibraryScanner
+            from pathlib import Path
+
+            library_root = Path(settings.music_library_paths[0])
+
+            async def scan_import():
+                scanner = LibraryScanner(db)
+                for rel_path in scan_paths:
+                    scan_dir = library_root / rel_path
+                    if scan_dir.exists():
+                        await scanner.scan(scan_dir, full_scan=True)
+
+            background_tasks.add_task(scan_import)
+
+        return ImportExecuteResponse(**result)
+
+    except MusicImportError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Import failed: {e}")
 
 
 class AnalysisStatus(BaseModel):

@@ -14,7 +14,6 @@ import {
   Clock,
   FileAudio,
   Trash2,
-  Search,
   AlertCircle,
 } from 'lucide-react';
 import { LibraryOrganizer } from '../Settings/LibraryOrganizer';
@@ -96,6 +95,10 @@ export function LibraryManagement() {
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Scan options
+  const [rereadUnchanged, setRereadUnchanged] = useState(false);
+  const [reanalyzeChanged, setReanalyzeChanged] = useState(true);
+
   const fetchStatus = useCallback(async () => {
     try {
       const [scanRes, analysisRes, statsRes, missingRes] = await Promise.all([
@@ -114,6 +117,10 @@ export function LibraryManagement() {
       if (analysisRes.ok) {
         const data = await analysisRes.json();
         setAnalysisStatus(data);
+        // Reset starting state once we have confirmed status
+        if (data.status === 'running' || data.status === 'idle') {
+          setStartingAnalysis(false);
+        }
       }
 
       if (statsRes.ok) {
@@ -145,14 +152,21 @@ export function LibraryManagement() {
     return () => clearInterval(interval);
   }, [fetchStatus, isActive]);
 
-  const startScan = async (full: boolean = false) => {
+  const startScan = async () => {
     try {
       setScanning(true);
-      const response = await fetch(`/api/v1/library/scan?full=${full}`, {
+      setError(null);
+      const params = new URLSearchParams({
+        reread_unchanged: String(rereadUnchanged),
+        reanalyze_changed: String(reanalyzeChanged),
+      });
+      const response = await fetch(`/api/v1/library/scan?${params}`, {
         method: 'POST',
       });
 
       if (response.ok) {
+        // Immediately update local state to show scanning
+        setScanStatus(prev => prev ? { ...prev, status: 'running' } : prev);
         fetchStatus();
       } else {
         const data = await response.json();
@@ -176,18 +190,21 @@ export function LibraryManagement() {
       if (response.ok) {
         const data = await response.json();
         if (data.status === 'started') {
-          // Refresh status after a moment
-          setTimeout(fetchStatus, 1000);
+          // Immediately update local state to show "running" - don't wait for poll
+          setAnalysisStatus(prev => prev ? { ...prev, status: 'running' } : prev);
+          // Then fetch actual status
+          fetchStatus();
         }
       } else {
         const data = await response.json();
         setError(data.detail || 'Failed to start analysis');
+        setStartingAnalysis(false);
       }
     } catch {
       setError('Failed to start analysis');
-    } finally {
       setStartingAnalysis(false);
     }
+    // Note: Don't set startingAnalysis to false here - let the status update handle it
   };
 
   const deleteMissingTrack = async (trackId: string) => {
@@ -308,12 +325,39 @@ export function LibraryManagement() {
         </div>
 
         <div className="space-y-4">
-          {/* Scan buttons */}
-          <div className="flex gap-3">
+          {/* Scan options */}
+          <div className="flex flex-col gap-3">
+            {/* Toggles */}
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rereadUnchanged}
+                  onChange={(e) => setRereadUnchanged(e.target.checked)}
+                  disabled={scanning}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-zinc-900"
+                />
+                <span className="text-zinc-300">Re-read unchanged files</span>
+                <span className="text-zinc-500" title="Re-extract metadata from all files, even if they haven't changed">(?)</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reanalyzeChanged}
+                  onChange={(e) => setReanalyzeChanged(e.target.checked)}
+                  disabled={scanning}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-purple-500 focus:ring-purple-500 focus:ring-offset-zinc-900"
+                />
+                <span className="text-zinc-300">Re-analyze changed files</span>
+                <span className="text-zinc-500" title="Queue changed files for audio analysis (BPM, key, etc.)">(?)</span>
+              </label>
+            </div>
+
+            {/* Scan button */}
             <button
-              onClick={() => startScan(false)}
+              onClick={startScan}
               disabled={scanning || analysisStatus?.status === 'running'}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
+              className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
               title={analysisStatus?.status === 'running' ? 'Wait for analysis to complete' : undefined}
             >
               {scanning ? (
@@ -321,16 +365,7 @@ export function LibraryManagement() {
               ) : (
                 <RefreshCw className="w-5 h-5" />
               )}
-              {analysisStatus?.status === 'running' ? 'Analysis running...' : 'Quick Scan'}
-            </button>
-            <button
-              onClick={() => startScan(true)}
-              disabled={scanning || analysisStatus?.status === 'running'}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
-              title={analysisStatus?.status === 'running' ? 'Wait for analysis to complete' : undefined}
-            >
-              <Search className="w-5 h-5" />
-              Full Scan
+              {analysisStatus?.status === 'running' ? 'Analysis running...' : 'Scan Library'}
             </button>
           </div>
 

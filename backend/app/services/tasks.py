@@ -240,12 +240,25 @@ def clear_scan_progress() -> None:
         logger.error(f"Failed to clear scan progress: {e}")
 
 
-async def run_library_scan(full_scan: bool = False) -> dict[str, Any]:
+async def run_library_scan(
+    reread_unchanged: bool = False,
+    reanalyze_changed: bool = True,
+    # Legacy parameter
+    full_scan: bool | None = None,
+) -> dict[str, Any]:
     """Scan the music library for new/changed/deleted files.
 
     This runs asynchronously in the API process.
     Progress is reported via Redis for the API to read.
+
+    Args:
+        reread_unchanged: Re-read metadata for files even if unchanged.
+        reanalyze_changed: Queue changed files for audio analysis.
+        full_scan: Deprecated. Use reread_unchanged instead.
     """
+    # Handle legacy parameter
+    if full_scan is not None:
+        reread_unchanged = full_scan
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.services.scanner import LibraryScanner
@@ -331,7 +344,11 @@ async def run_library_scan(full_scan: bool = False) -> dict[str, Any]:
 
             for library_path in valid_paths:
                 logger.info(f"Scanning library path: {library_path}")
-                scan_results = await scanner.scan(library_path, full_scan=full_scan)
+                scan_results = await scanner.scan(
+                    library_path,
+                    reread_unchanged=reread_unchanged,
+                    reanalyze_changed=reanalyze_changed,
+                )
                 results["new"] += scan_results.get("new", 0)
                 results["updated"] += scan_results.get("updated", 0)
                 results["unchanged"] += scan_results.get("unchanged", 0)

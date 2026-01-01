@@ -1,2 +1,1 @@
-[ ] I'd like to COMPLETELY remove familliar from my openmediavault so that I can reinstall it using the README instructinos. 
-[ ] I was having some trouble accessing both famillar and the openmediavault workbench. I made some changes to the nginx config that might have been a mistake. Now I can access both, but I want my openmediavault to be the standard configuration so that my test installs are realistic. Can you look into what is wrong? And help me figure out how users will be able to access both familliar and the openmediavault workbench?
+[ ] I'd like to COMPLETELY remove familliar from my openmediavault (including clearing out databases) so that I can reinstall it using the README instructinos. 

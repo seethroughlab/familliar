@@ -18,6 +18,19 @@ from app.services.artwork import compute_album_hash, get_artwork_path
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
 
+class TrackFeaturesResponse(BaseModel):
+    """Audio analysis features."""
+
+    bpm: float | None = None
+    key: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    acousticness: float | None = None
+    instrumentalness: float | None = None
+    speechiness: float | None = None
+
+
 class TrackResponse(BaseModel):
     """Track response schema."""
 
@@ -35,14 +48,15 @@ class TrackResponse(BaseModel):
     duration_seconds: float | None
     format: str | None
     analysis_version: int
+    features: TrackFeaturesResponse | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class TrackDetailResponse(TrackResponse):
-    """Track detail response with analysis features."""
+    """Track detail response with analysis features (deprecated, use TrackResponse)."""
 
-    features: dict[str, Any] | None = None
+    pass
 
 
 class TrackListResponse(BaseModel):
@@ -63,9 +77,14 @@ async def list_tracks(
     artist: str | None = None,
     album: str | None = None,
     genre: str | None = None,
+    include_features: bool = Query(False, description="Include audio analysis features"),
 ) -> TrackListResponse:
     """List tracks with optional filtering and pagination."""
     query = select(Track)
+
+    # Include analysis features if requested
+    if include_features:
+        query = query.options(selectinload(Track.analyses))
 
     # Apply filters
     if search:
@@ -93,16 +112,36 @@ async def list_tracks(
     result = await db.execute(query)
     tracks = result.scalars().all()
 
+    # Build response with optional features
+    items = []
+    for track in tracks:
+        response = TrackResponse.model_validate(track)
+        if include_features and track.analyses:
+            # Get latest analysis features
+            latest = max(track.analyses, key=lambda a: a.version)
+            if latest.features:
+                response.features = TrackFeaturesResponse(
+                    bpm=latest.features.get("bpm"),
+                    key=latest.features.get("key"),
+                    energy=latest.features.get("energy"),
+                    danceability=latest.features.get("danceability"),
+                    valence=latest.features.get("valence"),
+                    acousticness=latest.features.get("acousticness"),
+                    instrumentalness=latest.features.get("instrumentalness"),
+                    speechiness=latest.features.get("speechiness"),
+                )
+        items.append(response)
+
     return TrackListResponse(
-        items=[TrackResponse.model_validate(t) for t in tracks],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,
     )
 
 
-@router.get("/{track_id}", response_model=TrackDetailResponse)
-async def get_track(db: DbSession, track_id: UUID) -> TrackDetailResponse:
+@router.get("/{track_id}", response_model=TrackResponse)
+async def get_track(db: DbSession, track_id: UUID) -> TrackResponse:
     """Get a single track with its latest analysis."""
     query = (
         select(Track)
@@ -115,14 +154,23 @@ async def get_track(db: DbSession, track_id: UUID) -> TrackDetailResponse:
     if not track:
         raise HTTPException(status_code=404, detail="Track not found")
 
-    # Get latest analysis
-    features = None
+    response = TrackResponse.model_validate(track)
+
+    # Get latest analysis features
     if track.analyses:
         latest = max(track.analyses, key=lambda a: a.version)
-        features = latest.features
+        if latest.features:
+            response.features = TrackFeaturesResponse(
+                bpm=latest.features.get("bpm"),
+                key=latest.features.get("key"),
+                energy=latest.features.get("energy"),
+                danceability=latest.features.get("danceability"),
+                valence=latest.features.get("valence"),
+                acousticness=latest.features.get("acousticness"),
+                instrumentalness=latest.features.get("instrumentalness"),
+                speechiness=latest.features.get("speechiness"),
+            )
 
-    response = TrackDetailResponse.model_validate(track)
-    response.features = features
     return response
 
 

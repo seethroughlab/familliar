@@ -78,4 +78,6 @@ job-logs-*.txt
 docker/.env
 backend/.cache
 _*.md
-backend/data/settings.json
+
+# Backend runtime data (settings, artwork cache, profiles)
+backend/data/

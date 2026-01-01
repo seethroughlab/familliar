@@ -244,6 +244,36 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
    - Open `http://your-omv-ip:4400` in a browser
    - Go to Settings to configure integrations
 
+#### Optional: HTTPS Access via nginx Proxy
+
+If you want to access Familiar over HTTPS using OMV's SSL certificate (recommended for Tailscale HTTPS):
+
+1. Create a proxy configuration file:
+   ```bash
+   nano /etc/nginx/openmediavault-webgui.d/familliar.conf
+   ```
+
+2. Add this content:
+   ```nginx
+   location /familliar/ {
+       proxy_pass http://127.0.0.1:4400/;
+       proxy_http_version 1.1;
+       proxy_set_header Upgrade $http_upgrade;
+       proxy_set_header Connection "upgrade";
+       proxy_set_header Host $host;
+       proxy_set_header X-Real-IP $remote_addr;
+       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+       proxy_set_header X-Forwarded-Proto $scheme;
+   }
+   ```
+
+3. Reload nginx:
+   ```bash
+   nginx -t && systemctl reload nginx
+   ```
+
+4. Access Familiar at `https://your-omv-ip/familliar/`
+
 #### Updating on OpenMediaVault
 
 To update to a new version:

@@ -1,6 +1,8 @@
 """Album artwork extraction and management service."""
 
 import hashlib
+import subprocess
+import tempfile
 from io import BytesIO
 from pathlib import Path
 
@@ -42,10 +44,47 @@ def compute_album_hash(artist: str | None, album: str | None) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
+def _extract_ffmpeg_artwork(file_path: Path) -> bytes | None:
+    """Extract artwork using ffmpeg (for formats with attached picture streams)."""
+    try:
+        # Create temp file for extracted artwork
+        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        # Use ffmpeg to extract the video stream (attached picture)
+        cmd = [
+            "ffmpeg", "-y", "-i", str(file_path),
+            "-an",  # No audio
+            "-vcodec", "mjpeg",  # Output as JPEG
+            "-frames:v", "1",  # Just one frame
+            tmp_path
+        ]
+
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=30,
+        )
+
+        if result.returncode == 0:
+            tmp_file = Path(tmp_path)
+            if tmp_file.exists() and tmp_file.stat().st_size > 0:
+                artwork_data = tmp_file.read_bytes()
+                tmp_file.unlink()
+                return artwork_data
+
+        # Clean up on failure
+        Path(tmp_path).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    return None
+
+
 def extract_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
     """Extract embedded artwork from audio file.
 
-    Supports MP3 (ID3), FLAC, and M4A (MP4).
+    Supports MP3 (ID3), FLAC, M4A (MP4), and AIFF/WAV (attached pictures).
 
     Returns:
         Raw image bytes or None if no artwork found.
@@ -59,11 +98,22 @@ def extract_artwork(file_path: Path) -> bytes | None:  # type: ignore[return]
             return _extract_flac_artwork(file_path)
         elif suffix in {".m4a", ".aac", ".mp4"}:
             return _extract_mp4_artwork(file_path)
+        elif suffix in {".aiff", ".aif", ".wav"}:
+            # AIFF/WAV files often have artwork as attached picture streams
+            # Try ffmpeg first, then fall back to ID3
+            result = _extract_ffmpeg_artwork(file_path)
+            if result:
+                return result
+            return _extract_id3_artwork(file_path)
         else:
             # Try generic mutagen approach
             audio = mutagen.File(file_path)  # type: ignore[attr-defined]
             if audio and hasattr(audio, "pictures") and audio.pictures:
                 return audio.pictures[0].data
+            # Also try ID3 as fallback (some formats embed ID3 chunks)
+            result = _extract_id3_artwork(file_path)
+            if result:
+                return result
     except Exception as e:
         print(f"Error extracting artwork from {file_path}: {e}")
 

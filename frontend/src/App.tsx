@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, Settings, Zap, Activity } from 'lucide-react';
 import { PlayerBar } from './components/Player/PlayerBar';
@@ -20,6 +20,8 @@ import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
 import { AdminSetup } from './components/Admin';
+import { GlobalDropZone, ImportModal } from './components/Import';
+import { ColumnSelector } from './components/Library/ColumnSelector';
 import { useScrobbling } from './hooks/useScrobbling';
 // Listening sessions disabled for v0.1.0
 // import { useListeningSession } from './hooks/useListeningSession';
@@ -42,6 +44,9 @@ type RightPanelTab = 'library' | 'playlists' | 'visualizer' | 'settings';
 
 function AppContent() {
   const [search, setSearch] = useState('');
+  const [importFiles, setImportFiles] = useState<File[] | null>(null);
+  const queryClient = useQueryClient();
+
   // Determine initial tab from URL path (e.g., /settings from OAuth callback)
   const initialTab = (): RightPanelTab => {
     const path = window.location.pathname;
@@ -123,6 +128,7 @@ function AppContent() {
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
 
   return (
+    <GlobalDropZone onFilesDropped={setImportFiles}>
     <div className={`h-screen flex flex-col ${resolvedTheme === 'light' ? 'bg-white text-zinc-900' : 'bg-black text-white'}`}>
       {/* Main content area - pb-20 accounts for fixed player bar */}
       <div className="flex-1 flex overflow-hidden pb-20">
@@ -184,20 +190,23 @@ function AppContent() {
                 </button>
               </div>
 
-              {/* Search (only in library view) */}
+              {/* Search and column selector (only in library view) */}
               {rightPanelTab === 'library' && (
-                <div className="flex-1 max-w-md">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                    <input
-                      type="text"
-                      placeholder="Search tracks..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    />
+                <>
+                  <div className="flex-1 max-w-md">
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                      <input
+                        type="text"
+                        placeholder="Search tracks..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      />
+                    </div>
                   </div>
-                </div>
+                  <ColumnSelector />
+                </>
               )}
 
               {/* Spacer to push health indicator right */}
@@ -253,7 +262,20 @@ function AppContent() {
       {showShortcutsHelp && (
         <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
       )}
+
+      {/* Import modal */}
+      {importFiles && (
+        <ImportModal
+          files={importFiles}
+          onClose={() => {
+            setImportFiles(null);
+            // Refetch tracks after modal closes
+            queryClient.refetchQueries({ queryKey: ['tracks'] });
+          }}
+        />
+      )}
     </div>
+    </GlobalDropZone>
   );
 }
 

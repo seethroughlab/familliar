@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import mutagen
+from mutagen.aiff import AIFF
 from mutagen.easyid3 import EasyID3
 from mutagen.flac import FLAC
 from mutagen.mp4 import MP4
@@ -65,6 +66,8 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
             metadata.update(_extract_mp4_tags(file_path))
         elif suffix == ".ogg":
             metadata.update(_extract_ogg_tags(file_path))
+        elif suffix in {".aiff", ".aif"}:
+            metadata.update(_extract_aiff_tags(file_path))
         else:
             # Try easy interface as fallback
             metadata.update(_extract_easy_tags(audio))
@@ -215,6 +218,58 @@ def _extract_ogg_tags(file_path: Path) -> dict[str, Any]:
         return _extract_easy_tags(audio)
     except Exception as e:
         logger.warning(f"Error reading OGG tags: {e}")
+
+    return tags
+
+
+def _extract_aiff_tags(file_path: Path) -> dict[str, Any]:
+    """Extract ID3 tags from AIFF files."""
+    tags: dict[str, Any] = {}
+
+    try:
+        audio = AIFF(file_path)
+
+        # AIFF files can have ID3 tags
+        if audio.tags:
+            def get_text(key: str) -> str | None:
+                """Get text from an ID3 frame."""
+                frame = audio.tags.get(key)
+                if frame is None:
+                    return None
+                # ID3 frames have a .text attribute which is a list
+                if hasattr(frame, 'text') and frame.text:
+                    return str(frame.text[0])
+                return None
+
+            # ID3 frame names
+            tags["title"] = get_text("TIT2")
+            tags["artist"] = get_text("TPE1")
+            tags["album"] = get_text("TALB")
+            tags["album_artist"] = get_text("TPE2")
+            tags["genre"] = get_text("TCON")
+
+            # Track number (TRCK frame)
+            track_text = get_text("TRCK")
+            if track_text:
+                tags["track_number"] = _parse_number(track_text)
+
+            # Disc number (TPOS frame)
+            disc_text = get_text("TPOS")
+            if disc_text:
+                tags["disc_number"] = _parse_number(disc_text)
+
+            # Year (TDRC or TYER)
+            date_text = get_text("TDRC") or get_text("TYER")
+            if date_text:
+                tags["year"] = _parse_year(date_text)
+
+        # Audio info
+        if audio.info:
+            tags["sample_rate"] = audio.info.sample_rate
+            tags["bit_depth"] = audio.info.bits_per_sample
+
+    except Exception as e:
+        logger.warning(f"Error reading AIFF tags: {e}")
 
     return tags
 

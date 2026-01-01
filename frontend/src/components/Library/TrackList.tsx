@@ -1,17 +1,12 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart } from 'lucide-react';
 import { tracksApi, favoritesApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useColumnStore, getVisibleColumns } from '../../stores/columnStore';
+import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from './columnDefinitions';
 import { useOfflineTrack } from '../../hooks/useOfflineTrack';
 import type { Track } from '../../types';
-
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return '--:--';
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
 
 interface TrackRowProps {
   track: Track;
@@ -19,6 +14,8 @@ interface TrackRowProps {
   isCurrentTrack: boolean;
   isPlaying: boolean;
   onPlay: () => void;
+  visibleColumnIds: string[];
+  gridColumns: string;
 }
 
 function OfflineButton({ trackId }: { trackId: string }) {
@@ -120,15 +117,17 @@ function FavoriteButton({ trackId }: { trackId: string }) {
   );
 }
 
-function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowProps) {
+function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay, visibleColumnIds, gridColumns }: TrackRowProps) {
   return (
     <div
       data-testid="track-row"
       onClick={onPlay}
-      className={`group grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 cursor-pointer ${
+      className={`group grid gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 cursor-pointer ${
         isCurrentTrack ? 'bg-zinc-800/50' : ''
       }`}
+      style={{ gridTemplateColumns: gridColumns }}
     >
+      {/* Index / Play button column */}
       <div className="flex items-center justify-center">
         <span className="group-hover:hidden text-zinc-400">
           {isCurrentTrack && isPlaying ? (
@@ -154,17 +153,43 @@ function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowP
           )}
         </button>
       </div>
+
+      {/* Title column (always visible) */}
       <div className="min-w-0">
         <div className={`truncate ${isCurrentTrack ? 'text-green-500' : ''}`}>
           {track.title || 'Unknown'}
         </div>
       </div>
-      <div className="text-zinc-400 truncate">{track.artist || 'Unknown'}</div>
-      <div className="text-zinc-400 truncate">{track.album || 'Unknown'}</div>
-      <div className="text-zinc-400 text-right">{formatDuration(track.duration_seconds)}</div>
+
+      {/* Dynamic columns */}
+      {visibleColumnIds.map((colId) => {
+        const colDef = getColumnDef(colId);
+        if (!colDef) return null;
+
+        const rawValue = colDef.getValue(track);
+        const displayValue = colDef.format && rawValue != null
+          ? colDef.format(rawValue)
+          : rawValue ?? '-';
+
+        return (
+          <div
+            key={colId}
+            className={`text-zinc-400 truncate ${
+              colDef.align === 'right' ? 'text-right' :
+              colDef.align === 'center' ? 'text-center' : ''
+            }`}
+          >
+            {displayValue}
+          </div>
+        );
+      })}
+
+      {/* Favorite button */}
       <div className="flex items-center justify-center">
         <FavoriteButton trackId={track.id} />
       </div>
+
+      {/* Offline button */}
       <div className="flex items-center justify-center">
         <OfflineButton trackId={track.id} />
       </div>
@@ -180,10 +205,84 @@ interface TrackListProps {
 
 export function TrackList({ search, artist, album }: TrackListProps) {
   const { currentTrack, isPlaying, setIsPlaying, setQueue } = usePlayerStore();
+  const columns = useColumnStore((state) => state.columns);
+  const reorderColumns = useColumnStore((state) => state.reorderColumns);
+
+  // Drag & drop state
+  const [draggedColId, setDraggedColId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
+
+  // Get visible column IDs in order
+  const visibleColumnIds = useMemo(() => getVisibleColumns(columns), [columns]);
+
+  // Check if any analysis columns are visible
+  const analysisColumnIds = useMemo(
+    () => new Set(getAnalysisColumns().map((c) => c.id)),
+    []
+  );
+  const needsFeatures = useMemo(
+    () => visibleColumnIds.some((id) => analysisColumnIds.has(id)),
+    [visibleColumnIds, analysisColumnIds]
+  );
+
+  // Build grid template columns
+  const gridColumns = useMemo(() => {
+    const cols: string[] = ['3rem']; // Index column
+    cols.push('1fr'); // Title (always visible)
+
+    for (const colId of visibleColumnIds) {
+      const colDef = COLUMN_DEFINITIONS.find((d) => d.id === colId);
+      cols.push(colDef?.width || '1fr');
+    }
+
+    cols.push('3rem', '3rem'); // Favorite, Offline
+    return cols.join(' ');
+  }, [visibleColumnIds]);
+
+  // Drag handlers for column reordering
+  const handleDragStart = (colId: string) => {
+    setDraggedColId(colId);
+  };
+
+  const handleDragOver = (e: React.DragEvent, colId: string) => {
+    e.preventDefault();
+    if (draggedColId && draggedColId !== colId) {
+      setDropTargetId(colId);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDropTargetId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColId: string) => {
+    e.preventDefault();
+    if (draggedColId && draggedColId !== targetColId) {
+      // Find indices in the full columns array (not just visible)
+      const fromIndex = columns.findIndex((c) => c.id === draggedColId);
+      const toIndex = columns.findIndex((c) => c.id === targetColId);
+      if (fromIndex !== -1 && toIndex !== -1) {
+        reorderColumns(fromIndex, toIndex);
+      }
+    }
+    setDraggedColId(null);
+    setDropTargetId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedColId(null);
+    setDropTargetId(null);
+  };
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['tracks', { search, artist, album }],
-    queryFn: () => tracksApi.list({ search, artist, album, page_size: 100 }),
+    queryKey: ['tracks', { search, artist, album, include_features: needsFeatures }],
+    queryFn: () => tracksApi.list({
+      search,
+      artist,
+      album,
+      page_size: 100,
+      include_features: needsFeatures,
+    }),
   });
 
   const handlePlayTrack = (track: Track, index: number) => {
@@ -221,12 +320,38 @@ export function TrackList({ search, artist, album }: TrackListProps) {
   return (
     <div>
       {/* Header */}
-      <div className="grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800">
+      <div
+        className="grid gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800"
+        style={{ gridTemplateColumns: gridColumns }}
+      >
         <div>#</div>
         <div>Title</div>
-        <div>Artist</div>
-        <div>Album</div>
-        <div className="text-right">Duration</div>
+        {visibleColumnIds.map((colId) => {
+          const colDef = getColumnDef(colId);
+          if (!colDef) return null;
+          const isDragging = draggedColId === colId;
+          const isDropTarget = dropTargetId === colId;
+          return (
+            <div
+              key={colId}
+              draggable
+              onDragStart={() => handleDragStart(colId)}
+              onDragOver={(e) => handleDragOver(e, colId)}
+              onDragLeave={handleDragLeave}
+              onDrop={(e) => handleDrop(e, colId)}
+              onDragEnd={handleDragEnd}
+              className={`cursor-grab select-none ${
+                colDef.align === 'right' ? 'text-right' :
+                colDef.align === 'center' ? 'text-center' : ''
+              } ${isDragging ? 'opacity-50' : ''} ${
+                isDropTarget ? 'border-l-2 border-green-500' : ''
+              }`}
+              title={`${colDef.label} (drag to reorder)`}
+            >
+              {colDef.shortLabel || colDef.label}
+            </div>
+          );
+        })}
         <div></div>
         <div></div>
       </div>
@@ -241,6 +366,8 @@ export function TrackList({ search, artist, album }: TrackListProps) {
             isCurrentTrack={currentTrack?.id === track.id}
             isPlaying={currentTrack?.id === track.id && isPlaying}
             onPlay={() => handlePlayTrack(track, index)}
+            visibleColumnIds={visibleColumnIds}
+            gridColumns={gridColumns}
           />
         ))}
       </div>
