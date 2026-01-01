@@ -206,15 +206,6 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://familiar:familiar@localhost:5432/familiar
         run: uv run python -m app.db.init_db
 
-      - name: Start backend server
-        working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://familiar:familiar@localhost:5432/familiar
-          REDIS_URL: redis://localhost:6379/0
-        run: |
-          uv run uvicorn app.main:app --host 0.0.0.0 --port 4400 &
-          sleep 10
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -225,6 +216,22 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
+      - name: Build frontend for E2E tests
+        working-directory: frontend
+        run: |
+          npm run build
+          mkdir -p ../backend/static
+          cp -r dist/* ../backend/static/
+
+      - name: Start backend server
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://familiar:familiar@localhost:5432/familiar
+          REDIS_URL: redis://localhost:6379/0
+        run: |
+          uv run uvicorn app.main:app --host 0.0.0.0 --port 4400 &
+          sleep 10
 
       - name: Install Playwright browsers
         working-directory: frontend
