@@ -338,6 +338,23 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
 
     percent = (analyzed / total * 100) if total > 0 else 100.0
 
+    # Check if background analysis tasks are running
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+    active_tasks = bg.get_analysis_task_count()
+
+    if active_tasks > 0:
+        return AnalysisStatus(
+            status="running",
+            total=total,
+            analyzed=analyzed,
+            pending=pending,
+            failed=failed,
+            percent=round(percent, 1),
+            current_file=f"Processing {active_tasks} tracks...",
+        )
+
     # Check scan progress for running analysis (scan includes analysis queueing)
     progress = get_scan_progress()
 
@@ -372,7 +389,7 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
             heartbeat=progress.get("last_heartbeat"),
         )
 
-    # No active scan - check if there's pending work
+    # No active tasks - check if there's pending work
     if pending > 0:
         return AnalysisStatus(
             status="idle",

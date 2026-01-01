@@ -119,6 +119,24 @@ class BackgroundManager:
 
         logger.info("BackgroundManager shutdown complete")
 
+    def is_analysis_running(self) -> bool:
+        """Check if any analysis tasks are currently running."""
+        # Clean up completed tasks first
+        completed = [tid for tid, task in self._analysis_tasks.items() if task.done()]
+        for tid in completed:
+            self._analysis_tasks.pop(tid, None)
+
+        return len(self._analysis_tasks) > 0
+
+    def get_analysis_task_count(self) -> int:
+        """Get the number of active analysis tasks."""
+        # Clean up completed tasks first
+        completed = [tid for tid, task in self._analysis_tasks.items() if task.done()]
+        for tid in completed:
+            self._analysis_tasks.pop(tid, None)
+
+        return len(self._analysis_tasks)
+
     def is_scan_running(self) -> bool:
         """Check if a library scan is currently running (across all workers).
 
