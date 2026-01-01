@@ -19,6 +19,18 @@ import {
 } from 'lucide-react';
 import { LibraryOrganizer } from '../Settings/LibraryOrganizer';
 
+// Check if a timestamp is stale (older than threshold in seconds)
+function isStale(timestamp: string | null | undefined, thresholdSeconds: number = 120): boolean {
+  if (!timestamp) return false;
+  try {
+    const heartbeatTime = new Date(timestamp).getTime();
+    const now = Date.now();
+    return (now - heartbeatTime) > (thresholdSeconds * 1000);
+  } catch {
+    return false;
+  }
+}
+
 interface ScanProgress {
   phase: string;
   files_discovered: number;
@@ -32,6 +44,7 @@ interface ScanProgress {
   recovered: number;
   current_file: string | null;
   started_at: string | null;
+  last_heartbeat?: string | null;
   errors: string[];
   warnings: string[];
 }
@@ -122,12 +135,15 @@ export function LibraryManagement() {
     }
   }, []);
 
+  // Poll more frequently when scan or analysis is running
+  const isActive = scanning || analysisStatus?.status === 'running';
+
   useEffect(() => {
     fetchStatus();
-    // Poll while scanning
-    const interval = setInterval(fetchStatus, scanning ? 2000 : 30000);
+    // Poll every 2s while scan/analysis running, otherwise every 5s
+    const interval = setInterval(fetchStatus, isActive ? 2000 : 5000);
     return () => clearInterval(interval);
-  }, [fetchStatus, scanning]);
+  }, [fetchStatus, isActive]);
 
   const startScan = async (full: boolean = false) => {
     try {
@@ -190,6 +206,51 @@ export function LibraryManagement() {
     }
   };
 
+  const cancelScan = async () => {
+    try {
+      const response = await fetch('/api/v1/library/scan/cancel', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        setScanning(false);
+        fetchStatus();
+      } else {
+        const data = await response.json();
+        setError(data.detail || 'Failed to cancel scan');
+      }
+    } catch {
+      setError('Failed to cancel scan');
+    }
+  };
+
+  const cancelAnalysis = async () => {
+    try {
+      const response = await fetch('/api/v1/library/analysis/cancel', {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        fetchStatus();
+      } else {
+        const data = await response.json();
+        setError(data.detail || 'Failed to cancel analysis');
+      }
+    } catch {
+      setError('Failed to cancel analysis');
+    }
+  };
+
+  // Check if scan appears stuck (no heartbeat update in 2+ minutes)
+  const scanIsStuck = scanStatus?.status === 'running' &&
+    scanStatus?.progress?.last_heartbeat &&
+    isStale(scanStatus.progress.last_heartbeat);
+
+  // Check if analysis appears stuck
+  const analysisIsStuck = analysisStatus?.status === 'running' &&
+    analysisStatus?.heartbeat &&
+    isStale(analysisStatus.heartbeat);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center p-8">
@@ -251,20 +312,22 @@ export function LibraryManagement() {
           <div className="flex gap-3">
             <button
               onClick={() => startScan(false)}
-              disabled={scanning}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 rounded-lg transition-colors text-white font-medium"
+              disabled={scanning || analysisStatus?.status === 'running'}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
+              title={analysisStatus?.status === 'running' ? 'Wait for analysis to complete' : undefined}
             >
               {scanning ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <RefreshCw className="w-5 h-5" />
               )}
-              Quick Scan
+              {analysisStatus?.status === 'running' ? 'Analysis running...' : 'Quick Scan'}
             </button>
             <button
               onClick={() => startScan(true)}
-              disabled={scanning}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors text-white font-medium"
+              disabled={scanning || analysisStatus?.status === 'running'}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
+              title={analysisStatus?.status === 'running' ? 'Wait for analysis to complete' : undefined}
             >
               <Search className="w-5 h-5" />
               Full Scan
@@ -273,7 +336,15 @@ export function LibraryManagement() {
 
           {/* Scan Progress */}
           {scanStatus?.progress && scanStatus.status === 'running' && (
-            <div className="bg-zinc-800 rounded-lg p-4 space-y-3">
+            <div className={`rounded-lg p-4 space-y-3 ${scanIsStuck ? 'bg-amber-900/30 border border-amber-700' : 'bg-zinc-800'}`}>
+              {/* Stuck warning */}
+              {scanIsStuck && (
+                <div className="flex items-center gap-2 text-amber-400 mb-2">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span className="text-sm font-medium">Scan appears to be stuck</span>
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <span className="text-sm text-zinc-400">Phase: {scanStatus.progress.phase}</span>
                 <span className="text-sm text-zinc-400">
@@ -284,7 +355,7 @@ export function LibraryManagement() {
               {/* Progress bar */}
               <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-purple-500 transition-all duration-300"
+                  className={`h-full transition-all duration-300 ${scanIsStuck ? 'bg-amber-500' : 'bg-purple-500'}`}
                   style={{
                     width: `${scanStatus.progress.files_total > 0
                       ? (scanStatus.progress.files_processed / scanStatus.progress.files_total) * 100
@@ -309,6 +380,19 @@ export function LibraryManagement() {
                   <span className="text-red-400">{scanStatus.progress.marked_missing} missing</span>
                 )}
               </div>
+
+              {/* Cancel button - always show during scan, emphasized when stuck */}
+              <button
+                onClick={cancelScan}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+                  scanIsStuck
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                    : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                }`}
+              >
+                <XCircle className="w-4 h-4" />
+                {scanIsStuck ? 'Cancel Stuck Scan' : 'Cancel Scan'}
+              </button>
             </div>
           )}
 
@@ -365,10 +449,18 @@ export function LibraryManagement() {
 
         {analysisStatus && (
           <div className="space-y-3">
+            {/* Stuck warning */}
+            {analysisIsStuck && (
+              <div className="flex items-center gap-2 text-amber-400 p-3 bg-amber-900/30 border border-amber-700 rounded-lg">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span className="text-sm font-medium">Analysis appears to be stuck</span>
+              </div>
+            )}
+
             {/* Progress bar */}
             <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-cyan-500 transition-all duration-300"
+                className={`h-full transition-all duration-300 ${analysisIsStuck ? 'bg-amber-500' : 'bg-cyan-500'}`}
                 style={{ width: `${analysisStatus.percent}%` }}
               />
             </div>
@@ -378,6 +470,13 @@ export function LibraryManagement() {
               <span>{analysisStatus.percent.toFixed(1)}%</span>
             </div>
 
+            {/* Current file being analyzed */}
+            {analysisStatus.status === 'running' && analysisStatus.current_file && (
+              <div className="text-xs text-zinc-500 truncate">
+                {analysisStatus.current_file}
+              </div>
+            )}
+
             {analysisStatus.failed > 0 && (
               <div className="flex items-center gap-2 text-sm text-red-400">
                 <AlertCircle className="w-4 h-4" />
@@ -385,20 +484,34 @@ export function LibraryManagement() {
               </div>
             )}
 
-            {/* Start Analysis Button */}
-            {analysisStatus.pending > 0 && (
+            {/* Running state - show cancel button */}
+            {analysisStatus.status === 'running' && (
+              <button
+                onClick={cancelAnalysis}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+                  analysisIsStuck
+                    ? 'bg-amber-600 hover:bg-amber-500 text-white'
+                    : 'bg-zinc-700 hover:bg-zinc-600 text-zinc-300'
+                }`}
+              >
+                <XCircle className="w-4 h-4" />
+                {analysisIsStuck ? 'Cancel Stuck Analysis' : 'Cancel Analysis'}
+              </button>
+            )}
+
+            {/* Start Analysis Button - only show when not running */}
+            {analysisStatus.pending > 0 && analysisStatus.status !== 'running' && (
               <button
                 onClick={startAnalysis}
-                disabled={scanning || startingAnalysis || analysisStatus.status === 'running'}
+                disabled={scanning || startingAnalysis}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
               >
-                {startingAnalysis || analysisStatus.status === 'running' ? (
+                {startingAnalysis ? (
                   <Loader2 className="w-5 h-5 animate-spin" />
                 ) : (
                   <Music className="w-5 h-5" />
                 )}
-                {scanning ? 'Wait for scan to complete' :
-                 analysisStatus.status === 'running' ? 'Analysis in progress...' : 'Start Analysis'}
+                {scanning ? 'Wait for scan to complete' : 'Start Analysis'}
               </button>
             )}
           </div>

@@ -45,6 +45,7 @@ class ScanProgress(BaseModel):
     deleted_tracks: int = 0      # Legacy field, always 0 now
     current_file: str | None = None
     started_at: str | None = None
+    last_heartbeat: str | None = None  # For stuck detection
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -112,12 +113,21 @@ async def start_scan(
     The scan runs in the background, so this returns immediately.
     Progress is stored in Redis and can be retrieved via GET /scan/status.
 
+    Scans and analysis cannot run simultaneously - they share resources.
+
     Args:
         full: If True, rescan all files even if unchanged. Default False (incremental).
     """
     from app.services.background import get_background_manager
 
     bg = get_background_manager()
+
+    # Check if analysis is running - can't run both simultaneously
+    if bg.is_analysis_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot start scan while analysis is running. Cancel analysis first or wait for it to complete.",
+        )
 
     # Check if a scan is already running
     if bg.is_scan_running():
@@ -139,6 +149,61 @@ async def start_scan(
     return ScanStatus(
         status="started",
         message="Scan started",
+    )
+
+
+class CancelResponse(BaseModel):
+    """Response for cancel operations."""
+
+    status: str
+    message: str
+
+
+@router.post("/scan/cancel", response_model=CancelResponse)
+async def cancel_scan() -> CancelResponse:
+    """Cancel a running or stuck library scan.
+
+    Clears the scan progress from Redis and releases the lock.
+    Use this when a scan appears stuck.
+    """
+    from app.services.tasks import clear_scan_progress
+
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+
+    # Release the lock and clear progress
+    bg._release_scan_lock()
+    clear_scan_progress()
+
+    return CancelResponse(
+        status="cancelled",
+        message="Scan cancelled and state cleared",
+    )
+
+
+@router.post("/analysis/cancel", response_model=CancelResponse)
+async def cancel_analysis() -> CancelResponse:
+    """Cancel running analysis tasks.
+
+    Clears analysis task tracking. Note that in-progress subprocess tasks
+    may continue to completion, but no new tasks will be started.
+    """
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+
+    # Cancel all running analysis tasks
+    cancelled = 0
+    for task_id, task in list(bg._analysis_tasks.items()):
+        if not task.done():
+            task.cancel()
+            cancelled += 1
+        bg._analysis_tasks.pop(task_id, None)
+
+    return CancelResponse(
+        status="cancelled",
+        message=f"Cancelled {cancelled} analysis tasks",
     )
 
 
@@ -192,6 +257,7 @@ async def get_scan_status() -> ScanStatus:
         deleted_tracks=progress.get("deleted_tracks", 0),  # Legacy, always 0
         current_file=progress.get("current_file"),
         started_at=progress.get("started_at"),
+        last_heartbeat=progress.get("last_heartbeat"),  # For stuck detection
         errors=progress.get("errors", []),
         warnings=progress.get("warnings", []),
     )
@@ -424,8 +490,20 @@ async def start_analysis(limit: int = 500) -> AnalysisStartResponse:
 
     This queues tracks for analysis in the background. Use GET /analysis/status
     to monitor progress.
+
+    Scans and analysis cannot run simultaneously - they share resources.
     """
+    from app.services.background import get_background_manager
     from app.services.tasks import queue_unanalyzed_tracks
+
+    bg = get_background_manager()
+
+    # Check if scan is running - can't run both simultaneously
+    if bg.is_scan_running():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot start analysis while a scan is running. Cancel scan first or wait for it to complete.",
+        )
 
     try:
         queued = await queue_unanalyzed_tracks(limit=limit)
