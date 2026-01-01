@@ -183,8 +183,18 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
     features["bpm"] = float(tempo) if not isinstance(tempo, np.ndarray) else float(tempo[0])
 
-    # Key detection using chroma features
-    chroma = librosa.feature.chroma_cqt(y=y, sr=sr)
+    # Compute STFT once for reuse (avoids crashes in chroma_cqt/chroma_stft)
+    # Note: librosa.feature.chroma_cqt and chroma_stft crash with SIGSEGV on some
+    # systems due to OpenBLAS issues. Manual computation from STFT avoids this.
+    n_fft = 2048
+    spec = np.abs(librosa.stft(y, n_fft=n_fft))
+    power_spec = spec ** 2
+
+    # Key detection using manually computed chroma features
+    # This avoids the SIGSEGV in librosa.feature.chroma_cqt/chroma_stft
+    chroma_fb = librosa.filters.chroma(sr=sr, n_fft=n_fft)
+    raw_chroma = np.dot(chroma_fb, power_spec)
+    chroma = librosa.util.normalize(raw_chroma, norm=np.inf, axis=0)
     key_idx = np.argmax(np.mean(chroma, axis=1))
     key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     features["key"] = key_names[key_idx]
@@ -195,7 +205,7 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
 
     # Spectral features for danceability approximation
     spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-    _spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]  # For future use
+    spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
 
     # Danceability: combination of tempo regularity and beat strength
     onset_env = librosa.onset.onset_strength(y=y, sr=sr)
@@ -218,23 +228,27 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
 
     # Instrumentalness: based on vocal frequency presence
     # This is a rough approximation - vocals typically have energy in 300-3000 Hz
-    spec = np.abs(librosa.stft(y))
-    freqs = librosa.fft_frequencies(sr=sr)
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
     vocal_mask = (freqs >= 300) & (freqs <= 3000)
     vocal_energy = np.mean(spec[vocal_mask, :])
     total_energy = np.mean(spec)
     vocal_ratio = vocal_energy / (total_energy + 1e-6)
     features["instrumentalness"] = float(max(0, 1 - vocal_ratio))
 
-    # Valence: rough approximation based on mode (major/minor)
-    # Major keys tend to sound "happier"
-    # Using tonnetz features for mode detection
-    tonnetz = librosa.feature.tonnetz(y=y, sr=sr)
-    # Positive tonnetz values in certain dimensions indicate major
-    features["valence"] = float((np.mean(tonnetz[0]) + 1) / 2)
+    # Valence: approximation based on mode (major/minor) and brightness
+    # Major keys (higher chroma energy in major thirds) tend to sound "happier"
+    # Use chroma pattern and spectral brightness instead of tonnetz (which crashes)
+    major_thirds = chroma[[0, 4, 7], :]  # C, E, G (major chord roots)
+    minor_thirds = chroma[[0, 3, 7], :]  # C, Eb, G (minor chord roots)
+    major_energy = np.mean(major_thirds)
+    minor_energy = np.mean(minor_thirds)
+    mode_indicator = (major_energy - minor_energy) / (major_energy + minor_energy + 1e-6)
+    # Combine with brightness (higher rolloff = brighter = happier)
+    brightness = np.mean(spectral_rolloff) / (sr / 2)
+    features["valence"] = float(max(0, min(1, 0.5 + mode_indicator * 0.3 + brightness * 0.2)))
 
     # Speechiness: based on zero crossing rate and spectral flatness
-    _flatness = librosa.feature.spectral_flatness(y=y)[0]  # For future use
+    _flatness = librosa.feature.spectral_flatness(y=y)[0]
     zcr_mean = np.mean(zcr)
     # Speech typically has high ZCR and moderate spectral flatness
     features["speechiness"] = float(min(1, zcr_mean * 2))
