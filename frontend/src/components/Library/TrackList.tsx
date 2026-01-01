@@ -123,7 +123,9 @@ function FavoriteButton({ trackId }: { trackId: string }) {
 function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowProps) {
   return (
     <div
-      className={`group grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 ${
+      data-testid="track-row"
+      onClick={onPlay}
+      className={`group grid grid-cols-[3rem_1fr_1fr_1fr_4rem_3rem_3rem] gap-4 px-4 py-2 rounded-md hover:bg-zinc-800/50 cursor-pointer ${
         isCurrentTrack ? 'bg-zinc-800/50' : ''
       }`}
     >
@@ -142,7 +144,7 @@ function TrackRow({ track, index, isCurrentTrack, isPlaying, onPlay }: TrackRowP
           )}
         </span>
         <button
-          onClick={onPlay}
+          onClick={(e) => { e.stopPropagation(); onPlay(); }}
           className="hidden group-hover:flex items-center justify-center"
         >
           {isCurrentTrack && isPlaying ? (

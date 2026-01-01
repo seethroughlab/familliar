@@ -88,7 +88,7 @@ class Settings(BaseSettings):
 ANALYSIS_VERSION = 2
 
 # Supported audio formats
-AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav"}
+AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".aif"}
 
 # Global settings instance
 settings = Settings()

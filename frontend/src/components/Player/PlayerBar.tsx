@@ -91,7 +91,7 @@ export function PlayerBar({
         >
           <AlbumArt trackId={currentTrack.id} />
           <div className="min-w-0 flex-1">
-            <div className="font-medium truncate">{currentTrack.title || 'Unknown'}</div>
+            <div data-testid="current-track-title" className="font-medium truncate">{currentTrack.title || 'Unknown'}</div>
             <div className="text-sm text-zinc-400 truncate">{currentTrack.artist || 'Unknown'}</div>
           </div>
           <Maximize2 className="w-4 h-4 text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -101,12 +101,14 @@ export function PlayerBar({
         <div className="flex-1 flex flex-col items-center gap-1">
           <div className="flex items-center gap-4">
             <button
+              data-testid="prev-track"
               onClick={playPrevious}
               className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
             >
               <SkipBack className="w-5 h-5" />
             </button>
             <button
+              data-testid="play-pause"
               onClick={togglePlayPause}
               className="p-3 bg-white text-black rounded-full hover:scale-105 transition-transform"
             >
@@ -117,6 +119,7 @@ export function PlayerBar({
               )}
             </button>
             <button
+              data-testid="next-track"
               onClick={playNext}
               className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
             >
@@ -130,6 +133,7 @@ export function PlayerBar({
               {formatTime(currentTime)}
             </span>
             <div
+              data-testid="progress-bar"
               className="flex-1 h-1 bg-zinc-700 rounded-full cursor-pointer group"
               onClick={handleSeek}
             >

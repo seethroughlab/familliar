@@ -69,17 +69,21 @@ function initializeAudioGraph(): boolean {
       globalAudioContext = new AudioContext();
     }
 
-    // Create audio elements
+    // Create audio elements and add to DOM (hidden, for playback and e2e test access)
     if (!globalAudioElementA) {
       globalAudioElementA = new Audio();
       globalAudioElementA.preload = 'auto';
       globalAudioElementA.crossOrigin = 'anonymous';
+      globalAudioElementA.style.display = 'none';
+      document.body.appendChild(globalAudioElementA);
     }
 
     if (!globalAudioElementB) {
       globalAudioElementB = new Audio();
       globalAudioElementB.preload = 'auto';
       globalAudioElementB.crossOrigin = 'anonymous';
+      globalAudioElementB.style.display = 'none';
+      document.body.appendChild(globalAudioElementB);
     }
 
     // Create media sources (once per element, forever)
