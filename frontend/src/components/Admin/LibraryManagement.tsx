@@ -17,6 +17,7 @@ import {
   Search,
   AlertCircle,
 } from 'lucide-react';
+import { LibraryOrganizer } from '../Settings/LibraryOrganizer';
 
 interface ScanProgress {
   phase: string;
@@ -448,6 +449,11 @@ export function LibraryManagement() {
           </div>
         </section>
       )}
+
+      {/* Library Organization */}
+      <section className="bg-zinc-900 rounded-xl p-6">
+        <LibraryOrganizer />
+      </section>
 
       {/* Info */}
       <p className="text-sm text-zinc-500 text-center">
