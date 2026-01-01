@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ensureProfile, navigateToTab, navigateToAdmin } from './helpers';
+import { ensureProfile, navigateToTab } from './helpers';
 
 test.describe('Settings', () => {
   test.beforeEach(async ({ page }) => {
@@ -27,7 +27,7 @@ test.describe('Settings', () => {
       await page.waitForTimeout(300);
 
       // Verify grid view is active
-      const gridView = page.locator('.grid, [data-view="grid"]');
+      const _gridView = page.locator('.grid, [data-view="grid"]');
       // Grid should be visible or button should be active
     }
 
@@ -36,7 +36,7 @@ test.describe('Settings', () => {
       await page.waitForTimeout(300);
 
       // Verify list view is active
-      const listView = page.locator('table, [data-view="list"]');
+      const _listView = page.locator('table, [data-view="list"]');
     }
   });
 });
@@ -188,7 +188,7 @@ test.describe('UI Elements', () => {
       await page.waitForTimeout(300);
 
       // Verify we're on the right page (URL or content check)
-      const content = page.locator(`[data-testid="${tab.toLowerCase()}"], .${tab.toLowerCase()}, main`);
+      const _content = page.locator(`[data-testid="${tab.toLowerCase()}"], .${tab.toLowerCase()}, main`);
       // Just verify navigation didn't error
     }
   });

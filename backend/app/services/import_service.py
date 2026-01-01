@@ -1,7 +1,6 @@
 """Music import service for handling zip files and folder imports."""
 
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -13,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from app.config import AUDIO_EXTENSIONS, settings
-from app.services.metadata import extract_metadata
 from app.services.artwork import extract_artwork
+from app.services.metadata import extract_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -282,10 +281,11 @@ def embed_artwork(file_path: Path, artwork_data: bytes) -> bool:
     Returns:
         True if successful
     """
+    from io import BytesIO
+
     import mutagen
     from mutagen.flac import FLAC, Picture
-    from mutagen.id3 import ID3, APIC
-    from io import BytesIO
+    from mutagen.id3 import APIC, ID3
     from PIL import Image
 
     suffix = file_path.suffix.lower()

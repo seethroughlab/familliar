@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from app.api.deps import DbSession
 from app.config import settings
 from app.db.models import AlbumType, Track, TrackStatus
-from app.services.import_service import MusicImportError, ImportService, save_upload_to_temp
+from app.services.import_service import ImportService, MusicImportError, save_upload_to_temp
 from app.services.scanner import LibraryScanner
 from app.services.tasks import get_scan_progress
 
@@ -179,9 +179,8 @@ async def cancel_scan() -> CancelResponse:
     Clears the scan progress from Redis and releases the lock.
     Use this when a scan appears stuck.
     """
-    from app.services.tasks import clear_scan_progress
-
     from app.services.background import get_background_manager
+    from app.services.tasks import clear_scan_progress
 
     bg = get_background_manager()
 
@@ -452,7 +451,11 @@ async def import_preview(
 
     Session expires after 24 hours if not executed.
     """
-    from app.services.import_service import ImportPreviewService, save_upload_to_temp, MusicImportError
+    from app.services.import_service import (
+        ImportPreviewService,
+        MusicImportError,
+        save_upload_to_temp,
+    )
 
     if not file.filename:
         raise HTTPException(status_code=400, detail="No filename provided")
@@ -514,8 +517,9 @@ async def import_execute(
         # Use specific scan_paths to avoid scanning entire library
         scan_paths = result.get("scan_paths", [])
         if result["queue_analysis"] and scan_paths and settings.music_library_paths:
-            from app.services.scanner import LibraryScanner
             from pathlib import Path
+
+            from app.services.scanner import LibraryScanner
 
             library_root = Path(settings.music_library_paths[0])
 

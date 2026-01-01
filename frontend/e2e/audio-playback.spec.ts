@@ -130,7 +130,7 @@ test.describe('Audio Playback', () => {
     }
 
     // Get initial volume
-    const initialVolume = await getAudioVolume(page);
+    const _initialVolume = await getAudioVolume(page);
 
     // Try to change volume via slider
     const slider = page.locator('input[type="range"]').filter({ hasText: '' }).first();
@@ -212,7 +212,7 @@ test.describe('Audio Playback', () => {
     await page.waitForTimeout(300);
 
     // Verify shuffle is active (button state changed)
-    const isActive = await shuffleBtn.evaluate(el =>
+    const _isActive = await shuffleBtn.evaluate(el =>
       el.classList.contains('active') ||
       el.getAttribute('aria-pressed') === 'true' ||
       el.getAttribute('data-active') === 'true'

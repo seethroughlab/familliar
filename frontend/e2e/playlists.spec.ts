@@ -104,7 +104,7 @@ test.describe('Playlists', () => {
 
     // Get the name of the first playlist for verification
     const firstPlaylist = playlistItems.first();
-    const playlistName = await firstPlaylist.textContent();
+    const _playlistName = await firstPlaylist.textContent();
 
     // Right-click for context menu
     await firstPlaylist.click({ button: 'right' });
@@ -168,7 +168,7 @@ test.describe('Playlists', () => {
       await page.waitForTimeout(500);
 
       // Verify success notification or playlist update
-      const successNotif = page.locator('text=Added, text=added');
+      const _successNotif = page.locator('text=Added, text=added');
       // Just verify no error - success indicator varies by implementation
     }
   });
@@ -231,7 +231,7 @@ test.describe('Playlists', () => {
 
     // Get the text of the first two tracks before reorder
     const firstTrackText = await playlistTracks.nth(0).textContent();
-    const secondTrackText = await playlistTracks.nth(1).textContent();
+    const _secondTrackText = await playlistTracks.nth(1).textContent();
 
     // Drag first track to second position
     const firstTrack = playlistTracks.nth(0);
