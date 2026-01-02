@@ -164,6 +164,7 @@ const OrbMaterial = shaderMaterial(
 extend({ OrbMaterial });
 
 // Declare the JSX element type
+/* eslint-disable @typescript-eslint/no-namespace */
 declare global {
   namespace JSX {
     interface IntrinsicElements {

@@ -8,8 +8,8 @@ Stores cached artist information from Last.fm API including bio,
 images, stats, and similar artists. Cache expires after 30 days.
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
 # revision identifiers
@@ -20,6 +20,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Check if table already exists (created by baseline via models)
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'artist_info')"
+        )
+    )
+    if result.scalar():
+        return  # Table already exists
+
     op.create_table(
         "artist_info",
         sa.Column("artist_name_normalized", sa.String(500), primary_key=True),
@@ -42,4 +52,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("artist_info")
+    # Check if table exists before dropping
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'artist_info')"
+        )
+    )
+    if result.scalar():
+        op.drop_table("artist_info")

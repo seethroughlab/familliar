@@ -115,8 +115,7 @@ async def list_tracks(
     # Note: must check `is not None` since 0.0 is a valid filter value but falsy
     has_feature_filter = any(x is not None for x in [energy_min, energy_max, valence_min, valence_max])
     if has_feature_filter:
-        from sqlalchemy import cast, Float
-        from sqlalchemy.dialects.postgresql import JSONB
+        from sqlalchemy import Float, cast
 
         # Join with latest analysis that has features
         analysis_subq = (

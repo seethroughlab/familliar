@@ -81,7 +81,8 @@ export function AudioReactiveEffects({
         bloomThreshold
       );
       effectComposer.addPass(bloomPass);
-      bloomPassRef.current = bloomPass;
+      // Store bloom pass for later ref assignment
+      (effectComposer as EffectComposer & { _bloomPass?: UnrealBloomPass })._bloomPass = bloomPass;
     }
 
     // Vignette
@@ -89,7 +90,8 @@ export function AudioReactiveEffects({
       const vignettePass = new ShaderPass(VignetteShader);
       vignettePass.uniforms.darkness.value = vignetteIntensity;
       effectComposer.addPass(vignettePass);
-      vignettePassRef.current = vignettePass;
+      // Store vignette pass for later ref assignment
+      (effectComposer as EffectComposer & { _vignettePass?: ShaderPass })._vignettePass = vignettePass;
     }
 
     // Output pass for proper color space
@@ -98,6 +100,13 @@ export function AudioReactiveEffects({
 
     return effectComposer;
   }, [gl, scene, camera, enableBloom, enableVignette]);
+
+  // Update refs after composer creation (must be in useEffect, not during render)
+  useEffect(() => {
+    const comp = composer as EffectComposer & { _bloomPass?: UnrealBloomPass; _vignettePass?: ShaderPass };
+    bloomPassRef.current = comp._bloomPass ?? null;
+    vignettePassRef.current = comp._vignettePass ?? null;
+  }, [composer]);
 
   // Handle size changes
   useEffect(() => {

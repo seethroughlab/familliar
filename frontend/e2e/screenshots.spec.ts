@@ -15,7 +15,7 @@
  * Screenshots are saved to ../screenshots/ directory.
  * Add new screens as the interface grows.
  */
-import { test, expect } from '@playwright/test';
+import { test } from '@playwright/test';
 import { ensureProfile, navigateToTab } from './helpers';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -213,7 +213,7 @@ test.describe('Profile Selector', () => {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // Ignore errors - profiles might not exist
     }
 

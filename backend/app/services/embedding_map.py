@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.models import Track, TrackAnalysis, TrackStatus
+from app.db.models import Track, TrackStatus
 
 logger = logging.getLogger(__name__)
 
