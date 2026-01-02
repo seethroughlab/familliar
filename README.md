@@ -62,6 +62,18 @@ Create dynamic playlists with rules:
 - Each profile has its own favorites and history
 - Simple profile switching (no passwords)
 
+### Audio Visualizers
+Seven built-in visualizers with real-time audio reactivity:
+- **Cosmic Orb** - GPU particle system with glowing orb and waveform ring
+- **Frequency Bars** - Classic spectrum analyzer with 128 gradient bars
+- **Album Kaleidoscope** - Shader-based kaleidoscope from album artwork
+- **Color Flow** - Flowing particles using colors extracted from artwork
+- **Lyric Storm** - 3D floating lyrics with depth and motion blur
+- **Lyric Pulse** - Current lyrics with BPM-synced glow effects
+- **Typography Wave** - Animated text waves
+
+**[Create Your Own Visualizers](docs/VISUALIZER_API.md)** - Open API for community contributions with access to track metadata, audio features, real-time frequency data, and timed lyrics.
+
 ## Screenshots
 
 <!-- Screenshots are auto-generated. Run `cd frontend && BASE_URL=http://localhost:5173 npm run screenshots` to update. -->
@@ -104,9 +116,6 @@ Share what you're listening to with friends in real-time. Host a session, share 
 ### Multi-Room Audio
 Play to Sonos speakers and AirPlay devices in addition to browser audio. Control playback across multiple rooms with per-room volume controls.
 
-### Visualizer API
-An open API for community-contributed audio visualizers. Create custom visualizations using track metadata, audio features (BPM, key, energy), real-time frequency data, and timed lyrics.
-
 ### Additional LLM Providers
 Support for more AI providers beyond Claude and Ollama, including OpenAI (ChatGPT), Google Gemini, and other compatible APIs.
 
@@ -127,6 +136,7 @@ Edit track metadata with changes written back to audio files:
 
 ## Documentation
 
+- **[Visualizer API](docs/VISUALIZER_API.md)** - Create custom audio visualizers with full metadata access
 - **[Library Browser API](docs/LIBRARY_BROWSERS.md)** - Create custom 2D/3D library visualizations
 - **[REST API Reference](docs/REST-API.md)** - Backend REST API documentation
 

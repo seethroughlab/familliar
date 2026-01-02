@@ -1,0 +1,575 @@
+# Visualizer API
+
+Create custom audio visualizers for Familiar. Visualizers are React components that receive track metadata, audio features, real-time audio data, and timed lyrics.
+
+## Quick Start
+
+Create a new visualizer in `frontend/src/components/Visualizer/visualizers/`:
+
+```tsx
+import { Canvas, useFrame } from '@react-three/fiber';
+import * as THREE from 'three';
+import { registerVisualizer, type VisualizerProps } from '../types';
+import { useAudioAnalyser, getAudioData } from '../hooks';
+
+function Scene() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useAudioAnalyser(true);
+
+  useFrame(() => {
+    const audioData = getAudioData();
+    if (meshRef.current && audioData) {
+      meshRef.current.scale.y = 1 + audioData.bass;
+    }
+  });
+
+  return (
+    <mesh ref={meshRef}>
+      <boxGeometry />
+      <meshBasicMaterial color="#a855f7" />
+    </mesh>
+  );
+}
+
+export function MyVisualizer(props: VisualizerProps) {
+  return (
+    <Canvas camera={{ position: [0, 0, 5] }}>
+      <Scene />
+    </Canvas>
+  );
+}
+
+// Register the visualizer
+registerVisualizer(
+  {
+    id: 'my-visualizer',
+    name: 'My Visualizer',
+    description: 'A custom audio visualizer',
+    usesMetadata: false,
+  },
+  MyVisualizer
+);
+```
+
+Then import it in `frontend/src/components/Visualizer/visualizers/index.ts`:
+
+```tsx
+import './MyVisualizer';
+```
+
+Your visualizer will appear in the visualizer picker.
+
+---
+
+## VisualizerProps
+
+Props passed to every visualizer component.
+
+```typescript
+interface VisualizerProps {
+  // === Playback State ===
+  currentTime: number;    // Current playback position in seconds
+  duration: number;       // Track duration in seconds
+  isPlaying: boolean;     // Whether audio is currently playing
+
+  // === Track Metadata ===
+  track: Track | null;    // Full track object, null if nothing playing
+
+  // === Audio Analysis ===
+  features: TrackFeatures | null;  // BPM, key, energy, etc.
+
+  // === Media ===
+  artworkUrl: string | null;       // Album artwork URL
+  lyrics: LyricLine[] | null;      // Time-synced lyrics
+}
+```
+
+---
+
+## Data Types
+
+### Track
+
+```typescript
+interface Track {
+  id: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  album_artist: string | null;
+  album_type: 'album' | 'compilation' | 'soundtrack';
+  track_number: number | null;
+  disc_number: number | null;
+  year: number | null;
+  genre: string | null;
+  duration_seconds: number | null;
+  format: string | null;           // mp3, flac, m4a, etc.
+  analysis_version: number;
+  features?: TrackFeatures;
+}
+```
+
+### TrackFeatures
+
+Audio analysis data (available when track has been analyzed):
+
+```typescript
+interface TrackFeatures {
+  bpm: number | null;              // Tempo in beats per minute
+  key: string | null;              // Musical key (e.g., "Am", "C#")
+  energy: number | null;           // 0-1, calm to energetic
+  danceability: number | null;     // 0-1, suitability for dancing
+  valence: number | null;          // 0-1, sad to happy
+  acousticness: number | null;     // 0-1, acoustic vs electronic
+  instrumentalness: number | null; // 0-1, vocals vs instrumental
+  speechiness: number | null;      // 0-1, spoken word presence
+}
+```
+
+### LyricLine
+
+```typescript
+interface LyricLine {
+  time: number;   // Start time in seconds
+  text: string;   // Lyric text
+}
+```
+
+---
+
+## Hooks
+
+Import from `../hooks`:
+
+```typescript
+import {
+  useAudioAnalyser,
+  getAudioData,
+  useArtworkPalette,
+  useBeatSync,
+  useLyricTiming,
+} from '../hooks';
+```
+
+### useAudioAnalyser
+
+Real-time audio frequency data from Web Audio API.
+
+```typescript
+const audioData = useAudioAnalyser(enabled: boolean = true);
+```
+
+**Returns:**
+
+```typescript
+interface AudioAnalysisData {
+  frequencyData: Uint8Array;    // Raw frequency bins (0-255 per bin)
+  timeDomainData: Uint8Array;   // Waveform data (centered at 128)
+  bass: number;                 // 0-1, low frequency intensity
+  mid: number;                  // 0-1, mid frequency intensity
+  treble: number;               // 0-1, high frequency intensity
+  averageFrequency: number;     // 0-255, overall intensity
+}
+```
+
+**Example:**
+
+```tsx
+function MyScene() {
+  const audioData = useAudioAnalyser(true);
+
+  // Use in render (triggers re-renders)
+  const scale = 1 + (audioData?.bass ?? 0);
+
+  return <mesh scale={scale}>...</mesh>;
+}
+```
+
+### getAudioData
+
+Synchronous access to audio data for use in Three.js `useFrame` (doesn't trigger re-renders).
+
+```typescript
+const audioData = getAudioData();
+```
+
+**Example:**
+
+```tsx
+function MyScene() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useAudioAnalyser(true);  // Enable analysis
+
+  useFrame(() => {
+    const audioData = getAudioData();
+    if (meshRef.current && audioData) {
+      meshRef.current.scale.y = 1 + audioData.bass * 2;
+    }
+  });
+
+  return <mesh ref={meshRef}>...</mesh>;
+}
+```
+
+### useArtworkPalette
+
+Extract dominant colors from album artwork.
+
+```typescript
+const palette = useArtworkPalette(
+  artworkUrl: string | null,
+  numColors: number = 5
+): string[];
+```
+
+**Returns:** Array of hex color strings (e.g., `['#a855f7', '#06b6d4', ...]`)
+
+**Example:**
+
+```tsx
+function MyVisualizer({ artworkUrl }: VisualizerProps) {
+  const palette = useArtworkPalette(artworkUrl);
+
+  return (
+    <Canvas>
+      <mesh>
+        <meshBasicMaterial color={palette[0]} />
+      </mesh>
+    </Canvas>
+  );
+}
+```
+
+### useBeatSync
+
+Synchronize animations with detected BPM.
+
+```typescript
+const beatData = useBeatSync(
+  bpm: number | null | undefined,
+  currentTime: number
+): BeatSyncData;
+```
+
+**Returns:**
+
+```typescript
+interface BeatSyncData {
+  beat: number;         // Current beat number (0, 1, 2, ...)
+  beatProgress: number; // Progress through current beat (0-1)
+  onBeat: boolean;      // True when a new beat just started
+  bpm: number;          // Effective BPM (120 if not detected)
+  beatDuration: number; // Seconds per beat
+}
+```
+
+**Example:**
+
+```tsx
+function MyVisualizer({ features, currentTime }: VisualizerProps) {
+  const { beatProgress, onBeat, bpm } = useBeatSync(features?.bpm, currentTime);
+
+  // Pulse on each beat
+  const scale = onBeat ? 1.2 : 1 + beatProgress * 0.1;
+
+  // Smooth sine wave synced to beat
+  const pulse = Math.sin(beatProgress * Math.PI);
+
+  return <div style={{ transform: `scale(${scale})` }}>...</div>;
+}
+```
+
+### useLyricTiming
+
+Get current and upcoming lyric lines.
+
+```typescript
+const lyricData = useLyricTiming(
+  lyrics: LyricLine[] | null,
+  currentTime: number
+): LyricTimingData;
+```
+
+**Returns:**
+
+```typescript
+interface LyricTimingData {
+  currentLine: LyricLine | null;  // Current line being sung
+  currentIndex: number;           // Index in lyrics array
+  nextLine: LyricLine | null;     // Upcoming line
+  progress: number;               // 0-1 progress through current line
+  timeToNext: number;             // Seconds until next line
+  words: string[];                // Individual words from current line
+  hasLyrics: boolean;             // Whether lyrics are available
+}
+```
+
+**Example:**
+
+```tsx
+function LyricDisplay({ lyrics, currentTime }: VisualizerProps) {
+  const { currentLine, nextLine, progress, hasLyrics } = useLyricTiming(lyrics, currentTime);
+
+  if (!hasLyrics) {
+    return <div>No lyrics available</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ opacity: 1 - progress * 0.5 }}>
+        {currentLine?.text}
+      </div>
+      <div style={{ opacity: progress * 0.5 }}>
+        {nextLine?.text}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Rendering Approaches
+
+### Three.js (3D)
+
+Best for: particle systems, 3D shapes, shader effects, GPU-accelerated animations.
+
+```tsx
+import { Canvas, useFrame } from '@react-three/fiber';
+import { useAudioAnalyser, getAudioData } from '../hooks';
+
+function Scene() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  useAudioAnalyser(true);
+
+  useFrame((_, delta) => {
+    const audioData = getAudioData();
+    if (meshRef.current && audioData) {
+      meshRef.current.rotation.y += delta * (1 + audioData.mid);
+      meshRef.current.scale.setScalar(1 + audioData.bass);
+    }
+  });
+
+  return (
+    <mesh ref={meshRef}>
+      <icosahedronGeometry args={[1, 2]} />
+      <meshStandardMaterial color="#a855f7" wireframe />
+    </mesh>
+  );
+}
+
+export function MyVisualizer(props: VisualizerProps) {
+  return (
+    <Canvas camera={{ position: [0, 0, 5] }}>
+      <ambientLight intensity={0.5} />
+      <Scene />
+    </Canvas>
+  );
+}
+```
+
+**See:** `CosmicOrb.tsx`, `FrequencyBars.tsx`, `AlbumKaleidoscope.tsx`, `LyricStorm.tsx`
+
+### Canvas 2D
+
+Best for: custom drawing, text effects, pixel manipulation.
+
+```tsx
+import { useRef, useEffect } from 'react';
+import { useAudioAnalyser } from '../hooks';
+
+export function MyVisualizer({ currentTime }: VisualizerProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioData = useAudioAnalyser(true);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!ctx || !canvas) return;
+
+    ctx.fillStyle = '#0a0015';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw frequency bars
+    if (audioData?.frequencyData) {
+      const barWidth = canvas.width / 64;
+      for (let i = 0; i < 64; i++) {
+        const value = audioData.frequencyData[i] / 255;
+        const hue = (i / 64) * 60 + 260;
+        ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+        ctx.fillRect(
+          i * barWidth,
+          canvas.height - value * canvas.height,
+          barWidth - 1,
+          value * canvas.height
+        );
+      }
+    }
+  }, [audioData]);
+
+  return <canvas ref={canvasRef} width={800} height={600} className="w-full h-full" />;
+}
+```
+
+**See:** `TypographyWave.tsx`
+
+### HTML/CSS
+
+Best for: text-heavy visualizers, simple animations, accessibility.
+
+```tsx
+import { useAudioAnalyser, useLyricTiming } from '../hooks';
+
+export function MyVisualizer({ track, lyrics, currentTime }: VisualizerProps) {
+  const audioData = useAudioAnalyser(true);
+  const { currentLine } = useLyricTiming(lyrics, currentTime);
+
+  const bass = audioData?.bass ?? 0;
+  const scale = 1 + bass * 0.1;
+  const glow = 10 + bass * 30;
+
+  return (
+    <div className="flex items-center justify-center h-full bg-[#0a0015]">
+      <h1
+        className="text-6xl font-bold text-purple-500"
+        style={{
+          transform: `scale(${scale})`,
+          textShadow: `0 0 ${glow}px #a855f7`,
+        }}
+      >
+        {currentLine?.text || track?.title || 'No Track'}
+      </h1>
+    </div>
+  );
+}
+```
+
+**See:** `LyricPulse.tsx`
+
+---
+
+## Post-Processing Effects
+
+Add bloom, vignette, and audio-reactive effects using the `AudioReactiveEffects` component:
+
+```tsx
+import { AudioReactiveEffects } from '../effects/AudioReactiveEffects';
+
+function MyScene() {
+  return (
+    <>
+      {/* Your scene content */}
+      <mesh>...</mesh>
+
+      {/* Add post-processing */}
+      <AudioReactiveEffects
+        enableBloom
+        enableVignette
+        bloomIntensity={1.5}
+        bloomThreshold={0.6}
+        vignetteIntensity={0.4}
+      />
+    </>
+  );
+}
+```
+
+**Props:**
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| `enableBloom` | boolean | true | Enable bloom/glow effect |
+| `enableVignette` | boolean | true | Enable vignette darkening |
+| `bloomIntensity` | number | 1.0 | Bloom strength (audio-reactive) |
+| `bloomThreshold` | number | 0.85 | Brightness threshold for bloom |
+| `bloomRadius` | number | 0.5 | Bloom spread radius |
+| `vignetteIntensity` | number | 0.5 | Vignette darkness |
+
+Effects automatically react to bass and average frequency.
+
+---
+
+## Registration
+
+Register your visualizer at the bottom of your file:
+
+```typescript
+import { registerVisualizer, type VisualizerProps } from '../types';
+
+registerVisualizer(
+  {
+    id: 'my-visualizer',           // Unique ID (kebab-case)
+    name: 'My Visualizer',         // Display name in picker
+    description: 'A cool effect',  // Short description
+    usesMetadata: true,            // true if using track/artwork/lyrics
+    author: 'Your Name',           // Optional: for community visualizers
+  },
+  MyVisualizer
+);
+```
+
+---
+
+## Existing Visualizers
+
+| Visualizer | Description | Key Features |
+|------------|-------------|--------------|
+| `CosmicOrb` | Glowing orb with particle field | GPU particles, custom shaders, waveform ring |
+| `FrequencyBars` | Spectrum analyzer | 128 bars, gradient colors, reflective floor |
+| `AlbumKaleidoscope` | Kaleidoscope from artwork | Shader-based mirroring, twist effects, sparkles |
+| `ColorFlow` | Flowing color particles | Palette extraction, flow field, glowing rings |
+| `LyricStorm` | 3D floating lyrics | drei Text, depth sorting, current line highlight |
+| `LyricPulse` | Pulsing current lyric | BPM sync, glow effects, progress bar |
+| `TypographyWave` | Animated text waves | Canvas 2D, per-character animation |
+
+---
+
+## Guidelines
+
+1. **Handle null props** - Track, features, artwork, and lyrics may be null
+2. **Clean up resources** - Return cleanup function from useEffect
+3. **Use getAudioData() in useFrame** - Avoids triggering React re-renders
+4. **Keep files small** - Target under 50KB per visualizer
+5. **No external APIs** - Use only provided data
+6. **Test with various tracks** - Different genres, with/without lyrics
+
+---
+
+## Performance Tips
+
+1. **Use useMemo** for geometry and materials:
+   ```tsx
+   const geometry = useMemo(() => new THREE.BoxGeometry(1, 1, 1), []);
+   ```
+
+2. **Update uniforms, not geometry** in animations:
+   ```tsx
+   useFrame(() => {
+     materialRef.current.uniforms.uTime.value = clock.elapsedTime;
+   });
+   ```
+
+3. **Limit particle counts** based on device:
+   ```tsx
+   const particleCount = window.devicePixelRatio > 1 ? 5000 : 2000;
+   ```
+
+4. **Use getAudioData()** in useFrame to avoid re-renders
+
+5. **Respect reduced motion**:
+   ```tsx
+   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+   ```
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create your visualizer in `visualizers/community/`
+3. Copy `_template/ExampleVisualizer.tsx` as a starting point
+4. Test with various music (different genres, with/without lyrics)
+5. Submit a PR with a screenshot or GIF
+
+See the [template README](../frontend/src/components/Visualizer/visualizers/_template/README.md) for detailed instructions.

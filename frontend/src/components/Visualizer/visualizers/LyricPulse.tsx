@@ -2,56 +2,30 @@
  * Lyric Pulse Visualizer.
  *
  * Displays current lyric line with pulsing glow effect synced to audio.
+ * Demonstrates the Visualizer API hooks: useLyricTiming, useBeatSync, useAudioAnalyser.
  */
-import { useMemo } from 'react';
-import { useAudioAnalyser } from '../../../hooks/useAudioAnalyser';
+import { useAudioAnalyser, useLyricTiming, useBeatSync } from '../hooks';
 import { registerVisualizer, type VisualizerProps } from '../types';
 
-export function LyricPulse({ lyrics, currentTime, track }: VisualizerProps) {
+export function LyricPulse({ lyrics, currentTime, track, features }: VisualizerProps) {
   const audioData = useAudioAnalyser(true);
 
-  // Find current and next lyric lines
-  const { currentLine, nextLine, progress } = useMemo(() => {
-    if (!lyrics || lyrics.length === 0) {
-      return { currentLine: null, nextLine: null, progress: 0 };
-    }
+  // Use the lyric timing hook for current/next lines
+  const { currentLine, nextLine, progress, hasLyrics } = useLyricTiming(lyrics, currentTime);
 
-    let currentIdx = -1;
-    for (let i = lyrics.length - 1; i >= 0; i--) {
-      if (lyrics[i].time <= currentTime) {
-        currentIdx = i;
-        break;
-      }
-    }
-
-    const current = currentIdx >= 0 ? lyrics[currentIdx] : null;
-    const next = currentIdx < lyrics.length - 1 ? lyrics[currentIdx + 1] : null;
-
-    // Calculate progress through current line
-    let lineProgress = 0;
-    if (current && next) {
-      const lineDuration = next.time - current.time;
-      lineProgress = Math.min(1, (currentTime - current.time) / lineDuration);
-    }
-
-    return {
-      currentLine: current?.text || null,
-      nextLine: next?.text || null,
-      progress: lineProgress,
-    };
-  }, [lyrics, currentTime]);
+  // Use beat sync for BPM-aligned animations
+  const { beatProgress, onBeat } = useBeatSync(features?.bpm, currentTime);
 
   const bass = audioData?.bass || 0;
   const mid = audioData?.mid || 0;
   const averageFrequency = audioData?.averageFrequency || 0;
   const intensity = averageFrequency / 255;
 
-  // Dynamic styles based on audio
+  // Dynamic styles based on audio + beat sync
+  const beatPulse = onBeat ? 1.15 : 1 + beatProgress * 0.05;
   const glowIntensity = 10 + bass * 40;
-  const scale = 1 + bass * 0.1;
+  const scale = beatPulse * (1 + bass * 0.1);
   const hue = 260 + mid * 60; // Purple to cyan
-
-  const hasLyrics = lyrics && lyrics.length > 0;
 
   return (
     <div className="w-full h-full bg-[#0a0015] flex flex-col items-center justify-center overflow-hidden relative">
@@ -94,7 +68,7 @@ export function LyricPulse({ lyrics, currentTime, track }: VisualizerProps) {
                 color: `hsl(${hue}, 80%, ${60 + intensity * 20}%)`,
               }}
             >
-              {currentLine || (
+              {currentLine?.text || (
                 <span className="text-zinc-600 text-2xl">Waiting for lyrics...</span>
               )}
             </div>
@@ -116,7 +90,7 @@ export function LyricPulse({ lyrics, currentTime, track }: VisualizerProps) {
             {/* Next line preview */}
             {nextLine && (
               <div className="text-xl text-zinc-500 opacity-60">
-                {nextLine}
+                {nextLine.text}
               </div>
             )}
           </>
