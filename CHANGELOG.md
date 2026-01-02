@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-01-02
 
 ### Added
+- **Library Browser Views** - Multiple ways to browse your music collection
+  - Album Grid with cover art thumbnails
+  - Artist List with artist detail pages and discography
+  - Mood Grid organizing tracks by energy/valence audio features
+  - Music Map with clustered visualization of similar tracks
+  - Timeline view browsing by release year
+  - Track List with sortable columns
+- **Multi-select & Context Menus** in library browser
+  - Shift-click and Ctrl/Cmd-click for multi-selection
+  - Selection toolbar for batch actions (play, queue, add to playlist)
+  - Right-click context menu on tracks
 - **Visualizer API** for community-contributed visualizers
   - Full access to track metadata, audio features, real-time audio data, and timed lyrics
   - New hooks: `useArtworkPalette`, `useBeatSync`, `useLyricTiming`
@@ -18,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Post-processing effects (bloom, vignette) reactive to audio
   - Custom GLSL shaders for kaleidoscope, orb glow, and flow effects
   - BPM-synchronized animations
+- **E2E Screenshot Tests** for desktop and mobile viewports
 
 ### Changed
 - FrequencyBars visualizer: 64 → 128 bars with gradient colors and reflective floor
@@ -29,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 - New [Visualizer API documentation](docs/VISUALIZER_API.md)
+- New [Library Browser documentation](docs/LIBRARY_BROWSERS.md)
+- New [REST API documentation](docs/REST-API.md) with full endpoint reference
 - Contributor guide for creating custom visualizers
+- Added screenshot gallery to README
 
 ## [0.1.0] - 2025-12-31
 
