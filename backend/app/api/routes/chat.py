@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, DbSession
-from app.api.ratelimit import limiter, CHAT_RATE_LIMIT
+from app.api.ratelimit import CHAT_RATE_LIMIT, limiter
 from app.services.app_settings import get_app_settings_service
 from app.services.llm import LLMService
 

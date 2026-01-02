@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
-from app.api.ratelimit import limiter, SCAN_RATE_LIMIT
+from app.api.ratelimit import SCAN_RATE_LIMIT, limiter
 from app.config import settings
 from app.db.models import AlbumType, Track, TrackStatus
 from app.services.import_service import ImportService, MusicImportError, save_upload_to_temp

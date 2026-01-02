@@ -4,7 +4,6 @@ Tests for the chat API endpoints.
 These tests focus on input validation and rate limiting.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from tests.conftest import make_profile_headers

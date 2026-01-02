@@ -2,16 +2,15 @@
 Tests for custom exception handling.
 """
 
-import pytest
 from fastapi.testclient import TestClient
 
 from app.api.exceptions import (
+    ConflictError,
     FamiliarError,
     NotFoundError,
+    ServiceUnavailableError,
     TrackNotFoundError,
     ValidationError,
-    ConflictError,
-    ServiceUnavailableError,
 )
 
 

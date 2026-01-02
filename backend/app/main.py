@@ -1,5 +1,6 @@
 """Familiar API - Main FastAPI application."""
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -18,8 +19,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.exceptions import FamiliarError
 from app.api.ratelimit import limiter
-from app.logging_config import setup_logging, get_logger
-
 from app.api.routes import (
     bandcamp,
     chat,
@@ -40,6 +39,7 @@ from app.api.routes import (
 )
 from app.api.routes import settings as settings_routes
 from app.config import settings as app_config
+from app.logging_config import get_logger, setup_logging
 
 # Configure structured logging
 setup_logging()
