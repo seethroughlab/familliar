@@ -72,7 +72,7 @@ async def system_health_check(db: DbSession) -> SystemHealth:
     Checks all required services:
     - Database (PostgreSQL)
     - Redis
-    - Celery workers
+    - Background task status
     - Analysis backlog status
     - Library paths accessibility
     """
@@ -175,12 +175,12 @@ async def system_health_check(db: DbSession) -> SystemHealth:
         from app.services.background import get_background_manager
 
         bg = get_background_manager()
-        is_scan_running = bg.is_scan_running()
+        is_sync_running = bg.is_sync_running()
         active_analyses = len(bg._analysis_tasks)
 
         # Build status message
-        if is_scan_running:
-            message = "Library scan in progress"
+        if is_sync_running:
+            message = "Library sync in progress"
         elif active_analyses > 0:
             message = f"{active_analyses} analysis task(s) running"
         else:
@@ -190,7 +190,7 @@ async def system_health_check(db: DbSession) -> SystemHealth:
             name="background_processing",
             status="healthy",
             message=message,
-            details={"scan_running": is_scan_running, "active_analyses": active_analyses},
+            details={"sync_running": is_sync_running, "active_analyses": active_analyses},
         ))
     except Exception as e:
         services.append(ServiceStatus(
@@ -269,7 +269,7 @@ class WorkerTask(BaseModel):
 
 
 class WorkerInfo(BaseModel):
-    """Information about a Celery worker."""
+    """Information about a background worker."""
 
     name: str
     status: str  # "online", "offline"
@@ -328,11 +328,11 @@ async def get_worker_status(db: DbSession) -> WorkerStatus:
         bg = get_background_manager()
         active_task_list = []
 
-        # Report scan as a task if running
-        if bg.is_scan_running() and bg._current_scan_task:
+        # Report sync as a task if running
+        if bg.is_sync_running():
             active_task_list.append(WorkerTask(
-                id="scan",
-                name="library_scan",
+                id="sync",
+                name="library_sync",
                 args=[],
                 started_at=datetime.now().isoformat(),
             ))

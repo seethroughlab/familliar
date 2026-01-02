@@ -1,4 +1,4 @@
-.PHONY: install dev run worker reset-db test lint format
+.PHONY: install dev run reset-db test lint format
 
 # Install dependencies
 install:
@@ -8,13 +8,9 @@ install:
 dev:
 	uv sync --all-extras
 
-# Run the API server
+# Run the API server (background tasks run in-process)
 run:
 	uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 4400
-
-# Run Celery worker
-worker:
-	uv run celery -A app.workers.celery_app worker --loglevel=info
 
 # Reset database (drop and recreate all tables)
 reset-db:

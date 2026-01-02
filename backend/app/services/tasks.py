@@ -1,7 +1,7 @@
-"""Async background tasks for audio analysis and library scanning.
+"""Async background tasks for audio analysis and library sync.
 
-Replaces Celery tasks with async functions that can run in-process.
-Progress is still reported via Redis for frontend consumption.
+Tasks run in-process using asyncio and ProcessPoolExecutor.
+Progress is reported via Redis for frontend consumption.
 """
 
 import json
@@ -31,7 +31,7 @@ def get_redis() -> redis.Redis:
 
 
 # Redis keys for progress tracking
-SCAN_PROGRESS_KEY = "familiar:scan:progress"
+SYNC_PROGRESS_KEY = "familiar:sync:progress"
 TASK_FAILURES_KEY = "familiar:task:failures"
 MAX_FAILURES_STORED = 50
 
@@ -72,17 +72,28 @@ def clear_task_failures() -> None:
         pass
 
 
-class ScanProgressReporter:
-    """Reports scan progress to Redis for API consumption."""
+# ============================================================================
+# Unified Library Sync
+# ============================================================================
 
-    def __init__(self, warnings: list[str] | None = None):
+
+class SyncProgressReporter:
+    """Reports unified sync progress to Redis for API consumption.
+
+    This class provides a single progress view that encompasses:
+    - File discovery (finding audio files)
+    - Metadata reading (extracting tags from files)
+    - Audio analysis (feature extraction, embeddings)
+    """
+
+    def __init__(self):
         self.redis = get_redis()
         self.started_at = datetime.now().isoformat()
-        self.warnings = warnings or []
-        self._update_progress({
+        self.errors: list[str] = []
+        self._update({
             "status": "running",
-            "phase": "discovery",
-            "message": "Starting scan...",
+            "phase": "starting",
+            "phase_message": "Starting library sync...",
             "files_discovered": 0,
             "files_processed": 0,
             "files_total": 0,
@@ -91,27 +102,29 @@ class ScanProgressReporter:
             "unchanged_tracks": 0,
             "relocated_tracks": 0,
             "marked_missing": 0,
-            "still_missing": 0,
             "recovered": 0,
-            "deleted_tracks": 0,
-            "current_file": None,
+            "tracks_analyzed": 0,
+            "tracks_pending_analysis": 0,
+            "tracks_total": 0,
+            "analysis_percent": 0,
+            "current_item": None,
             "started_at": self.started_at,
             "last_heartbeat": datetime.now().isoformat(),
             "errors": [],
-            "warnings": self.warnings,
         })
 
-    def _update_progress(self, data: dict[str, Any]) -> None:
+    def _update(self, data: dict[str, Any]) -> None:
         """Update progress in Redis with heartbeat."""
         data["last_heartbeat"] = datetime.now().isoformat()
-        self.redis.set(SCAN_PROGRESS_KEY, json.dumps(data), ex=3600)
+        data["errors"] = self.errors
+        self.redis.set(SYNC_PROGRESS_KEY, json.dumps(data), ex=3600)
 
-    def set_discovery(self, dirs_scanned: int, files_found: int) -> None:
-        """Update discovery progress."""
-        self._update_progress({
+    def set_discovering(self, dirs_scanned: int, files_found: int) -> None:
+        """Phase 1: File discovery."""
+        self._update({
             "status": "running",
-            "phase": "discovery",
-            "message": f"Discovering files... ({dirs_scanned} directories, {files_found} files found)",
+            "phase": "discovering",
+            "phase_message": f"Discovering files... ({dirs_scanned} dirs, {files_found} files)",
             "files_discovered": files_found,
             "files_processed": 0,
             "files_total": 0,
@@ -120,15 +133,16 @@ class ScanProgressReporter:
             "unchanged_tracks": 0,
             "relocated_tracks": 0,
             "marked_missing": 0,
-            "still_missing": 0,
             "recovered": 0,
-            "deleted_tracks": 0,
-            "current_file": None,
+            "tracks_analyzed": 0,
+            "tracks_pending_analysis": 0,
+            "tracks_total": 0,
+            "analysis_percent": 0,
+            "current_item": None,
             "started_at": self.started_at,
-            "errors": [],
         })
 
-    def set_processing(
+    def set_reading(
         self,
         processed: int,
         total: int,
@@ -138,12 +152,12 @@ class ScanProgressReporter:
         current: str | None = None,
         recovered: int = 0,
     ) -> None:
-        """Update processing progress."""
+        """Phase 2: Reading metadata from files."""
         pct = int(processed / total * 100) if total > 0 else 0
-        self._update_progress({
+        self._update({
             "status": "running",
-            "phase": "processing",
-            "message": f"Processing files... {processed}/{total} ({pct}%)",
+            "phase": "reading",
+            "phase_message": f"Reading metadata... {processed}/{total} ({pct}%)",
             "files_discovered": total,
             "files_processed": processed,
             "files_total": total,
@@ -152,45 +166,62 @@ class ScanProgressReporter:
             "unchanged_tracks": unchanged,
             "relocated_tracks": 0,
             "marked_missing": 0,
-            "still_missing": 0,
             "recovered": recovered,
-            "deleted_tracks": 0,
-            "current_file": current,
+            "tracks_analyzed": 0,
+            "tracks_pending_analysis": 0,
+            "tracks_total": 0,
+            "analysis_percent": 0,
+            "current_item": current,
             "started_at": self.started_at,
-            "errors": [],
         })
 
-    def set_cleanup(self, marked_missing: int, still_missing: int = 0) -> None:
-        """Update cleanup progress."""
-        current = self._get_current()
-        current["phase"] = "cleanup"
-        current["message"] = f"Cleanup: {marked_missing} marked missing, {still_missing} still missing"
-        current["marked_missing"] = marked_missing
-        current["still_missing"] = still_missing
-        self._update_progress(current)
-
-    def _get_current(self) -> dict[str, Any]:
-        """Get current progress from Redis."""
-        data: bytes | None = self.redis.get(SCAN_PROGRESS_KEY)  # type: ignore[assignment]
-        if data:
-            return json.loads(data)
-        return {}
+    def set_analyzing(
+        self,
+        analyzed: int,
+        pending: int,
+        total: int,
+        scan_stats: dict[str, int] | None = None,
+    ) -> None:
+        """Phase 3: Audio analysis."""
+        pct = int(analyzed / total * 100) if total > 0 else 0
+        stats = scan_stats or {}
+        self._update({
+            "status": "running",
+            "phase": "analyzing",
+            "phase_message": f"Analyzing audio... {analyzed}/{total} ({pct}%)",
+            "files_discovered": stats.get("files_total", 0),
+            "files_processed": stats.get("files_total", 0),
+            "files_total": stats.get("files_total", 0),
+            "new_tracks": stats.get("new_tracks", 0),
+            "updated_tracks": stats.get("updated_tracks", 0),
+            "unchanged_tracks": stats.get("unchanged_tracks", 0),
+            "relocated_tracks": stats.get("relocated_tracks", 0),
+            "marked_missing": stats.get("marked_missing", 0),
+            "recovered": stats.get("recovered", 0),
+            "tracks_analyzed": analyzed,
+            "tracks_pending_analysis": pending,
+            "tracks_total": total,
+            "analysis_percent": pct,
+            "current_item": None,
+            "started_at": self.started_at,
+        })
 
     def complete(
         self,
-        new: int,
-        updated: int,
-        unchanged: int,
+        new: int = 0,
+        updated: int = 0,
+        unchanged: int = 0,
         relocated: int = 0,
         marked_missing: int = 0,
-        still_missing: int = 0,
         recovered: int = 0,
+        analyzed: int = 0,
+        total_tracks: int = 0,
     ) -> None:
-        """Mark scan as complete."""
-        self._update_progress({
+        """Mark sync as complete."""
+        self._update({
             "status": "completed",
             "phase": "complete",
-            "message": f"Complete: {new} new, {updated} updated, {relocated} relocated, {recovered} recovered, {marked_missing} missing, {unchanged} unchanged",
+            "phase_message": f"Complete: {new} new, {updated} updated, {analyzed} analyzed",
             "files_discovered": 0,
             "files_processed": 0,
             "files_total": 0,
@@ -199,71 +230,192 @@ class ScanProgressReporter:
             "unchanged_tracks": unchanged,
             "relocated_tracks": relocated,
             "marked_missing": marked_missing,
-            "still_missing": still_missing,
             "recovered": recovered,
-            "deleted_tracks": 0,
-            "current_file": None,
+            "tracks_analyzed": analyzed,
+            "tracks_pending_analysis": 0,
+            "tracks_total": total_tracks,
+            "analysis_percent": 100 if total_tracks > 0 else 0,
+            "current_item": None,
             "started_at": self.started_at,
-            "errors": [],
-            "warnings": self.warnings,
         })
 
     def error(self, msg: str) -> None:
-        """Mark scan as failed."""
-        current = self._get_current()
-        current["status"] = "error"
-        current["message"] = msg
-        if "errors" not in current:
-            current["errors"] = []
-        current["errors"].append(msg)
-        self._update_progress(current)
+        """Mark sync as failed."""
+        self.errors.append(msg)
+        self._update({
+            "status": "error",
+            "phase": "error",
+            "phase_message": msg,
+            "files_discovered": 0,
+            "files_processed": 0,
+            "files_total": 0,
+            "new_tracks": 0,
+            "updated_tracks": 0,
+            "unchanged_tracks": 0,
+            "relocated_tracks": 0,
+            "marked_missing": 0,
+            "recovered": 0,
+            "tracks_analyzed": 0,
+            "tracks_pending_analysis": 0,
+            "tracks_total": 0,
+            "analysis_percent": 0,
+            "current_item": None,
+            "started_at": self.started_at,
+        })
 
 
-def get_scan_progress() -> dict[str, Any] | None:
-    """Get current scan progress from Redis."""
+def get_sync_progress() -> dict[str, Any] | None:
+    """Get current sync progress from Redis."""
     try:
         r = get_redis()
-        data: bytes | None = r.get(SCAN_PROGRESS_KEY)  # type: ignore[assignment]
+        data: bytes | None = r.get(SYNC_PROGRESS_KEY)  # type: ignore[assignment]
         if data:
             return json.loads(data)
     except Exception as e:
-        logger.error(f"Failed to get scan progress: {e}")
+        logger.error(f"Failed to get sync progress: {e}")
     return None
 
 
-def clear_scan_progress() -> None:
-    """Clear scan progress from Redis."""
+def clear_sync_progress() -> None:
+    """Clear sync progress from Redis."""
     try:
         r = get_redis()
-        r.delete(SCAN_PROGRESS_KEY)
+        r.delete(SYNC_PROGRESS_KEY)
     except Exception as e:
-        logger.error(f"Failed to clear scan progress: {e}")
+        logger.error(f"Failed to clear sync progress: {e}")
 
 
-async def run_library_scan(
+async def run_library_sync(
     reread_unchanged: bool = False,
-    reanalyze_changed: bool = True,
-    # Legacy parameter
-    full_scan: bool | None = None,
 ) -> dict[str, Any]:
-    """Scan the music library for new/changed/deleted files.
+    """Run a complete library sync: scan + analysis.
 
-    This runs asynchronously in the API process.
-    Progress is reported via Redis for the API to read.
+    This is the main entry point for unified sync operations.
+    Orchestrates the scan and analysis phases with unified progress.
 
     Args:
         reread_unchanged: Re-read metadata for files even if unchanged.
-        reanalyze_changed: Queue changed files for audio analysis.
-        full_scan: Deprecated. Use reread_unchanged instead.
+
+    Returns:
+        Dict with status and statistics.
     """
-    # Handle legacy parameter
-    if full_scan is not None:
-        reread_unchanged = full_scan
+    import asyncio
+
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.db.models import Track
+
+    progress = SyncProgressReporter()
+
+    try:
+        # Phase 1 & 2: Run the scan (discovery + metadata reading)
+        scan_result = await _run_scan_for_sync(
+            reread_unchanged=reread_unchanged,
+            sync_progress=progress,
+        )
+
+        if scan_result.get("status") == "error":
+            progress.error(scan_result.get("error", "Scan failed"))
+            return scan_result
+
+        # Phase 3: Analysis - wait for all pending analysis to complete
+        scan_stats = {
+            "files_total": scan_result.get("new", 0) + scan_result.get("updated", 0) + scan_result.get("unchanged", 0),
+            "new_tracks": scan_result.get("new", 0),
+            "updated_tracks": scan_result.get("updated", 0),
+            "unchanged_tracks": scan_result.get("unchanged", 0),
+            "relocated_tracks": scan_result.get("relocated", 0),
+            "marked_missing": scan_result.get("marked_missing", 0),
+            "recovered": scan_result.get("recovered", 0),
+        }
+
+        # Create engine for analysis tracking
+        local_engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            future=True,
+        )
+        local_session_maker = async_sessionmaker(
+            local_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        )
+
+        try:
+            analyzed_count = 0
+            last_pending = -1
+
+            # Poll until analysis is complete
+            while True:
+                async with local_session_maker() as db:
+                    # Get counts
+                    total_result = await db.execute(select(func.count(Track.id)))
+                    total_tracks = total_result.scalar() or 0
+
+                    analyzed_result = await db.execute(
+                        select(func.count(Track.id)).where(
+                            Track.analysis_version >= ANALYSIS_VERSION
+                        )
+                    )
+                    analyzed_tracks = analyzed_result.scalar() or 0
+                    pending_tracks = total_tracks - analyzed_tracks
+
+                if pending_tracks == 0:
+                    analyzed_count = analyzed_tracks
+                    break
+
+                # Queue more tracks for analysis if needed
+                if pending_tracks > 0 and (last_pending == -1 or pending_tracks >= last_pending):
+                    await queue_unanalyzed_tracks(limit=100)
+
+                last_pending = pending_tracks
+                progress.set_analyzing(
+                    analyzed=analyzed_tracks,
+                    pending=pending_tracks,
+                    total=total_tracks,
+                    scan_stats=scan_stats,
+                )
+
+                # Wait before next poll
+                await asyncio.sleep(2)
+
+        finally:
+            await local_engine.dispose()
+
+        # Mark complete
+        progress.complete(
+            new=scan_result.get("new", 0),
+            updated=scan_result.get("updated", 0),
+            unchanged=scan_result.get("unchanged", 0),
+            relocated=scan_result.get("relocated", 0),
+            marked_missing=scan_result.get("marked_missing", 0),
+            recovered=scan_result.get("recovered", 0),
+            analyzed=analyzed_count,
+            total_tracks=analyzed_count,
+        )
+
+        logger.info(f"Library sync complete: {scan_result}, analyzed={analyzed_count}")
+        return {"status": "success", **scan_result, "analyzed": analyzed_count}
+
+    except Exception as e:
+        logger.error(f"Library sync failed: {e}", exc_info=True)
+        progress.error(str(e))
+        return {"status": "error", "error": str(e)}
+
+
+async def _run_scan_for_sync(
+    reread_unchanged: bool,
+    sync_progress: SyncProgressReporter,
+) -> dict[str, Any]:
+    """Run library scan with unified sync progress reporting.
+
+    This is a modified version of run_library_scan that reports to the sync progress.
+    """
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.services.scanner import LibraryScanner
 
-    progress = ScanProgressReporter()
     results = {
         "new": 0,
         "updated": 0,
@@ -275,56 +427,26 @@ async def run_library_scan(
         "recovered": 0,
     }
 
-    # Pre-scan validation: check all paths before starting
+    # Pre-scan validation
     library_paths = settings.music_library_paths
     if not library_paths:
-        error_msg = (
-            "No music library paths configured. "
-            "Go to /admin to set up your music library path, "
-            "or check MUSIC_LIBRARY_PATH in your docker-compose.yml"
-        )
-        logger.error(error_msg)
-        progress.error(error_msg)
+        error_msg = "No music library paths configured."
         return {"status": "error", "error": error_msg}
 
     valid_paths = []
     for path in library_paths:
-        if not path.exists():
-            logger.warning(
-                f"Library path does not exist: {path}. "
-                "Check that the volume is mounted correctly."
-            )
-            continue
-        if not path.is_dir():
-            logger.warning(f"Library path is not a directory: {path}")
-            continue
-        # Check if directory has any content
-        try:
-            has_content = any(path.iterdir())
-            if not has_content:
-                logger.warning(
-                    f"Library path is empty: {path}. "
-                    "This may indicate a Docker volume mount issue."
-                )
+        if path.exists() and path.is_dir():
+            try:
+                if any(path.iterdir()):
+                    valid_paths.append(path)
+            except PermissionError:
                 continue
-            valid_paths.append(path)
-        except PermissionError:
-            logger.warning(f"Cannot read library path (permission denied): {path}")
-            continue
 
     if not valid_paths:
-        error_msg = (
-            f"No valid library paths found. Checked: {[str(p) for p in library_paths]}. "
-            "All paths are either missing, empty, or inaccessible. "
-            "Check your docker-compose volume mounts."
-        )
-        logger.error(error_msg)
-        progress.error(error_msg)
+        error_msg = f"No valid library paths found: {[str(p) for p in library_paths]}"
         return {"status": "error", "error": error_msg}
 
-    logger.info(f"Starting scan with {len(valid_paths)} valid library path(s)")
-
-    # Create a fresh async engine for this task
+    # Create async engine
     local_engine = create_async_engine(
         settings.database_url,
         echo=False,
@@ -334,20 +456,21 @@ async def run_library_scan(
         local_engine,
         class_=AsyncSession,
         expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
     )
 
     try:
         async with local_session_maker() as db:
-            scanner = LibraryScanner(db, scan_state=progress)
+            # Create scanner with sync progress adapter
+            scanner = LibraryScanner(
+                db,
+                scan_state=_SyncProgressAdapter(sync_progress),
+            )
 
             for library_path in valid_paths:
-                logger.info(f"Scanning library path: {library_path}")
                 scan_results = await scanner.scan(
                     library_path,
                     reread_unchanged=reread_unchanged,
-                    reanalyze_changed=reanalyze_changed,
+                    reanalyze_changed=True,
                 )
                 results["new"] += scan_results.get("new", 0)
                 results["updated"] += scan_results.get("updated", 0)
@@ -358,35 +481,66 @@ async def run_library_scan(
                 results["relocated"] += scan_results.get("relocated", 0)
                 results["recovered"] += scan_results.get("recovered", 0)
 
-            # Cleanup orphaned tracks (not under any valid library path)
+            # Cleanup orphans
             orphan_results = await scanner.cleanup_orphaned_tracks(valid_paths)
-            results["marked_missing"] = results.get("marked_missing", 0) + orphan_results.get("orphaned", 0)
+            results["marked_missing"] += orphan_results.get("orphaned", 0)
 
-        progress.complete(
-            new=results["new"],
-            updated=results["updated"],
-            unchanged=results["unchanged"],
-            relocated=results.get("relocated", 0),
-            marked_missing=results.get("marked_missing", 0),
-            still_missing=results.get("still_missing", 0),
-            recovered=results.get("recovered", 0),
-        )
+        # Queue analysis
+        await queue_unanalyzed_tracks(limit=500)
 
-        # Always queue analysis for any unanalyzed tracks after scan completes
-        # This catches new/updated/relocated tracks as well as any previously missed
-        queued_count = await queue_unanalyzed_tracks(limit=500)
-        if queued_count > 0:
-            logger.info(f"Queued {queued_count} tracks for analysis")
-
-        logger.info(f"Scan complete: {results}")
         return {"status": "success", **results}
 
     except Exception as e:
-        logger.error(f"Scan failed: {e}")
-        progress.error(str(e))
+        logger.error(f"Scan for sync failed: {e}", exc_info=True)
         return {"status": "error", "error": str(e)}
     finally:
         await local_engine.dispose()
+
+
+class _SyncProgressAdapter:
+    """Adapts SyncProgressReporter to the scanner's expected progress interface.
+
+    This allows the LibraryScanner to report progress through the unified sync progress.
+    """
+
+    def __init__(self, sync_progress: SyncProgressReporter):
+        self.sync_progress = sync_progress
+        self.started_at = sync_progress.started_at
+        self.warnings: list[str] = []
+
+    def set_discovery(self, dirs_scanned: int, files_found: int) -> None:
+        self.sync_progress.set_discovering(dirs_scanned, files_found)
+
+    def set_processing(
+        self,
+        processed: int,
+        total: int,
+        new: int,
+        updated: int,
+        unchanged: int,
+        current: str | None = None,
+        recovered: int = 0,
+    ) -> None:
+        self.sync_progress.set_reading(
+            processed=processed,
+            total=total,
+            new=new,
+            updated=updated,
+            unchanged=unchanged,
+            current=current,
+            recovered=recovered,
+        )
+
+    def set_cleanup(self, marked_missing: int, still_missing: int = 0) -> None:
+        # Just update phase message, keep in reading phase
+        pass
+
+    def complete(self, *args, **kwargs) -> None:
+        # Don't mark complete - sync orchestrator handles this
+        pass
+
+    def error(self, msg: str) -> None:
+        self.sync_progress.error(msg)
 
 
 def run_track_analysis(track_id: str) -> dict[str, Any]:

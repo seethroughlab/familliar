@@ -332,30 +332,41 @@ export interface RecentImport {
   created_at: string | null;
 }
 
-export interface ScanProgress {
-  phase: string;
+// Unified Sync Types
+export type SyncPhase = 'idle' | 'discovering' | 'reading' | 'analyzing' | 'complete' | 'error';
+
+export interface SyncProgress {
+  phase: SyncPhase;
+  phase_message: string;
+
+  // Discovery/scan metrics
   files_discovered: number;
   files_processed: number;
   files_total: number;
   new_tracks: number;
   updated_tracks: number;
-  relocated_tracks: number;
   unchanged_tracks: number;
+  relocated_tracks: number;
   marked_missing: number;
-  still_missing: number;
   recovered: number;
-  deleted_tracks: number;  // Legacy, always 0
-  current_file: string | null;
+
+  // Analysis metrics
+  tracks_analyzed: number;
+  tracks_pending_analysis: number;
+  tracks_total: number;
+  analysis_percent: number;
+
+  // Overall
   started_at: string | null;
+  current_item: string | null;
+  last_heartbeat: string | null;
   errors: string[];
 }
 
-export interface ScanStatus {
-  status: string;
+export interface SyncStatus {
+  status: 'idle' | 'running' | 'completed' | 'error' | 'already_running';
   message: string;
-  progress: ScanProgress | null;
-  warnings?: string[];
-  queue_position?: number | null;
+  progress: SyncProgress | null;
 }
 
 export const libraryApi = {
@@ -364,21 +375,24 @@ export const libraryApi = {
     return data;
   },
 
-  scan: async (options: {
+  sync: async (options: {
     rereadUnchanged?: boolean;
-    reanalyzeChanged?: boolean;
-  } = {}): Promise<ScanStatus> => {
-    const { data } = await api.post('/library/scan', null, {
+  } = {}): Promise<SyncStatus> => {
+    const { data } = await api.post('/library/sync', null, {
       params: {
         reread_unchanged: options.rereadUnchanged ?? false,
-        reanalyze_changed: options.reanalyzeChanged ?? true,
       },
     });
     return data;
   },
 
-  getScanStatus: async (): Promise<ScanStatus> => {
-    const { data } = await api.get('/library/scan/status');
+  getSyncStatus: async (): Promise<SyncStatus> => {
+    const { data } = await api.get('/library/sync/status');
+    return data;
+  },
+
+  cancelSync: async (): Promise<{ status: string; message: string }> => {
+    const { data } = await api.post('/library/sync/cancel');
     return data;
   },
 

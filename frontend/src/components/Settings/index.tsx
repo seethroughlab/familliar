@@ -5,8 +5,8 @@ import { ThemeSettings } from './ThemeSettings';
 import { PlaybackSettings } from './PlaybackSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
+import { LibrarySync } from './LibrarySync';
 import { InstallStatus } from '../PWA/InstallPrompt';
-// Note: Library management (scan, import, missing tracks, organizer) moved to /admin
 
 export function SettingsPanel() {
   return (
@@ -24,6 +24,15 @@ export function SettingsPanel() {
           </h3>
           <div className="space-y-4">
             <SystemStatus />
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
+            Library
+          </h3>
+          <div className="space-y-4">
+            <LibrarySync />
           </div>
         </section>
 

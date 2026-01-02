@@ -54,14 +54,14 @@ _clap_processor = None
 def get_device() -> str:
     """Get the best available device for inference.
 
-    Note: MPS (Apple Silicon) doesn't work well with forked processes
-    (like Celery workers), so we use CPU for workers.
+    Note: MPS (Apple Silicon) doesn't work well with subprocess workers,
+    so we use CPU for background analysis tasks.
     """
     if not _torch_available:
         return "cpu"
 
-    # Check if we're in a forked process (Celery worker)
-    # MPS doesn't work after fork, so use CPU
+    # Check if we're in a subprocess worker
+    # MPS doesn't work reliably in subprocesses, so use CPU
     if os.environ.get("FORKED_BY_MULTIPROCESSING"):
         return "cpu"
 

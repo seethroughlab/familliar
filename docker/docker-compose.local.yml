@@ -81,8 +81,8 @@ services:
     networks:
       - familiar-network
 
-  # Note: Worker service removed - background tasks now run in-process in the API container.
-  # This eliminates the fork/OpenBLAS SIGSEGV issues that plagued Celery workers.
+  # Note: Background tasks run in-process using asyncio and ProcessPoolExecutor with spawn context.
+  # This avoids fork/OpenBLAS SIGSEGV issues by using spawn-based process isolation for CPU-bound tasks.
 
 volumes:
   postgres_data:

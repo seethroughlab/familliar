@@ -26,7 +26,7 @@ async_session_maker = async_sessionmaker(
     autoflush=False,
 )
 
-# Create sync engine (for Celery workers)
+# Create sync engine (for subprocess workers running CPU-bound tasks)
 # Convert async URL to sync URL
 sync_database_url = settings.database_url.replace(
     "postgresql+asyncpg://", "postgresql+psycopg2://"
@@ -42,7 +42,7 @@ sync_engine = create_engine(
     pool_recycle=1800,      # Recycle after 30 mins
 )
 
-# Sync session factory (for Celery workers)
+# Sync session factory (for subprocess workers)
 sync_session_maker = sessionmaker(
     sync_engine,
     expire_on_commit=False,

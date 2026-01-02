@@ -4,7 +4,7 @@ An LLM-powered local music player that combines library management with AI-power
 
 ## Architecture
 
-- **Backend**: Python FastAPI + Celery workers + PostgreSQL (pgvector) + Redis
+- **Backend**: Python FastAPI + PostgreSQL (pgvector) + Redis
 - **Frontend**: React + TypeScript + Vite + Tailwind + Zustand
 - **Analysis**: Audio embeddings and features extracted via librosa/torch
 - **LLM**: Claude API with tool-use (Ollama fallback)
@@ -16,8 +16,7 @@ backend/
 ├── app/
 │   ├── api/routes/      # FastAPI endpoints
 │   ├── db/models.py     # SQLAlchemy models
-│   ├── services/        # Business logic (llm.py, analysis.py, etc.)
-│   └── workers/         # Celery tasks
+│   └── services/        # Business logic (llm.py, analysis.py, background.py, etc.)
 frontend/
 ├── src/
 │   ├── components/      # React components
@@ -91,9 +90,6 @@ MUSIC_LIBRARY_PATH=/data/music
 ```bash
 # Backend (from backend/)
 DATABASE_URL="..." REDIS_URL="..." uv run uvicorn app.main:app --reload --port 4400
-
-# Celery worker (from backend/)
-DATABASE_URL="..." REDIS_URL="..." uv run celery -A app.workers.celery_app worker --loglevel=info
 
 # Frontend (from frontend/)
 npm run dev

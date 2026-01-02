@@ -8,11 +8,8 @@ FastAPI backend for the Familiar music player.
 # Install dependencies
 make dev
 
-# Run API server
+# Run API server (background tasks run in-process)
 make run
-
-# Run Celery worker
-make worker
 
 # Reset database
 make reset-db

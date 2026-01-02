@@ -1,9 +1,9 @@
 """In-process background task manager using asyncio and ProcessPoolExecutor.
 
-Replaces Celery with simpler in-process task execution that:
+Key features:
 1. Uses spawn-based ProcessPoolExecutor (avoids fork/OpenBLAS SIGSEGV)
 2. Runs periodic tasks via APScheduler
-3. Reports progress via Redis (same interface as before)
+3. Reports progress via Redis for frontend consumption
 """
 
 import asyncio
@@ -29,16 +29,16 @@ class BackgroundManager:
 
     Key features:
     - ProcessPoolExecutor with spawn context (not fork) to avoid OpenBLAS crashes
-    - APScheduler for periodic tasks (replaces Celery Beat)
-    - Redis for progress reporting (same interface as Celery tasks used)
-    - Task deduplication to prevent running multiple scans simultaneously
+    - APScheduler for periodic tasks
+    - Redis for progress reporting
+    - Task deduplication to prevent running multiple syncs simultaneously
     """
 
     def __init__(self):
         self._executor: ProcessPoolExecutor | None = None
         self._scheduler = None
         self._redis: redis.Redis | None = None
-        self._current_scan_task: asyncio.Task | None = None
+        self._current_sync_task: asyncio.Task | None = None
         self._analysis_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
@@ -69,24 +69,19 @@ class BackgroundManager:
 
             self._scheduler = AsyncIOScheduler()
 
-            # Periodic library scan every 6 hours
+            # Unified library sync every 2 hours (replaces separate scan + analysis catch-up)
             self._scheduler.add_job(
-                self._periodic_scan,
-                CronTrigger(hour="*/6", minute=0),
-                id="periodic_scan",
-                replace_existing=True,
-            )
-
-            # Catch-up analysis every 5 minutes
-            self._scheduler.add_job(
-                self._analyze_catchup,
-                CronTrigger(minute="*/5"),
-                id="analyze_catchup",
+                self._periodic_sync,
+                CronTrigger(hour="*/2", minute=0),
+                id="periodic_sync",
                 replace_existing=True,
             )
 
             self._scheduler.start()
-            logger.info("APScheduler started with periodic tasks")
+            logger.info("APScheduler started with periodic sync (every 2 hours)")
+
+            # Schedule startup sync after a short delay
+            asyncio.create_task(self._startup_sync())
 
         except ImportError:
             logger.warning("APScheduler not installed - periodic tasks disabled")
@@ -98,10 +93,10 @@ class BackgroundManager:
         logger.info("Shutting down BackgroundManager...")
 
         # Cancel running tasks
-        if self._current_scan_task and not self._current_scan_task.done():
-            self._current_scan_task.cancel()
+        if self._current_sync_task and not self._current_sync_task.done():
+            self._current_sync_task.cancel()
             try:
-                await self._current_scan_task
+                await self._current_sync_task
             except asyncio.CancelledError:
                 pass
 
@@ -137,26 +132,23 @@ class BackgroundManager:
 
         return len(self._analysis_tasks)
 
-    def is_scan_running(self) -> bool:
-        """Check if a library scan is currently running (across all workers).
-
-        Uses Redis to coordinate across multiple uvicorn workers.
-        """
+    def is_sync_running(self) -> bool:
+        """Check if a library sync is currently running."""
         # Check local task first
-        if self._current_scan_task and not self._current_scan_task.done():
+        if self._current_sync_task and not self._current_sync_task.done():
             return True
 
-        # Check Redis lock (shared across all workers)
+        # Check Redis lock
         try:
-            if self.redis.get("familiar:scan:lock"):
+            if self.redis.get("familiar:sync:lock"):
                 return True
 
             # Also check progress status
-            data: bytes | None = self.redis.get("familiar:scan:progress")  # type: ignore[assignment]
+            data: bytes | None = self.redis.get("familiar:sync:progress")  # type: ignore[assignment]
             if data:
                 progress = json.loads(data)
                 if progress.get("status") == "running":
-                    # Check if heartbeat is recent (within 2 minutes)
+                    # Check if heartbeat is recent
                     heartbeat = progress.get("last_heartbeat")
                     if heartbeat:
                         from datetime import datetime, timedelta
@@ -171,20 +163,25 @@ class BackgroundManager:
 
         return False
 
-    def _acquire_scan_lock(self) -> bool:
-        """Try to acquire the scan lock in Redis. Returns True if acquired."""
+    def _acquire_sync_lock(self) -> bool:
+        """Try to acquire the sync lock in Redis. Returns True if acquired."""
         try:
-            # SET NX (only if not exists) with 1 hour expiry
-            return bool(self.redis.set("familiar:scan:lock", "1", nx=True, ex=3600))
+            return bool(self.redis.set("familiar:sync:lock", "1", nx=True, ex=7200))  # 2 hour expiry
         except Exception:
             return False
 
-    def _release_scan_lock(self) -> None:
-        """Release the scan lock in Redis."""
+    def _release_sync_lock(self) -> None:
+        """Release the sync lock in Redis."""
         try:
-            self.redis.delete("familiar:scan:lock")
+            self.redis.delete("familiar:sync:lock")
         except Exception:
             pass
+
+    def _cancel_sync(self) -> None:
+        """Cancel the current sync task."""
+        if self._current_sync_task and not self._current_sync_task.done():
+            self._current_sync_task.cancel()
+        self._release_sync_lock()
 
     async def run_cpu_bound(self, func: Callable, *args: Any) -> Any:
         """Run CPU-bound function in process pool (spawned, not forked).
@@ -194,70 +191,6 @@ class BackgroundManager:
         """
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(self.executor, func, *args)
-
-    async def run_scan(
-        self,
-        reread_unchanged: bool = False,
-        reanalyze_changed: bool = True,
-        # Legacy parameter
-        full_scan: bool | None = None,
-    ) -> dict[str, Any]:
-        """Start a library scan in the background.
-
-        Returns immediately with status. Progress is reported via Redis.
-        Uses Redis-based locking to prevent concurrent scans across workers.
-
-        Args:
-            reread_unchanged: Re-read metadata for files even if unchanged.
-            reanalyze_changed: Queue changed files for audio analysis.
-            full_scan: Deprecated. Use reread_unchanged instead.
-        """
-        # Handle legacy parameter
-        if full_scan is not None:
-            reread_unchanged = full_scan
-
-        async with self._lock:
-            # Check if already running (local or other worker)
-            if self.is_scan_running():
-                return {"status": "already_running"}
-
-            # Try to acquire Redis lock
-            if not self._acquire_scan_lock():
-                return {"status": "already_running"}
-
-            # Create task and store reference
-            self._current_scan_task = asyncio.create_task(
-                self._do_scan(reread_unchanged, reanalyze_changed)
-            )
-
-        return {"status": "started"}
-
-    async def _do_scan(
-        self,
-        reread_unchanged: bool,
-        reanalyze_changed: bool,
-    ) -> dict[str, Any]:
-        """Execute the library scan."""
-        from app.services.tasks import run_library_scan
-
-        try:
-            result = await run_library_scan(
-                reread_unchanged=reread_unchanged,
-                reanalyze_changed=reanalyze_changed,
-            )
-            return result
-        except Exception as e:
-            logger.error(f"Scan failed: {e}", exc_info=True)
-            # Update Redis progress with error
-            try:
-                progress = {"status": "error", "message": str(e)}
-                self.redis.set("familiar:scan:progress", json.dumps(progress), ex=3600)
-            except Exception:
-                pass
-            return {"status": "error", "error": str(e)}
-        finally:
-            self._current_scan_task = None
-            self._release_scan_lock()
 
     async def run_analysis(self, track_id: str) -> dict[str, Any]:
         """Queue a track for analysis.
@@ -331,22 +264,80 @@ class BackgroundManager:
             logger.error(f"New releases check failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
 
-    async def _periodic_scan(self) -> None:
-        """Run periodic incremental library scan."""
-        logger.info("Starting periodic library scan")
-        await self.run_scan(full_scan=False)
+    async def run_sync(
+        self,
+        reread_unchanged: bool = False,
+    ) -> dict[str, Any]:
+        """Start a unified library sync (scan + analysis) in the background.
 
-    async def _analyze_catchup(self) -> None:
-        """Queue analysis for unanalyzed tracks."""
-        from app.services.tasks import queue_unanalyzed_tracks
+        Returns immediately with status. Progress is reported via Redis.
+        Uses Redis-based locking to prevent concurrent syncs across workers.
 
-        logger.info("Running analysis catch-up")
+        Args:
+            reread_unchanged: Re-read metadata for files even if unchanged.
+        """
+        async with self._lock:
+            # Check if already running (local or other worker)
+            if self.is_sync_running():
+                return {"status": "already_running"}
+
+            # Try to acquire Redis lock
+            if not self._acquire_sync_lock():
+                return {"status": "already_running"}
+
+            # Create task and store reference
+            self._current_sync_task = asyncio.create_task(
+                self._do_sync(reread_unchanged)
+            )
+
+        return {"status": "started"}
+
+    async def _do_sync(
+        self,
+        reread_unchanged: bool,
+    ) -> dict[str, Any]:
+        """Execute the unified library sync."""
+        from app.services.tasks import run_library_sync
+
         try:
-            queued = await queue_unanalyzed_tracks(limit=500)
-            if queued > 0:
-                logger.info(f"Queued {queued} tracks for analysis")
+            result = await run_library_sync(reread_unchanged=reread_unchanged)
+            return result
         except Exception as e:
-            logger.error(f"Analysis catch-up failed: {e}")
+            logger.error(f"Sync failed: {e}", exc_info=True)
+            # Update Redis progress with error
+            try:
+                progress = {"status": "error", "phase_message": str(e)}
+                self.redis.set("familiar:sync:progress", json.dumps(progress), ex=3600)
+            except Exception:
+                pass
+            return {"status": "error", "error": str(e)}
+        finally:
+            self._current_sync_task = None
+            self._release_sync_lock()
+
+    async def _startup_sync(self) -> None:
+        """Run initial sync on startup after a short delay."""
+        # Wait for server to fully start
+        await asyncio.sleep(5)
+
+        # Only run if no sync is already in progress
+        if self.is_sync_running():
+            logger.info("Skipping startup sync - another sync is already running")
+            return
+
+        logger.info("Starting automatic library sync on startup")
+        try:
+            await self.run_sync()
+        except Exception as e:
+            logger.error(f"Startup sync failed: {e}")
+
+    async def _periodic_sync(self) -> None:
+        """Run periodic unified library sync."""
+        logger.info("Starting periodic library sync")
+        try:
+            await self.run_sync()
+        except Exception as e:
+            logger.error(f"Periodic sync failed: {e}")
 
 
 # Global singleton instance

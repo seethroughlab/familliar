@@ -12,7 +12,7 @@ from app.config import settings
 from app.db.models import AlbumType, Track, TrackStatus
 from app.services.import_service import ImportService, MusicImportError, save_upload_to_temp
 from app.services.scanner import LibraryScanner
-from app.services.tasks import get_scan_progress
+from app.services.tasks import get_sync_progress
 
 router = APIRouter(prefix="/library", tags=["library"])
 
@@ -30,40 +30,47 @@ class LibraryStats(BaseModel):
     pending_analysis: int
 
 
-class ScanProgress(BaseModel):
-    """Detailed scan progress."""
+# ============================================================================
+# Unified Sync Models
+# ============================================================================
 
-    phase: str = "idle"  # "discovery", "processing", "cleanup", "complete"
+
+class SyncProgress(BaseModel):
+    """Unified sync progress covering discovery, reading, and analysis."""
+
+    phase: str = "idle"  # "discovering", "reading", "analyzing", "complete", "error"
+    phase_message: str = ""
+
+    # Discovery/scan metrics
     files_discovered: int = 0
     files_processed: int = 0
     files_total: int = 0
     new_tracks: int = 0
     updated_tracks: int = 0
-    relocated_tracks: int = 0
     unchanged_tracks: int = 0
-    marked_missing: int = 0      # Newly marked as missing this scan
-    still_missing: int = 0       # Already missing, still not found
-    recovered: int = 0           # Previously missing, now found
-    deleted_tracks: int = 0      # Legacy field, always 0 now
-    current_file: str | None = None
+    relocated_tracks: int = 0
+    marked_missing: int = 0
+    recovered: int = 0
+
+    # Analysis metrics
+    tracks_analyzed: int = 0
+    tracks_pending_analysis: int = 0
+    tracks_total: int = 0
+    analysis_percent: float = 0.0
+
+    # Overall
     started_at: str | None = None
-    last_heartbeat: str | None = None  # For stuck detection
+    current_item: str | None = None
+    last_heartbeat: str | None = None
     errors: list[str] = []
-    warnings: list[str] = []
 
 
-class ScanStatus(BaseModel):
-    """Scan status response."""
+class SyncStatus(BaseModel):
+    """Unified sync status response."""
 
-    status: str  # "idle", "running", "completed", "error", "queued"
+    status: str  # "idle", "running", "completed", "error"
     message: str
-    progress: ScanProgress | None = None
-    warnings: list[str] = []
-    queue_position: int | None = None  # Position in queue if waiting
-
-
-# Note: Scan progress is now stored in Redis and managed by the Celery worker.
-# See app.workers.tasks for ScanProgressReporter class.
+    progress: SyncProgress | None = None
 
 
 @router.get("/stats", response_model=LibraryStats)
@@ -106,95 +113,11 @@ async def get_library_stats(db: DbSession) -> LibraryStats:
     )
 
 
-@router.post("/scan", response_model=ScanStatus)
-@limiter.limit(SCAN_RATE_LIMIT)
-async def start_scan(
-    request: Request,
-    reread_unchanged: bool = False,
-    reanalyze_changed: bool = True,
-    # Legacy parameter for backwards compatibility
-    full: bool | None = None,
-) -> ScanStatus:
-    """Start a library scan.
-
-    The scan runs in the background, so this returns immediately.
-    Progress is stored in Redis and can be retrieved via GET /scan/status.
-
-    Scans and analysis cannot run simultaneously - they share resources.
-
-    Args:
-        reread_unchanged: Re-read metadata for files even if unchanged. Default False.
-        reanalyze_changed: Queue changed files for audio analysis. Default True.
-        full: Deprecated. Use reread_unchanged instead.
-    """
-    from app.services.background import get_background_manager
-
-    # Handle legacy 'full' parameter
-    if full is not None:
-        reread_unchanged = full
-
-    bg = get_background_manager()
-
-    # Check if analysis is running - can't run both simultaneously
-    if bg.is_analysis_running():
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot start scan while analysis is running. Cancel analysis first or wait for it to complete.",
-        )
-
-    # Check if a scan is already running
-    if bg.is_scan_running():
-        progress = get_scan_progress()
-        if progress:
-            return ScanStatus(
-                status="already_running",
-                message="A scan is already in progress",
-                progress=ScanProgress(**{k: progress.get(k, v) for k, v in ScanProgress().model_dump().items()}),
-            )
-        return ScanStatus(
-            status="already_running",
-            message="A scan is already in progress",
-        )
-
-    # Start scan in background
-    await bg.run_scan(
-        reread_unchanged=reread_unchanged,
-        reanalyze_changed=reanalyze_changed,
-    )
-
-    return ScanStatus(
-        status="started",
-        message="Scan started",
-    )
-
-
 class CancelResponse(BaseModel):
     """Response for cancel operations."""
 
     status: str
     message: str
-
-
-@router.post("/scan/cancel", response_model=CancelResponse)
-async def cancel_scan() -> CancelResponse:
-    """Cancel a running or stuck library scan.
-
-    Clears the scan progress from Redis and releases the lock.
-    Use this when a scan appears stuck.
-    """
-    from app.services.background import get_background_manager
-    from app.services.tasks import clear_scan_progress
-
-    bg = get_background_manager()
-
-    # Release the lock and clear progress
-    bg._release_scan_lock()
-    clear_scan_progress()
-
-    return CancelResponse(
-        status="cancelled",
-        message="Scan cancelled and state cleared",
-    )
 
 
 @router.post("/analysis/cancel", response_model=CancelResponse)
@@ -222,23 +145,84 @@ async def cancel_analysis() -> CancelResponse:
     )
 
 
-@router.get("/scan/status", response_model=ScanStatus)
-async def get_scan_status() -> ScanStatus:
-    """Get current scan status with detailed progress from Redis."""
+# ============================================================================
+# Unified Sync Endpoints
+# ============================================================================
+
+
+@router.post("/sync", response_model=SyncStatus)
+@limiter.limit(SCAN_RATE_LIMIT)
+async def start_sync(
+    request: Request,
+    reread_unchanged: bool = False,
+) -> SyncStatus:
+    """Start a unified library sync (scan + analysis).
+
+    This is the recommended way to sync your library. It:
+    1. Discovers audio files in your library paths
+    2. Reads metadata from new/changed files
+    3. Analyzes audio features for new tracks
+
+    The sync runs in the background, so this returns immediately.
+    Progress is stored in Redis and can be retrieved via GET /sync/status.
+
+    Args:
+        reread_unchanged: Re-read metadata for files even if unchanged. Default False.
+    """
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+
+    # Check if a sync is already running
+    if bg.is_sync_running():
+        progress = get_sync_progress()
+        if progress:
+            return SyncStatus(
+                status="already_running",
+                message="A sync is already in progress",
+                progress=SyncProgress(**{
+                    k: progress.get(k, v)
+                    for k, v in SyncProgress().model_dump().items()
+                }),
+            )
+        return SyncStatus(
+            status="already_running",
+            message="A sync is already in progress",
+        )
+
+    # Start sync in background
+    await bg.run_sync(reread_unchanged=reread_unchanged)
+
+    return SyncStatus(
+        status="started",
+        message="Library sync started",
+    )
+
+
+@router.get("/sync/status", response_model=SyncStatus)
+async def get_sync_status_endpoint() -> SyncStatus:
+    """Get current sync status with unified progress.
+
+    Returns progress through all phases:
+    - discovering: Finding audio files
+    - reading: Reading metadata from files
+    - analyzing: Extracting audio features
+    - complete: Sync finished
+    """
     from datetime import datetime, timedelta
 
-    from app.services.tasks import clear_scan_progress
+    from app.services.tasks import clear_sync_progress
 
-    progress = get_scan_progress()
+    progress = get_sync_progress()
 
     if not progress:
-        return ScanStatus(
+        return SyncStatus(
             status="idle",
-            message="No scan running",
+            message="No sync running",
             progress=None,
         )
 
-    # Check if the scan is stale (no heartbeat for 5 minutes - network volumes can be slow)
+    # Check if the sync is stale (no heartbeat for 5 minutes)
     status = progress.get("status", "idle")
     if status == "running":
         last_heartbeat = progress.get("last_heartbeat")
@@ -246,42 +230,63 @@ async def get_scan_status() -> ScanStatus:
             try:
                 heartbeat_time = datetime.fromisoformat(last_heartbeat)
                 if datetime.now() - heartbeat_time > timedelta(minutes=5):
-                    # Scan is stale - worker probably died
-                    clear_scan_progress()
-                    return ScanStatus(
-                        status="interrupted",
-                        message="Scan was interrupted (worker stopped responding)",
+                    clear_sync_progress()
+                    return SyncStatus(
+                        status="error",
+                        message="Sync was interrupted (worker stopped responding)",
                         progress=None,
                     )
             except (ValueError, TypeError):
                 pass
 
-    # Convert Redis progress to ScanProgress model
-    scan_progress = ScanProgress(
+    # Convert Redis progress to SyncProgress model
+    sync_progress = SyncProgress(
         phase=progress.get("phase", "idle"),
+        phase_message=progress.get("phase_message", ""),
         files_discovered=progress.get("files_discovered", 0),
         files_processed=progress.get("files_processed", 0),
         files_total=progress.get("files_total", 0),
         new_tracks=progress.get("new_tracks", 0),
         updated_tracks=progress.get("updated_tracks", 0),
-        relocated_tracks=progress.get("relocated_tracks", 0),
         unchanged_tracks=progress.get("unchanged_tracks", 0),
+        relocated_tracks=progress.get("relocated_tracks", 0),
         marked_missing=progress.get("marked_missing", 0),
-        still_missing=progress.get("still_missing", 0),
         recovered=progress.get("recovered", 0),
-        deleted_tracks=progress.get("deleted_tracks", 0),  # Legacy, always 0
-        current_file=progress.get("current_file"),
+        tracks_analyzed=progress.get("tracks_analyzed", 0),
+        tracks_pending_analysis=progress.get("tracks_pending_analysis", 0),
+        tracks_total=progress.get("tracks_total", 0),
+        analysis_percent=progress.get("analysis_percent", 0.0),
         started_at=progress.get("started_at"),
-        last_heartbeat=progress.get("last_heartbeat"),  # For stuck detection
+        current_item=progress.get("current_item"),
+        last_heartbeat=progress.get("last_heartbeat"),
         errors=progress.get("errors", []),
-        warnings=progress.get("warnings", []),
     )
 
-    return ScanStatus(
+    return SyncStatus(
         status=status,
-        message=progress.get("message", ""),
-        progress=scan_progress if status != "idle" else None,
-        warnings=progress.get("warnings", []),
+        message=progress.get("phase_message", ""),
+        progress=sync_progress if status != "idle" else None,
+    )
+
+
+@router.post("/sync/cancel", response_model=CancelResponse)
+async def cancel_sync() -> CancelResponse:
+    """Cancel a running library sync.
+
+    Clears the sync progress from Redis and releases the lock.
+    """
+    from app.services.background import get_background_manager
+    from app.services.tasks import clear_sync_progress
+
+    bg = get_background_manager()
+
+    # Cancel the sync task and release lock
+    bg._cancel_sync()
+    clear_sync_progress()
+
+    return CancelResponse(
+        status="cancelled",
+        message="Sync cancelled and state cleared",
     )
 
 
@@ -652,11 +657,11 @@ async def start_analysis(limit: int = 500) -> AnalysisStartResponse:
 
     bg = get_background_manager()
 
-    # Check if scan is running - can't run both simultaneously
-    if bg.is_scan_running():
+    # Check if sync is running - can't run both simultaneously
+    if bg.is_sync_running():
         raise HTTPException(
             status_code=409,
-            detail="Cannot start analysis while a scan is running. Cancel scan first or wait for it to complete.",
+            detail="Cannot start analysis while a sync is running. Cancel sync first or wait for it to complete.",
         )
 
     try:
