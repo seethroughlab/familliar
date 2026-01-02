@@ -22,22 +22,23 @@ depends_on = None
 
 def upgrade() -> None:
     # Track metadata indexes for filtering/searching
-    op.create_index("ix_tracks_artist", "tracks", ["artist"])
-    op.create_index("ix_tracks_album", "tracks", ["album"])
-    op.create_index("ix_tracks_year", "tracks", ["year"])
-    op.create_index("ix_tracks_genre", "tracks", ["genre"])
+    # Use if_not_exists=True since baseline migration may have already created them
+    op.create_index("ix_tracks_artist", "tracks", ["artist"], if_not_exists=True)
+    op.create_index("ix_tracks_album", "tracks", ["album"], if_not_exists=True)
+    op.create_index("ix_tracks_year", "tracks", ["year"], if_not_exists=True)
+    op.create_index("ix_tracks_genre", "tracks", ["genre"], if_not_exists=True)
 
     # Foreign key indexes for faster joins
-    op.create_index("ix_track_analysis_track_id", "track_analysis", ["track_id"])
-    op.create_index("ix_playlists_profile_id", "playlists", ["profile_id"])
-    op.create_index("ix_smart_playlists_profile_id", "smart_playlists", ["profile_id"])
+    op.create_index("ix_track_analysis_track_id", "track_analysis", ["track_id"], if_not_exists=True)
+    op.create_index("ix_playlists_profile_id", "playlists", ["profile_id"], if_not_exists=True)
+    op.create_index("ix_smart_playlists_profile_id", "smart_playlists", ["profile_id"], if_not_exists=True)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_tracks_artist", "tracks")
-    op.drop_index("ix_tracks_album", "tracks")
-    op.drop_index("ix_tracks_year", "tracks")
-    op.drop_index("ix_tracks_genre", "tracks")
-    op.drop_index("ix_track_analysis_track_id", "track_analysis")
-    op.drop_index("ix_playlists_profile_id", "playlists")
-    op.drop_index("ix_smart_playlists_profile_id", "smart_playlists")
+    op.drop_index("ix_tracks_artist", "tracks", if_exists=True)
+    op.drop_index("ix_tracks_album", "tracks", if_exists=True)
+    op.drop_index("ix_tracks_year", "tracks", if_exists=True)
+    op.drop_index("ix_tracks_genre", "tracks", if_exists=True)
+    op.drop_index("ix_track_analysis_track_id", "track_analysis", if_exists=True)
+    op.drop_index("ix_playlists_profile_id", "playlists", if_exists=True)
+    op.drop_index("ix_smart_playlists_profile_id", "smart_playlists", if_exists=True)
