@@ -107,7 +107,7 @@ class SpotifyService:
         token_info = oauth.get_access_token(code, as_dict=True)
 
         # Get Spotify user profile
-        sp = spotipy.Spotify(auth=token_info["access_token"])
+        sp = spotipy.Spotify(auth=token_info["access_token"], requests_timeout=30)
         spotify_user = sp.current_user()
 
         # Calculate token expiry
@@ -167,7 +167,7 @@ class SpotifyService:
                 logger.error(f"No refresh token available for {profile_id}")
                 return None
 
-        return spotipy.Spotify(auth=spotify_profile.access_token)
+        return spotipy.Spotify(auth=spotify_profile.access_token, requests_timeout=30)
 
     async def _refresh_token(
         self,

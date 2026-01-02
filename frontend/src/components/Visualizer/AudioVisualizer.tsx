@@ -66,4 +66,5 @@ export function AudioVisualizer({
 
 // Re-export picker and types for convenience
 export { VisualizerPicker } from './VisualizerPicker';
+// eslint-disable-next-line react-refresh/only-export-components -- Re-exporting utility functions alongside component
 export { getVisualizers, getVisualizer, type VisualizerMetadata } from './types';

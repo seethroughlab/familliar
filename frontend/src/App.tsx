@@ -1,27 +1,36 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { Search, Library, Settings, Zap, Activity } from 'lucide-react';
+import { Search, Library, Settings, Zap, Activity, MessageSquare, X, Loader2 } from 'lucide-react';
+import { logger } from './utils/logger';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { TrackList } from './components/Library/TrackList';
 import { ChatPanel } from './components/Chat';
-import { SettingsPanel } from './components/Settings';
-import { FullPlayer } from './components/FullPlayer';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
 import { OfflineIndicator } from './components/PWA/OfflineIndicator';
-// Listening sessions disabled for v0.1.0
-// import { SessionPanel } from './components/Sessions';
-import { PlaylistsView } from './components/Playlists';
-import { VisualizerView } from './components/Visualizer';
-// Listening sessions disabled for v0.1.0
-// import { GuestListener } from './components/Guest';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
-import { AdminSetup } from './components/Admin';
 import { GlobalDropZone, ImportModal } from './components/Import';
 import { ColumnSelector } from './components/Library/ColumnSelector';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// Lazy-loaded components for code splitting
+const SettingsPanel = lazy(() => import('./components/Settings').then(m => ({ default: m.SettingsPanel })));
+const FullPlayer = lazy(() => import('./components/FullPlayer').then(m => ({ default: m.FullPlayer })));
+const PlaylistsView = lazy(() => import('./components/Playlists').then(m => ({ default: m.PlaylistsView })));
+const VisualizerView = lazy(() => import('./components/Visualizer').then(m => ({ default: m.VisualizerView })));
+const AdminSetup = lazy(() => import('./components/Admin').then(m => ({ default: m.AdminSetup })));
+
+// Loading spinner for lazy components
+function LazyLoadSpinner() {
+  return (
+    <div className="flex items-center justify-center py-20">
+      <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+    </div>
+  );
+}
 import { useScrobbling } from './hooks/useScrobbling';
 // Listening sessions disabled for v0.1.0
 // import { useListeningSession } from './hooks/useListeningSession';
@@ -51,20 +60,21 @@ function AppContent() {
   const initialTab = (): RightPanelTab => {
     const path = window.location.pathname;
     const search = window.location.search;
-    console.log('[AppContent] initialTab called, path:', path, 'search:', search);
+    logger.debug('[AppContent] initialTab called, path:', path, 'search:', search);
     if (path === '/settings') return 'settings';
     if (path === '/playlists') return 'playlists';
     return 'library';
   };
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>(() => {
     const tab = initialTab();
-    console.log('[AppContent] Initial tab set to:', tab);
+    logger.debug('[AppContent] Initial tab set to:', tab);
     return tab;
   });
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   // Listening sessions disabled for v0.1.0
   // const [showSessionPanel, setShowSessionPanel] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
+  const [showMobileChat, setShowMobileChat] = useState(false);
 
   // Initialize Last.fm scrobbling
   useScrobbling();
@@ -146,61 +156,100 @@ function AppContent() {
     <div className={`h-screen flex flex-col ${resolvedTheme === 'light' ? 'bg-white text-zinc-900' : 'bg-black text-white'}`}>
       {/* Main content area - pb-20 accounts for fixed player bar */}
       <div className="flex-1 flex overflow-hidden pb-20">
-        {/* Left panel - Chat */}
-        <div className={`w-96 border-r ${resolvedTheme === 'light' ? 'border-zinc-200' : 'border-zinc-800'} flex flex-col`}>
-          <ChatPanel />
+        {/* Left panel - Chat (hidden on mobile, shown via overlay) */}
+        <div className={`hidden md:flex w-96 border-r ${resolvedTheme === 'light' ? 'border-zinc-200' : 'border-zinc-800'} flex-col`}>
+          <ErrorBoundary name="Chat">
+            <ChatPanel />
+          </ErrorBoundary>
         </div>
+
+        {/* Mobile chat overlay */}
+        {showMobileChat && (
+          <div className="md:hidden fixed inset-0 z-50 flex">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50"
+              onClick={() => setShowMobileChat(false)}
+            />
+            {/* Chat panel */}
+            <div className={`relative w-full max-w-md ${resolvedTheme === 'light' ? 'bg-white' : 'bg-zinc-900'} flex flex-col`}>
+              <button
+                onClick={() => setShowMobileChat(false)}
+                className="absolute top-3 right-3 p-2 rounded-lg hover:bg-zinc-800/50 z-10"
+                aria-label="Close chat"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <ErrorBoundary name="Chat">
+                <ChatPanel />
+              </ErrorBoundary>
+            </div>
+          </div>
+        )}
 
         {/* Right panel - Library/Context */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header with tabs */}
           <header className={`backdrop-blur-md border-b ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
-            <div className="px-4 py-3 flex items-center gap-4">
+            <div className="px-4 py-3 flex items-center gap-2 md:gap-4">
+              {/* Mobile chat toggle */}
+              <button
+                onClick={() => setShowMobileChat(true)}
+                className="md:hidden p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                aria-label="Open chat"
+              >
+                <MessageSquare className="w-5 h-5" />
+              </button>
+
               {/* Tabs */}
-              <div className="flex gap-1">
+              <div className="flex gap-1 overflow-x-auto">
                 <button
                   onClick={() => setRightPanelTab('library')}
-                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                     rightPanelTab === 'library'
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                   }`}
+                  aria-label="Library"
                 >
-                  <Library className="w-4 h-4 inline-block mr-1.5" />
-                  Library
+                  <Library className="w-4 h-4 inline-block sm:mr-1.5" />
+                  <span className="hidden sm:inline">Library</span>
                 </button>
                 <button
                   onClick={() => setRightPanelTab('playlists')}
-                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                     rightPanelTab === 'playlists'
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                   }`}
+                  aria-label="Playlists"
                 >
-                  <Zap className="w-4 h-4 inline-block mr-1.5" />
-                  Playlists
+                  <Zap className="w-4 h-4 inline-block sm:mr-1.5" />
+                  <span className="hidden sm:inline">Playlists</span>
                 </button>
                 <button
                   onClick={() => setRightPanelTab('visualizer')}
-                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                     rightPanelTab === 'visualizer'
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                   }`}
+                  aria-label="Visualizer"
                 >
-                  <Activity className="w-4 h-4 inline-block mr-1.5" />
-                  Visualizer
+                  <Activity className="w-4 h-4 inline-block sm:mr-1.5" />
+                  <span className="hidden sm:inline">Visualizer</span>
                 </button>
                 <button
                   onClick={() => setRightPanelTab('settings')}
-                  className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
+                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
                     rightPanelTab === 'settings'
                       ? 'bg-zinc-800 text-white'
                       : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
                   }`}
+                  aria-label="Settings"
                 >
-                  <Settings className="w-4 h-4 inline-block mr-1.5" />
-                  Settings
+                  <Settings className="w-4 h-4 inline-block sm:mr-1.5" />
+                  <span className="hidden sm:inline">Settings</span>
                 </button>
               </div>
 
@@ -240,31 +289,45 @@ function AppContent() {
             )}
             {rightPanelTab === 'playlists' && (
               <div className="px-4 py-6">
-                <PlaylistsView
-                  selectedPlaylistId={selectedPlaylistId}
-                  onPlaylistViewed={() => setSelectedPlaylistId(null)}
-                />
+                <Suspense fallback={<LazyLoadSpinner />}>
+                  <PlaylistsView
+                    selectedPlaylistId={selectedPlaylistId}
+                    onPlaylistViewed={() => setSelectedPlaylistId(null)}
+                  />
+                </Suspense>
               </div>
             )}
             {rightPanelTab === 'visualizer' && (
-              <VisualizerView />
+              <ErrorBoundary name="Visualizer">
+                <Suspense fallback={<LazyLoadSpinner />}>
+                  <VisualizerView />
+                </Suspense>
+              </ErrorBoundary>
             )}
             {rightPanelTab === 'settings' && (
-              <SettingsPanel />
+              <Suspense fallback={<LazyLoadSpinner />}>
+                <SettingsPanel />
+              </Suspense>
             )}
           </main>
         </div>
       </div>
 
       {/* Player bar - fixed at bottom */}
-      <PlayerBar
-        onExpandClick={() => setShowFullPlayer(true)}
-        // Listening sessions disabled for v0.1.0
-      />
+      <ErrorBoundary name="Player">
+        <PlayerBar
+          onExpandClick={() => setShowFullPlayer(true)}
+          // Listening sessions disabled for v0.1.0
+        />
+      </ErrorBoundary>
 
       {/* Full player overlay */}
       {showFullPlayer && (
-        <FullPlayer onClose={() => setShowFullPlayer(false)} />
+        <ErrorBoundary name="Full Player">
+          <Suspense fallback={<LazyLoadSpinner />}>
+            <FullPlayer onClose={() => setShowFullPlayer(false)} />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {/* PWA install prompt */}
@@ -355,7 +418,11 @@ function App() {
       <WorkerAlert />
       <QueryClientProvider client={queryClient}>
         <Routes>
-          <Route path="/admin" element={<AdminSetup />} />
+          <Route path="/admin" element={
+            <Suspense fallback={<LazyLoadSpinner />}>
+              <AdminSetup />
+            </Suspense>
+          } />
           {/* Listening sessions disabled for v0.1.0 */}
           {/* <Route path="/guest" element={<GuestListener />} /> */}
           <Route path="*" element={<AppContent />} />

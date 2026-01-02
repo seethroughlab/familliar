@@ -2,11 +2,12 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
 from app.api.deps import DbSession
+from app.api.ratelimit import limiter, SCAN_RATE_LIMIT
 from app.config import settings
 from app.db.models import AlbumType, Track, TrackStatus
 from app.services.import_service import ImportService, MusicImportError, save_upload_to_temp
@@ -106,7 +107,9 @@ async def get_library_stats(db: DbSession) -> LibraryStats:
 
 
 @router.post("/scan", response_model=ScanStatus)
+@limiter.limit(SCAN_RATE_LIMIT)
 async def start_scan(
+    request: Request,
     reread_unchanged: bool = False,
     reanalyze_changed: bool = True,
     # Legacy parameter for backwards compatibility

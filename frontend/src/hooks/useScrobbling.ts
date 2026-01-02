@@ -46,6 +46,7 @@ export function useScrobbling() {
     lastfmApi.updateNowPlaying(currentTrack.id).catch(() => {
       // Ignore errors - now playing is best-effort
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when track ID changes, not object reference
   }, [currentTrack?.id, isPlaying, isConnected]);
 
   // Handle scrobbling based on playback progress
@@ -76,6 +77,7 @@ export function useScrobbling() {
         scrobbledTrackRef.current = null;
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when track ID changes, not object reference
   }, [currentTrack?.id, currentTime, duration, isPlaying, isConnected]);
 
   // Reset when track changes

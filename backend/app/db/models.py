@@ -170,16 +170,16 @@ class Track(Base):
     file_path: Mapped[str] = mapped_column(String(1000), unique=True, nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
-    # Basic metadata from tags
+    # Basic metadata from tags (indexed for common queries)
     title: Mapped[str | None] = mapped_column(String(500))
-    artist: Mapped[str | None] = mapped_column(String(500))
-    album: Mapped[str | None] = mapped_column(String(500))
+    artist: Mapped[str | None] = mapped_column(String(500), index=True)
+    album: Mapped[str | None] = mapped_column(String(500), index=True)
     album_artist: Mapped[str | None] = mapped_column(String(500))
     album_type: Mapped[AlbumType] = mapped_column(Enum(AlbumType), default=AlbumType.ALBUM)
     track_number: Mapped[int | None] = mapped_column(Integer)
     disc_number: Mapped[int | None] = mapped_column(Integer)
-    year: Mapped[int | None] = mapped_column(Integer)
-    genre: Mapped[str | None] = mapped_column(String(255))
+    year: Mapped[int | None] = mapped_column(Integer, index=True)
+    genre: Mapped[str | None] = mapped_column(String(255), index=True)
 
     # Technical metadata
     duration_seconds: Mapped[float | None] = mapped_column(Float)
@@ -231,7 +231,7 @@ class TrackAnalysis(Base):
     __table_args__ = (UniqueConstraint("track_id", "version", name="uq_track_analysis_version"),)
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"))
+    track_id: Mapped[UUID] = mapped_column(ForeignKey("tracks.id", ondelete="CASCADE"), index=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Flexible features stored as JSONB (no migrations needed when adding new features)
@@ -256,7 +256,7 @@ class Playlist(Base):
     __tablename__ = "playlists"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -336,7 +336,7 @@ class SmartPlaylist(Base):
     __tablename__ = "smart_playlists"
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"))
+    profile_id: Mapped[UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
 

@@ -28,6 +28,8 @@ dependencies = [
     "pydantic-settings>=2.1.0",
     # Async support
     "greenlet>=3.0.0",
+    # Rate limiting
+    "slowapi>=0.1.9",
     # Utilities
     "python-multipart>=0.0.6",
     "anthropic>=0.75.0",

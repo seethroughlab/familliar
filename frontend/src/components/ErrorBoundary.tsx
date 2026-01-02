@@ -1,0 +1,110 @@
+import { Component, type ReactNode } from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+
+interface Props {
+  children: ReactNode;
+  fallback?: ReactNode;
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
+  /** Name of the component/section for error reporting */
+  name?: string;
+}
+
+interface State {
+  hasError: boolean;
+  error: Error | null;
+}
+
+/**
+ * Error boundary component that catches JavaScript errors in child components.
+ * Displays a fallback UI instead of crashing the entire app.
+ */
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Log error for debugging
+    console.error(`[ErrorBoundary${this.props.name ? `:${this.props.name}` : ''}]`, error, errorInfo);
+
+    // Call optional error handler
+    this.props.onError?.(error, errorInfo);
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  render() {
+    if (this.state.hasError) {
+      // Use custom fallback if provided
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      // Default fallback UI
+      return (
+        <div className="flex flex-col items-center justify-center p-8 text-center">
+          <AlertTriangle className="w-12 h-12 text-amber-500 mb-4" />
+          <h2 className="text-lg font-semibold text-zinc-200 mb-2">
+            Something went wrong
+          </h2>
+          <p className="text-sm text-zinc-400 mb-4 max-w-md">
+            {this.props.name
+              ? `The ${this.props.name} encountered an error.`
+              : 'An unexpected error occurred.'}
+          </p>
+          <button
+            onClick={this.handleRetry}
+            className="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600
+                       rounded-lg text-sm font-medium transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Try Again
+          </button>
+          {import.meta.env.DEV && this.state.error && (
+            <pre className="mt-4 p-4 bg-zinc-900 rounded-lg text-left text-xs text-red-400
+                            max-w-full overflow-auto max-h-40">
+              {this.state.error.message}
+              {'\n\n'}
+              {this.state.error.stack}
+            </pre>
+          )}
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+/**
+ * Minimal error boundary for inline components (shows nothing on error).
+ * Use when you don't want to disrupt the UI.
+ */
+export class SilentErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[SilentErrorBoundary]', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return null;
+    }
+    return this.props.children;
+  }
+}

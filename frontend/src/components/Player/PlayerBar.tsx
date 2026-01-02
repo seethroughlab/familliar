@@ -88,6 +88,7 @@ export function PlayerBar({
         <button
           onClick={onExpandClick}
           className="flex items-center gap-3 w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
+          aria-label="Expand player"
         >
           <AlbumArt trackId={currentTrack.id} />
           <div className="min-w-0 flex-1">
@@ -104,6 +105,7 @@ export function PlayerBar({
               data-testid="prev-track"
               onClick={playPrevious}
               className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
+              aria-label="Previous track"
             >
               <SkipBack className="w-5 h-5" />
             </button>
@@ -111,6 +113,7 @@ export function PlayerBar({
               data-testid="play-pause"
               onClick={togglePlayPause}
               className="p-3 bg-white text-black rounded-full hover:scale-105 transition-transform"
+              aria-label={isPlaying ? 'Pause' : 'Play'}
             >
               {isPlaying ? (
                 <Pause className="w-5 h-5" fill="currentColor" />
@@ -122,6 +125,7 @@ export function PlayerBar({
               data-testid="next-track"
               onClick={playNext}
               className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
+              aria-label="Next track"
             >
               <SkipForward className="w-5 h-5" />
             </button>
@@ -157,6 +161,7 @@ export function PlayerBar({
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 1)}
             className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
+            aria-label={volume === 0 ? 'Unmute' : 'Mute'}
           >
             {volume === 0 ? (
               <VolumeX className="w-5 h-5" />
@@ -172,6 +177,7 @@ export function PlayerBar({
             value={volume}
             onChange={handleVolumeChange}
             className="w-full accent-white"
+            aria-label="Volume"
           />
         </div>
       </div>

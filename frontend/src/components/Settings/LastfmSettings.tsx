@@ -46,6 +46,7 @@ export function LastfmSettings() {
     if (isCallback && token && !callbackMutation.isPending) {
       callbackMutation.mutate(token);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on URL change, not mutation state
   }, [searchParams]);
 
   if (isLoading) {

@@ -323,6 +323,7 @@ export function useAudioEngine() {
       // Advance the queue (updates UI to show next track)
       advanceToNextTrack(nextTrack);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- completeCrossfade is defined after, stable function
     [advanceToNextTrack]
   );
 
@@ -423,6 +424,7 @@ export function useAudioEngine() {
         seek(details.seekTime);
       }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- seek is defined after, playNext is stable
   }, [currentTrack, setIsPlaying, playNext]);
 
   // --------------------------------------------------------------------------
@@ -575,6 +577,7 @@ export function useAudioEngine() {
 
     loadTrack();
     updateMediaSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when track ID changes
   }, [currentTrack?.id, setDuration, updateMediaSession]);
 
   // --------------------------------------------------------------------------

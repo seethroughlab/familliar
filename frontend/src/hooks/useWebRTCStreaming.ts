@@ -3,7 +3,7 @@
  * Host captures audio and streams to guests via WebRTC.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAudioEngine } from './useAudioEngine';
 
 interface PeerConnection {
@@ -52,12 +52,12 @@ export function useWebRTCStreaming({
   const guestConnectionRef = useRef<RTCPeerConnection | null>(null);
 
   // Create RTCPeerConnection configuration
-  const rtcConfig: RTCConfiguration = {
+  const rtcConfig: RTCConfiguration = useMemo(() => ({
     iceServers: iceServers.length > 0 ? iceServers : [
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
     ],
-  };
+  }), [iceServers]);
 
   // Get media stream from audio engine (host only)
   const getAudioStream = useCallback((): MediaStream | null => {
@@ -335,12 +335,14 @@ export function useWebRTCStreaming({
 
   // Cleanup on unmount or session end
   useEffect(() => {
+    // Capture current ref values for cleanup
+    const currentPeers = peersRef.current;
     return () => {
       // Close all peer connections
-      peersRef.current.forEach(peer => {
+      currentPeers.forEach(peer => {
         peer.connection.close();
       });
-      peersRef.current.clear();
+      currentPeers.clear();
       setPeers(new Map());
 
       // Close guest connection

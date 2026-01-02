@@ -5,12 +5,13 @@ from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import CurrentProfile, DbSession
+from app.api.ratelimit import limiter, CHAT_RATE_LIMIT
 from app.services.app_settings import get_app_settings_service
 from app.services.llm import LLMService
 
@@ -42,14 +43,31 @@ async def get_chat_status() -> dict[str, Any]:
 
 class ChatMessage(BaseModel):
     """A single chat message."""
-    role: str  # "user" or "assistant"
-    content: str
+    role: str = Field(..., pattern=r"^(user|assistant)$")
+    content: str = Field(..., max_length=50000)
 
 
 class ChatRequest(BaseModel):
     """Chat request body."""
-    message: str
-    history: list[ChatMessage] = []
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="User message, max 10,000 characters"
+    )
+    history: list[ChatMessage] = Field(
+        default=[],
+        max_length=100,
+        description="Chat history, max 100 messages"
+    )
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, v: str) -> str:
+        """Ensure message is not just whitespace."""
+        if not v.strip():
+            raise ValueError("Message cannot be empty or whitespace only")
+        return v
 
 
 async def generate_sse_events(
@@ -72,8 +90,10 @@ async def generate_sse_events(
 
 
 @router.post("/stream")
+@limiter.limit(CHAT_RATE_LIMIT)
 async def chat_stream(
-    request: ChatRequest,
+    request: Request,
+    chat_request: ChatRequest,
     db: DbSession,
     profile: CurrentProfile,
 ) -> StreamingResponse:
@@ -105,11 +125,11 @@ async def chat_stream(
         )
 
     # Convert history to format expected by LLM service
-    history = [{"role": msg.role, "content": msg.content} for msg in request.history]
+    history = [{"role": msg.role, "content": msg.content} for msg in chat_request.history]
     profile_id = profile.id if profile else None
 
     return StreamingResponse(
-        generate_sse_events(request.message, history, db, profile_id),
+        generate_sse_events(chat_request.message, history, db, profile_id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -120,8 +140,10 @@ async def chat_stream(
 
 
 @router.post("")
+@limiter.limit(CHAT_RATE_LIMIT)
 async def chat(
-    request: ChatRequest,
+    request: Request,
+    chat_request: ChatRequest,
     db: DbSession,
     profile: CurrentProfile,
 ) -> dict[str, Any]:
@@ -147,7 +169,7 @@ async def chat(
         )
 
     llm_service = LLMService()  # type: ignore[no-untyped-call]
-    history = [{"role": msg.role, "content": msg.content} for msg in request.history]
+    history = [{"role": msg.role, "content": msg.content} for msg in chat_request.history]
     profile_id = profile.id if profile else None
 
     response_text = ""
@@ -155,7 +177,7 @@ async def chat(
     queued_tracks = []
     playback_action = None
 
-    async for event in llm_service.chat(request.message, history, db, profile_id):  # type: ignore[no-untyped-call]
+    async for event in llm_service.chat(chat_request.message, history, db, profile_id):  # type: ignore[no-untyped-call]
         if event["type"] == "text":
             response_text += event["content"]
         elif event["type"] == "tool_call":

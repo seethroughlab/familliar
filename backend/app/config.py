@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     turn_server_credential: str | None = None
 
     # Development
-    debug: bool = True
+    debug: bool = False  # Must be explicitly enabled for development
     log_level: str = "INFO"
 
     @property

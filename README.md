@@ -78,6 +78,21 @@ An open API for community-contributed audio visualizers. Create custom visualiza
 ### Additional LLM Providers
 Support for more AI providers beyond Claude and Ollama, including OpenAI (ChatGPT), Google Gemini, and other compatible APIs.
 
+### Library Browser Views
+Pluggable library views for exploring your music in new ways:
+- **Artist & Album views** - Browse by artist or album grid with artwork
+- **Timeline** - Visualize your library by year, see when music was released
+- **Mood Grid** - 2D scatter plot by energy and valence (happy/sad × calm/energetic)
+- **Music Map** - Spatial visualization where similar-sounding artists appear close together (powered by CLAP embeddings)
+- **Tempo Spectrum** - BPM distribution histogram for finding tracks at the right tempo
+
+### Metadata Editing
+Edit track metadata with changes written back to audio files:
+- Single and bulk editing of ID3 tags
+- Extended fields: composer, conductor, sort fields, lyrics
+- Artwork upload and management
+- MusicBrainz lookup for auto-populating metadata
+
 ## Quick Start (Docker)
 
 The easiest way to run Familiar is with Docker:

@@ -140,6 +140,23 @@ export function GuestListener() {
     }
   }, []);
 
+  // Cleanup connections
+  const cleanup = useCallback(() => {
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.srcObject = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setIsReceivingAudio(false);
+  }, []);
+
   // Handle WebSocket messages
   const handleMessage = useCallback((event: MessageEvent) => {
     const data = JSON.parse(event.data);
@@ -202,24 +219,7 @@ export function GuestListener() {
         setIsConnecting(false);
         break;
     }
-  }, [handleOffer, handleIceCandidate, send]);
-
-  // Cleanup connections
-  const cleanup = useCallback(() => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.srcObject = null;
-    }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
-    }
-    setIsReceivingAudio(false);
-  }, []);
+  }, [handleOffer, handleIceCandidate, send, cleanup]);
 
   // Join session
   const joinSession = useCallback(() => {

@@ -71,6 +71,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
         }
       })
       .catch(() => setLyrics(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when track ID changes
   }, [currentTrack?.id]);
 
   // Reset image error when track changes
@@ -99,6 +100,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
         <button
           onClick={onClose}
           className="p-2 hover:bg-white/10 rounded-full transition-colors"
+          aria-label="Close player"
         >
           <X className="w-6 h-6" />
         </button>
@@ -221,6 +223,8 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             className={`p-3 rounded-full transition-colors ${
               shuffle ? 'text-green-500' : 'text-zinc-400 hover:text-white'
             }`}
+            aria-label={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+            aria-pressed={shuffle}
           >
             <Shuffle className="w-5 h-5" />
           </button>
@@ -228,6 +232,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <button
             onClick={playPrevious}
             className="p-3 hover:bg-white/10 rounded-full transition-colors"
+            aria-label="Previous track"
           >
             <SkipBack className="w-7 h-7" fill="currentColor" />
           </button>
@@ -235,6 +240,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <button
             onClick={togglePlayPause}
             className="p-5 bg-white text-black rounded-full hover:scale-105 transition-transform shadow-lg"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
               <Pause className="w-8 h-8" fill="currentColor" />
@@ -246,6 +252,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <button
             onClick={playNext}
             className="p-3 hover:bg-white/10 rounded-full transition-colors"
+            aria-label="Next track"
           >
             <SkipForward className="w-7 h-7" fill="currentColor" />
           </button>
@@ -255,6 +262,8 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             className={`p-3 rounded-full transition-colors ${
               repeat !== 'off' ? 'text-green-500' : 'text-zinc-400 hover:text-white'
             }`}
+            aria-label={`Repeat: ${repeat}`}
+            aria-pressed={repeat !== 'off'}
           >
             <Repeat className="w-5 h-5" />
           </button>
@@ -265,6 +274,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 1)}
             className="p-2 text-zinc-400 hover:text-white transition-colors"
+            aria-label={volume === 0 ? 'Unmute' : 'Mute'}
           >
             {volume === 0 ? (
               <VolumeX className="w-5 h-5" />
@@ -280,6 +290,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             value={volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
             className="w-32 accent-white"
+            aria-label="Volume"
           />
         </div>
       </div>

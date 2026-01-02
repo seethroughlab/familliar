@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Play, Pause, Download, Check, Loader2, Heart } from 'lucide-react';
+import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
 import { tracksApi, favoritesApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useColumnStore, getVisibleColumns } from '../../stores/columnStore';
@@ -310,9 +310,23 @@ export function TrackList({ search, artist, album }: TrackListProps) {
   }
 
   if (!data?.items.length) {
+    // Different messages based on whether there's a filter applied
+    const hasFilters = search || artist || album;
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-zinc-500">No tracks found</div>
+      <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
+        {hasFilters ? (
+          <>
+            <Music className="w-12 h-12 mb-4 opacity-50" />
+            <p>No tracks match your search</p>
+            <p className="text-sm mt-1">Try adjusting your filters</p>
+          </>
+        ) : (
+          <>
+            <FolderOpen className="w-12 h-12 mb-4 opacity-50" />
+            <p>Your library is empty</p>
+            <p className="text-sm mt-1">Add music folders in Settings to get started</p>
+          </>
+        )}
       </div>
     );
   }

@@ -1,6 +1,5 @@
 """Familiar API - Main FastAPI application."""
 
-import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -12,8 +11,14 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.middleware.base import BaseHTTPMiddleware
+
+from app.api.exceptions import FamiliarError
+from app.api.ratelimit import limiter
+from app.logging_config import setup_logging, get_logger
 
 from app.api.routes import (
     bandcamp,
@@ -36,14 +41,9 @@ from app.api.routes import (
 from app.api.routes import settings as settings_routes
 from app.config import settings as app_config
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-    datefmt="%H:%M:%S",
-)
-
-logger = logging.getLogger(__name__)
+# Configure structured logging
+setup_logging()
+logger = get_logger(__name__)
 
 
 # Request ID middleware for tracing
@@ -177,15 +177,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Request ID middleware (must be added first to wrap everything)
 app.add_middleware(RequestIDMiddleware)
 
 # CORS middleware for frontend
+# Build allowed origins from FRONTEND_URL + localhost for development
+def _get_cors_origins() -> list[str]:
+    """Get CORS allowed origins from configuration."""
+    origins = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:4400",
+    ]
+    # Add configured frontend URL (for production)
+    if app_config.frontend_url:
+        origins.append(app_config.frontend_url)
+        # Also allow without trailing slash and with different protocols
+        url = app_config.frontend_url.rstrip("/")
+        if url not in origins:
+            origins.append(url)
+        # If http, also allow https variant
+        if url.startswith("http://"):
+            https_url = url.replace("http://", "https://", 1)
+            if https_url not in origins:
+                origins.append(https_url)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=_get_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -221,6 +248,25 @@ async def sqlalchemy_exception_handler(
         status_code=500,
         message="Database error",
         detail=str(exc) if app_config.debug else None,
+        request_id=request_id,
+    )
+
+
+@app.exception_handler(FamiliarError)
+async def familiar_exception_handler(
+    request: Request, exc: FamiliarError
+) -> JSONResponse:
+    """Handle custom Familiar exceptions."""
+    request_id = getattr(request.state, "request_id", None)
+    # Only log 500-level errors at error level
+    if exc.status_code >= 500:
+        logger.error(f"[{request_id}] {exc.__class__.__name__}: {exc.message}", exc_info=True)
+    else:
+        logger.warning(f"[{request_id}] {exc.__class__.__name__}: {exc.message}")
+    return create_error_response(
+        status_code=exc.status_code,
+        message=exc.message,
+        detail=exc.detail,
         request_id=request_id,
     )
 

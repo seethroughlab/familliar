@@ -3,6 +3,7 @@
  */
 import { db, type PendingAction } from '../db';
 import { getSelectedProfileId } from './profileService';
+import { logger } from '../utils/logger';
 
 type ActionType = 'scrobble' | 'now_playing' | 'sync_spotify';
 
@@ -168,9 +169,9 @@ export async function clearPendingActions(): Promise<void> {
  */
 export function initSyncListeners(): () => void {
   const handleOnline = async () => {
-    console.log('Back online, processing pending actions...');
+    logger.log('Back online, processing pending actions...');
     const result = await processPendingActions();
-    console.log(`Processed ${result.processed} actions, ${result.failed} failed`);
+    logger.log(`Processed ${result.processed} actions, ${result.failed} failed`);
   };
 
   window.addEventListener('online', handleOnline);

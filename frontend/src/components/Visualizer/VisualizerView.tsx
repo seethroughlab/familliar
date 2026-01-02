@@ -28,6 +28,7 @@ export function VisualizerView() {
         }
       })
       .catch(() => setLyrics(null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when track ID changes
   }, [currentTrack?.id]);
 
   // Track fullscreen state changes

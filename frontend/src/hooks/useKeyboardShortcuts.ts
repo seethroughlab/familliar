@@ -1,7 +1,7 @@
 /**
  * Global keyboard shortcuts for the music player.
  */
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { usePlayerStore } from '../stores/playerStore';
 
 interface ShortcutHandlers {
@@ -47,10 +47,12 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
   } = usePlayerStore();
 
   // Store previous volume for mute toggle
-  const previousVolumeRef = { current: volume > 0 ? volume : 1 };
-  if (volume > 0) {
-    previousVolumeRef.current = volume;
-  }
+  const previousVolumeRef = useRef(volume > 0 ? volume : 1);
+  useEffect(() => {
+    if (volume > 0) {
+      previousVolumeRef.current = volume;
+    }
+  }, [volume]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
