@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
+from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import ANALYSIS_VERSION, settings
 
@@ -672,6 +673,10 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
         logger.error(f"Analysis error for {track_id}: {error_msg}")
         _record_task_failure("analyze_track", error_msg, track_info)
         return {"error": error_msg, "status": "failed", "permanent": True}
+    except StaleDataError:
+        # Track was deleted during analysis (e.g., by library sync) - not an error
+        logger.info(f"Track {track_id} was deleted during analysis, skipping")
+        return {"status": "skipped", "reason": "track_deleted"}
     except Exception as e:
         error_msg = str(e)[:500]
         logger.error(f"Error analyzing track {track_id}: {error_msg}")

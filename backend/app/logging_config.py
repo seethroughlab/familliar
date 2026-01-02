@@ -2,15 +2,103 @@
 
 In development: Human-readable colored output
 In production: JSON-formatted logs for log aggregation systems
+
+Also provides an in-memory ring buffer of recent logs for diagnostics export.
 """
 
 import json
 import logging
 import sys
+import threading
+from collections import deque
 from datetime import UTC, datetime
 from typing import Any
 
 from app.config import settings
+
+# ============================================================================
+# In-Memory Log Buffer for Diagnostics
+# ============================================================================
+
+class LogBuffer:
+    """Thread-safe ring buffer for recent log entries.
+
+    Used to capture recent logs for diagnostics export when users report issues.
+    """
+
+    def __init__(self, maxlen: int = 500):
+        self._buffer: deque[dict[str, Any]] = deque(maxlen=maxlen)
+        self._lock = threading.Lock()
+
+    def add(self, entry: dict[str, Any]) -> None:
+        """Add a log entry to the buffer."""
+        with self._lock:
+            self._buffer.append(entry)
+
+    def get_entries(self, limit: int | None = None) -> list[dict[str, Any]]:
+        """Get log entries, optionally limited to the most recent N entries."""
+        with self._lock:
+            entries = list(self._buffer)
+        if limit and limit < len(entries):
+            entries = entries[-limit:]
+        return entries
+
+    def clear(self) -> None:
+        """Clear all entries from the buffer."""
+        with self._lock:
+            self._buffer.clear()
+
+
+# Global log buffer instance (500 entries ~= 10-15 minutes of activity)
+_log_buffer = LogBuffer(maxlen=500)
+
+
+class BufferedHandler(logging.Handler):
+    """Handler that writes log entries to the in-memory ring buffer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._formatter = logging.Formatter()
+
+    def emit(self, record: logging.LogRecord) -> None:
+        """Emit a log record to the buffer."""
+        try:
+            entry: dict[str, Any] = {
+                "timestamp": datetime.now(UTC).isoformat(),
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+            }
+
+            # Add request ID if present
+            if hasattr(record, "request_id"):
+                entry["request_id"] = record.request_id
+
+            # Add exception info if present
+            if record.exc_info:
+                entry["exception"] = self._formatter.formatException(record.exc_info)
+
+            _log_buffer.add(entry)
+        except Exception:
+            # Don't let buffer errors break logging
+            pass
+
+
+def get_recent_logs(limit: int = 500) -> list[dict[str, Any]]:
+    """Get recent log entries for diagnostics export.
+
+    Args:
+        limit: Maximum number of entries to return (default 500)
+
+    Returns:
+        List of log entry dicts with timestamp, level, logger, message
+    """
+    return _log_buffer.get_entries(limit)
+
+
+# ============================================================================
+# Log Formatters
+# ============================================================================
 
 
 class JSONFormatter(logging.Formatter):
@@ -113,6 +201,11 @@ def setup_logging() -> None:
     handler.setLevel(log_level)
     handler.setFormatter(formatter)
     root_logger.addHandler(handler)
+
+    # Add buffered handler for diagnostics export
+    buffered_handler = BufferedHandler()
+    buffered_handler.setLevel(logging.DEBUG)  # Capture all levels for diagnostics
+    root_logger.addHandler(buffered_handler)
 
     # Reduce noise from third-party libraries
     logging.getLogger("httpx").setLevel(logging.WARNING)

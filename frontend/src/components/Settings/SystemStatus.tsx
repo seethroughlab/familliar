@@ -11,12 +11,19 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
+  Bug,
+  Copy,
+  Check,
+  ExternalLink,
+  X,
 } from 'lucide-react';
 import {
   healthApi,
+  diagnosticsApi,
   type SystemHealth,
   type ServiceStatus,
   type WorkerStatus,
+  type DiagnosticsExport,
 } from '../../api/client';
 
 export function SystemStatus() {
@@ -25,6 +32,10 @@ export function SystemStatus() {
   const [isLoading, setIsLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsExport | null>(null);
+  const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fetchHealth = useCallback(async () => {
     try {
@@ -49,6 +60,130 @@ export function SystemStatus() {
     const interval = setInterval(fetchHealth, isExpanded ? 10000 : 30000);
     return () => clearInterval(interval);
   }, [fetchHealth, isExpanded]);
+
+  const handleReportIssue = async () => {
+    setShowReportModal(true);
+    setIsLoadingDiagnostics(true);
+    setCopied(false);
+    try {
+      const data = await diagnosticsApi.export();
+      setDiagnostics(data);
+    } catch (err) {
+      console.error('Failed to fetch diagnostics:', err);
+    } finally {
+      setIsLoadingDiagnostics(false);
+    }
+  };
+
+  const formatDiagnosticsMarkdown = (diag: DiagnosticsExport): string => {
+    const lines: string[] = [];
+
+    lines.push('## Bug Report\n');
+    lines.push('**Description:**');
+    lines.push('[Please describe what happened and what you expected to happen]\n');
+
+    lines.push('## System Information\n');
+    lines.push(`- **Familiar Version:** ${diag.version}`);
+    lines.push(`- **Deployment:** ${diag.deployment_mode}`);
+    lines.push(`- **Exported:** ${new Date(diag.exported_at).toLocaleString()}`);
+
+    // System info (OS, hardware, etc.)
+    const sysInfo = diag.system_info as Record<string, unknown>;
+    if (sysInfo) {
+      if (sysInfo.os) lines.push(`- **OS:** ${sysInfo.os} ${sysInfo.os_version || ''}`);
+      if (sysInfo.os_detail) lines.push(`- **Platform:** ${sysInfo.os_detail}`);
+      if (sysInfo.architecture) lines.push(`- **Architecture:** ${sysInfo.architecture}`);
+      if (sysInfo.python_version) lines.push(`- **Python:** ${sysInfo.python_version}`);
+      if (sysInfo.cpu_count) lines.push(`- **CPU Cores:** ${sysInfo.cpu_count}`);
+      if (sysInfo.memory_total_gb) {
+        lines.push(`- **Memory:** ${sysInfo.memory_available_gb}GB available / ${sysInfo.memory_total_gb}GB total (${sysInfo.memory_percent_used}% used)`);
+      }
+      if (sysInfo.docker !== undefined) lines.push(`- **Docker:** ${sysInfo.docker ? 'Yes' : 'No'}`);
+    }
+    lines.push('');
+
+    // System Health
+    const health = diag.system_health as { status?: string; services?: Array<{ name: string; status: string; message?: string }>; warnings?: string[] };
+    if (health && health.status) {
+      lines.push('## System Health\n');
+      lines.push(`**Status:** ${health.status}\n`);
+
+      if (health.services && health.services.length > 0) {
+        lines.push('| Service | Status | Message |');
+        lines.push('|---------|--------|---------|');
+        for (const svc of health.services) {
+          lines.push(`| ${svc.name} | ${svc.status} | ${svc.message || '-'} |`);
+        }
+        lines.push('');
+      }
+
+      if (health.warnings && health.warnings.length > 0) {
+        lines.push('**Warnings:**');
+        for (const warning of health.warnings) {
+          lines.push(`- ${warning}`);
+        }
+        lines.push('');
+      }
+    }
+
+    // Library Stats
+    const libStats = diag.library_stats as { total_tracks?: number; analyzed_tracks?: number; pending_analysis?: number };
+    if (libStats && libStats.total_tracks !== undefined) {
+      lines.push('## Library Statistics\n');
+      lines.push(`- Total tracks: ${libStats.total_tracks?.toLocaleString() || 0}`);
+      lines.push(`- Analyzed: ${libStats.analyzed_tracks?.toLocaleString() || 0}`);
+      lines.push(`- Pending: ${libStats.pending_analysis?.toLocaleString() || 0}\n`);
+    }
+
+    // Settings Summary
+    const settings = diag.settings_summary as Record<string, unknown>;
+    if (settings && !settings.error) {
+      lines.push('## Configuration\n');
+      lines.push(`- LLM Provider: ${settings.llm_provider || 'not set'}`);
+      lines.push(`- Anthropic API Key: ${settings.has_anthropic_key ? 'configured' : 'not configured'}`);
+      lines.push(`- Spotify: ${settings.has_spotify_credentials ? 'configured' : 'not configured'}`);
+      lines.push(`- Last.fm: ${settings.has_lastfm_key ? 'configured' : 'not configured'}`);
+      lines.push(`- Library paths: ${settings.library_paths_count || 0}\n`);
+    }
+
+    // Recent Failures
+    if (diag.recent_failures && diag.recent_failures.length > 0) {
+      lines.push('<details>');
+      lines.push(`<summary>Recent Errors (${diag.recent_failures.length})</summary>\n`);
+      lines.push('```json');
+      lines.push(JSON.stringify(diag.recent_failures, null, 2));
+      lines.push('```');
+      lines.push('</details>\n');
+    }
+
+    // Recent Logs
+    if (diag.recent_logs && diag.recent_logs.length > 0) {
+      lines.push('<details>');
+      lines.push(`<summary>Recent Logs (${diag.recent_logs.length} entries)</summary>\n`);
+      lines.push('```');
+      for (const log of diag.recent_logs.slice(-50)) { // Last 50 for readability
+        const entry = log as { timestamp?: string; level?: string; logger?: string; message?: string };
+        const time = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : '';
+        lines.push(`[${time}] ${entry.level} [${entry.logger}] ${entry.message}`);
+      }
+      lines.push('```');
+      lines.push('</details>\n');
+    }
+
+    return lines.join('\n');
+  };
+
+  const handleCopy = async () => {
+    if (!diagnostics) return;
+    const markdown = formatDiagnosticsMarkdown(diagnostics);
+    await navigator.clipboard.writeText(markdown);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const openGitHubIssues = () => {
+    window.open('https://github.com/seethroughlab/familliar/issues/new', '_blank');
+  };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -345,6 +480,88 @@ export function SystemStatus() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Report Issue Button */}
+      <div className="mt-4 pt-4 border-t border-zinc-700">
+        <button
+          onClick={handleReportIssue}
+          className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-700/50 rounded transition-colors"
+        >
+          <Bug className="w-4 h-4" />
+          Report Issue
+        </button>
+      </div>
+
+      {/* Report Issue Modal */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-xl border border-zinc-700">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-zinc-700">
+              <h3 className="text-lg font-medium text-white">Report Issue</h3>
+              <button
+                onClick={() => setShowReportModal(false)}
+                className="p-2 hover:bg-zinc-700 rounded transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-auto p-4">
+              {isLoadingDiagnostics ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+                </div>
+              ) : diagnostics ? (
+                <div className="space-y-4">
+                  <p className="text-sm text-zinc-400">
+                    Copy the diagnostic information below and paste it into a new GitHub issue.
+                    Please add a description of the problem you encountered.
+                  </p>
+                  <div className="bg-zinc-800 rounded-lg p-4 max-h-[40vh] overflow-auto">
+                    <pre className="text-xs text-zinc-300 whitespace-pre-wrap font-mono">
+                      {formatDiagnosticsMarkdown(diagnostics)}
+                    </pre>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-zinc-400">
+                  Failed to load diagnostics
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between p-4 border-t border-zinc-700 gap-3">
+              <button
+                onClick={openGitHubIssues}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open GitHub Issues
+              </button>
+              <button
+                onClick={handleCopy}
+                disabled={!diagnostics}
+                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors text-white font-medium"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    Copy to Clipboard
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

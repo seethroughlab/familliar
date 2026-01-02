@@ -22,6 +22,7 @@ from app.api.ratelimit import limiter
 from app.api.routes import (
     bandcamp,
     chat,
+    diagnostics,
     favorites,
     health,
     lastfm,
@@ -301,6 +302,7 @@ app.include_router(organizer.router, prefix="/api/v1")
 app.include_router(bandcamp.router, prefix="/api/v1")
 app.include_router(outputs.router, prefix="/api/v1")
 app.include_router(new_releases.router, prefix="/api/v1")
+app.include_router(diagnostics.router, prefix="/api/v1")
 
 
 # Serve frontend static files in production

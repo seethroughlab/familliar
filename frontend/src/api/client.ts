@@ -936,6 +936,26 @@ export const healthApi = {
   },
 };
 
+// Diagnostics API
+export interface DiagnosticsExport {
+  exported_at: string;
+  version: string;
+  deployment_mode: string;
+  system_info: Record<string, unknown>;
+  system_health: Record<string, unknown>;
+  library_stats: Record<string, unknown>;
+  recent_failures: Array<Record<string, unknown>>;
+  recent_logs: Array<Record<string, unknown>>;
+  settings_summary: Record<string, unknown>;
+}
+
+export const diagnosticsApi = {
+  export: async (): Promise<DiagnosticsExport> => {
+    const { data } = await api.get('/diagnostics/export');
+    return data;
+  },
+};
+
 // New Releases API
 export interface NewReleasePurchaseLink {
   name: string;
