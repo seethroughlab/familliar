@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, Settings, Zap, Activity, MessageSquare, X, Loader2 } from 'lucide-react';
 import { logger } from './utils/logger';
 import { PlayerBar } from './components/Player/PlayerBar';
-import { TrackList } from './components/Library/TrackList';
+import { LibraryView } from './components/Library';
 import { ChatPanel } from './components/Chat';
 import { InstallPrompt } from './components/PWA/InstallPrompt';
 import { OfflineIndicator } from './components/PWA/OfflineIndicator';
@@ -283,8 +283,8 @@ function AppContent() {
           {/* Content */}
           <main className={`flex-1 overflow-y-auto ${resolvedTheme === 'light' ? 'bg-gradient-to-b from-zinc-50 to-white' : 'bg-gradient-to-b from-zinc-900 to-black'}`}>
             {rightPanelTab === 'library' && (
-              <div className="px-4 py-6">
-                <TrackList search={search || undefined} />
+              <div className="h-full">
+                <LibraryView initialSearch={search || undefined} />
               </div>
             )}
             {rightPanelTab === 'playlists' && (

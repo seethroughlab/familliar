@@ -1,222 +1,442 @@
 /**
- * Cosmic Orb Visualizer - Abstract audio-reactive orb with particles.
+ * Cosmic Orb Visualizer - Enhanced with GPU particles and post-processing.
+ *
+ * Features:
+ * - 5000 GPU-instanced particles with curl noise motion
+ * - Custom orb shader with Fresnel rim glow and vertex displacement
+ * - Post-processing: bloom, chromatic aberration, noise, vignette
+ * - 256-segment circular waveform with glow
  */
 import { useRef, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Canvas, useFrame, extend } from '@react-three/fiber';
+import { OrbitControls, shaderMaterial } from '@react-three/drei';
 import * as THREE from 'three';
-import { useAudioAnalyser } from '../../../hooks/useAudioAnalyser';
+import { useAudioAnalyser, getAudioData } from '../../../hooks/useAudioAnalyser';
 import { registerVisualizer, type VisualizerProps } from '../types';
+import { AudioReactiveEffects } from '../effects/AudioReactiveEffects';
+import { GPUParticles } from '../effects/GPUParticles';
 
-// Circular waveform visualization
+// Custom orb shader with Fresnel glow and vertex displacement
+const OrbMaterial = shaderMaterial(
+  {
+    uTime: 0,
+    uBass: 0,
+    uMid: 0,
+    uTreble: 0,
+    uIntensity: 0,
+    uColor: new THREE.Color('#4a00e0'),
+    uEmissive: new THREE.Color('#8e2de2'),
+  },
+  // Vertex shader
+  `
+    uniform float uTime;
+    uniform float uBass;
+    uniform float uMid;
+
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying float vDisplacement;
+
+    // Simplex noise
+    vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+    vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+    vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+
+    float snoise(vec3 v) {
+      const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+      const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+
+      vec3 i = floor(v + dot(v, C.yyy));
+      vec3 x0 = v - i + dot(i, C.xxx);
+
+      vec3 g = step(x0.yzx, x0.xyz);
+      vec3 l = 1.0 - g;
+      vec3 i1 = min(g.xyz, l.zxy);
+      vec3 i2 = max(g.xyz, l.zxy);
+
+      vec3 x1 = x0 - i1 + C.xxx;
+      vec3 x2 = x0 - i2 + C.yyy;
+      vec3 x3 = x0 - D.yyy;
+
+      i = mod289(i);
+      vec4 p = permute(permute(permute(
+        i.z + vec4(0.0, i1.z, i2.z, 1.0))
+        + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+        + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+
+      float n_ = 0.142857142857;
+      vec3 ns = n_ * D.wyz - D.xzx;
+
+      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+
+      vec4 x_ = floor(j * ns.z);
+      vec4 y_ = floor(j - 7.0 * x_);
+
+      vec4 x = x_ *ns.x + ns.yyyy;
+      vec4 y = y_ *ns.x + ns.yyyy;
+      vec4 h = 1.0 - abs(x) - abs(y);
+
+      vec4 b0 = vec4(x.xy, y.xy);
+      vec4 b1 = vec4(x.zw, y.zw);
+
+      vec4 s0 = floor(b0)*2.0 + 1.0;
+      vec4 s1 = floor(b1)*2.0 + 1.0;
+      vec4 sh = -step(h, vec4(0.0));
+
+      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+
+      vec3 p0 = vec3(a0.xy, h.x);
+      vec3 p1 = vec3(a0.zw, h.y);
+      vec3 p2 = vec3(a1.xy, h.z);
+      vec3 p3 = vec3(a1.zw, h.w);
+
+      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+      p0 *= norm.x;
+      p1 *= norm.y;
+      p2 *= norm.z;
+      p3 *= norm.w;
+
+      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+      m = m * m;
+      return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+    }
+
+    void main() {
+      vNormal = normalize(normalMatrix * normal);
+      vPosition = position;
+
+      // Multi-octave noise displacement
+      float noise1 = snoise(position * 2.0 + uTime * 0.5);
+      float noise2 = snoise(position * 4.0 - uTime * 0.3) * 0.5;
+      float noise3 = snoise(position * 8.0 + uTime * 0.7) * 0.25;
+
+      float displacement = (noise1 + noise2 + noise3) * (0.1 + uBass * 0.3);
+      vDisplacement = displacement;
+
+      vec3 newPosition = position + normal * displacement;
+
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(newPosition, 1.0);
+    }
+  `,
+  // Fragment shader
+  `
+    uniform float uTime;
+    uniform float uBass;
+    uniform float uMid;
+    uniform float uTreble;
+    uniform float uIntensity;
+    uniform vec3 uColor;
+    uniform vec3 uEmissive;
+
+    varying vec3 vNormal;
+    varying vec3 vPosition;
+    varying float vDisplacement;
+
+    void main() {
+      // Fresnel rim lighting
+      vec3 viewDirection = normalize(cameraPosition - vPosition);
+      float fresnel = pow(1.0 - dot(viewDirection, vNormal), 3.0);
+      fresnel = fresnel * (0.5 + uTreble * 0.5);
+
+      // Base color with displacement influence
+      vec3 baseColor = mix(uColor, uEmissive, vDisplacement * 2.0 + 0.5);
+
+      // Emissive glow based on audio
+      float emissiveStrength = 0.3 + uIntensity * 0.7 + uBass * 0.5;
+      vec3 emissiveColor = uEmissive * emissiveStrength;
+
+      // Rim glow color (cyan)
+      vec3 rimColor = vec3(0.0, 1.0, 1.0) * fresnel * (1.0 + uBass);
+
+      // Combine
+      vec3 finalColor = baseColor * 0.3 + emissiveColor + rimColor;
+
+      // Add pulsing based on mid frequencies
+      finalColor += uEmissive * uMid * 0.3 * sin(uTime * 10.0 + vPosition.y * 5.0);
+
+      gl_FragColor = vec4(finalColor, 1.0);
+    }
+  `
+);
+
+extend({ OrbMaterial });
+
+// Declare the JSX element type
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      orbMaterial: THREE.ShaderMaterial & {
+        uTime?: number;
+        uBass?: number;
+        uMid?: number;
+        uTreble?: number;
+        uIntensity?: number;
+        uColor?: THREE.Color;
+        uEmissive?: THREE.Color;
+      };
+    }
+  }
+}
+
+// Enhanced circular waveform with glow
 function CircularWaveform() {
-  const meshRef = useRef<THREE.LineSegments>(null);
+  const meshRef = useRef<THREE.Line>(null);
   const audioData = useAudioAnalyser(true);
+  const timeRef = useRef(0);
 
   const geometry = useMemo(() => {
-    const segments = 128;
+    const segments = 256;
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(segments * 3);
-    const indices: number[] = [];
 
     for (let i = 0; i < segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
       positions[i * 3] = Math.cos(angle) * 2;
       positions[i * 3 + 1] = Math.sin(angle) * 2;
       positions[i * 3 + 2] = 0;
-
-      if (i < segments - 1) {
-        indices.push(i, i + 1);
-      } else {
-        indices.push(i, 0);
-      }
     }
 
     geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setIndex(indices);
     return geo;
   }, []);
 
-  useFrame(() => {
-    if (!audioData || !meshRef.current) return;
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    timeRef.current += delta;
 
+    const audioData = getAudioData();
     const positions = meshRef.current.geometry.attributes.position;
-    const { frequencyData, bass } = audioData;
+    const frequencyData = audioData?.frequencyData;
+    const bass = audioData?.bass ?? 0;
     const segments = positions.count;
 
     for (let i = 0; i < segments; i++) {
-      const dataIndex = Math.floor((i / segments) * frequencyData.length);
-      const value = frequencyData[dataIndex] / 255;
+      const dataIndex = frequencyData
+        ? Math.floor((i / segments) * frequencyData.length)
+        : 0;
+      const value = frequencyData ? frequencyData[dataIndex] / 255 : 0;
       const angle = (i / segments) * Math.PI * 2;
-      const radius = 1.5 + value * 1.5 + bass * 0.5;
 
-      positions.setXY(i, Math.cos(angle) * radius, Math.sin(angle) * radius);
+      // Add secondary wave oscillation
+      const wave = Math.sin(timeRef.current * 3 + i * 0.1) * 0.1 * (1 + bass);
+      const radius = 1.5 + value * 1.5 + bass * 0.5 + wave;
+
+      positions.setXYZ(i, Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
     }
     positions.needsUpdate = true;
 
-    // Rotate based on bass
+    // Rotate
     meshRef.current.rotation.z += 0.002 + bass * 0.01;
   });
 
   return (
-    <lineSegments ref={meshRef} geometry={geometry}>
-      <lineBasicMaterial color="#00ffff" linewidth={2} />
-    </lineSegments>
+    <line ref={meshRef} geometry={geometry}>
+      <lineBasicMaterial
+        color="#00ffff"
+        linewidth={2}
+        transparent
+        opacity={0.9}
+      />
+    </line>
   );
 }
 
-// Central orb that reacts to audio
+// Second waveform ring with phase offset
+function SecondaryWaveform() {
+  const meshRef = useRef<THREE.Line>(null);
+  const audioData = useAudioAnalyser(true);
+  const timeRef = useRef(0);
+
+  const geometry = useMemo(() => {
+    const segments = 256;
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(segments * 3);
+
+    for (let i = 0; i < segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      positions[i * 3] = Math.cos(angle) * 2.5;
+      positions[i * 3 + 1] = Math.sin(angle) * 2.5;
+      positions[i * 3 + 2] = 0;
+    }
+
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    return geo;
+  }, []);
+
+  useFrame((_, delta) => {
+    if (!meshRef.current) return;
+    timeRef.current += delta;
+
+    const audioData = getAudioData();
+    const positions = meshRef.current.geometry.attributes.position;
+    const frequencyData = audioData?.frequencyData;
+    const mid = audioData?.mid ?? 0;
+    const segments = positions.count;
+
+    for (let i = 0; i < segments; i++) {
+      const dataIndex = frequencyData
+        ? Math.floor(((i + segments / 2) % segments / segments) * frequencyData.length)
+        : 0;
+      const value = frequencyData ? frequencyData[dataIndex] / 255 : 0;
+      const angle = (i / segments) * Math.PI * 2;
+
+      const wave = Math.cos(timeRef.current * 2 + i * 0.15) * 0.15 * (1 + mid);
+      const radius = 2 + value * 1.2 + mid * 0.3 + wave;
+
+      positions.setXYZ(i, Math.cos(angle) * radius, Math.sin(angle) * radius, 0);
+    }
+    positions.needsUpdate = true;
+
+    // Counter-rotate
+    meshRef.current.rotation.z -= 0.001 + mid * 0.005;
+  });
+
+  return (
+    <line ref={meshRef} geometry={geometry}>
+      <lineBasicMaterial
+        color="#a855f7"
+        linewidth={1}
+        transparent
+        opacity={0.6}
+      />
+    </line>
+  );
+}
+
+// Central orb with custom shader
 function ReactiveOrb() {
   const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<THREE.ShaderMaterial>(null);
   const audioData = useAudioAnalyser(true);
 
-  useFrame(() => {
-    if (!audioData || !meshRef.current) return;
+  useFrame((_, delta) => {
+    if (!materialRef.current) return;
 
-    const { bass, mid, treble, averageFrequency } = audioData;
-    const intensity = averageFrequency / 255;
+    const audioData = getAudioData();
+    const bass = audioData?.bass ?? 0;
+    const mid = audioData?.mid ?? 0;
+    const treble = audioData?.treble ?? 0;
+    const intensity = (audioData?.averageFrequency ?? 0) / 255;
+
+    // Update shader uniforms
+    materialRef.current.uniforms.uTime.value += delta;
+    materialRef.current.uniforms.uBass.value = bass;
+    materialRef.current.uniforms.uMid.value = mid;
+    materialRef.current.uniforms.uTreble.value = treble;
+    materialRef.current.uniforms.uIntensity.value = intensity;
 
     // Scale based on bass
-    const targetScale = 1 + bass * 0.5;
-    meshRef.current.scale.setScalar(
-      THREE.MathUtils.lerp(meshRef.current.scale.x, targetScale, 0.1)
-    );
-
-    // Rotate based on mid frequencies
-    meshRef.current.rotation.x += 0.01 + mid * 0.02;
-    meshRef.current.rotation.y += 0.015 + treble * 0.02;
-
-    // Update material
-    const material = meshRef.current.material as THREE.MeshStandardMaterial;
-    material.emissiveIntensity = 0.3 + intensity * 0.7;
+    if (meshRef.current) {
+      const targetScale = 1 + bass * 0.3;
+      meshRef.current.scale.setScalar(
+        THREE.MathUtils.lerp(meshRef.current.scale.x, targetScale, 0.1)
+      );
+      meshRef.current.rotation.x += 0.005 + mid * 0.01;
+      meshRef.current.rotation.y += 0.008 + treble * 0.01;
+    }
   });
 
   return (
     <mesh ref={meshRef}>
-      <icosahedronGeometry args={[0.8, 2]} />
-      <meshStandardMaterial
-        color="#4a00e0"
-        emissive="#8e2de2"
-        emissiveIntensity={0.5}
-        wireframe
-      />
-    </mesh>
-  );
-}
-
-// Particle field
-function ParticleField() {
-  const pointsRef = useRef<THREE.Points>(null);
-  const audioData = useAudioAnalyser(true);
-
-  const { positions, colors } = useMemo(() => {
-    const count = 500;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-
-    for (let i = 0; i < count; i++) {
-      // Distribute in a sphere
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-      const radius = 3 + Math.random() * 2;
-
-      positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-      positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-      positions[i * 3 + 2] = radius * Math.cos(phi);
-
-      // Random colors in blue-purple range
-      const hue = 0.6 + Math.random() * 0.2;
-      const color = new THREE.Color().setHSL(hue, 0.8, 0.5);
-      colors[i * 3] = color.r;
-      colors[i * 3 + 1] = color.g;
-      colors[i * 3 + 2] = color.b;
-    }
-
-    return { positions, colors };
-  }, []);
-
-  useFrame(() => {
-    if (!audioData || !pointsRef.current) return;
-
-    const { bass, treble } = audioData;
-
-    // Rotate the entire field
-    pointsRef.current.rotation.y += 0.001 + bass * 0.005;
-    pointsRef.current.rotation.x += 0.0005 + treble * 0.002;
-
-    // Pulse size based on bass
-    const material = pointsRef.current.material as THREE.PointsMaterial;
-    material.size = 0.03 + bass * 0.05;
-  });
-
-  return (
-    <points ref={pointsRef}>
-      <bufferGeometry>
-        <bufferAttribute
-          attach="attributes-position"
-          args={[positions, 3]}
-        />
-        <bufferAttribute
-          attach="attributes-color"
-          args={[colors, 3]}
-        />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.05}
-        vertexColors
+      <icosahedronGeometry args={[0.8, 4]} />
+      <orbMaterial
+        ref={materialRef}
         transparent
-        opacity={0.8}
-        sizeAttenuation
+        side={THREE.DoubleSide}
       />
-    </points>
-  );
-}
-
-// Background gradient plane
-function BackgroundGradient() {
-  const audioData = useAudioAnalyser(true);
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  useFrame(() => {
-    if (!audioData || !meshRef.current) return;
-
-    const { bass } = audioData;
-    const material = meshRef.current.material as THREE.MeshBasicMaterial;
-
-    // Subtle color shift based on bass
-    const hue = 0.7 + bass * 0.1;
-    material.color.setHSL(hue, 0.3, 0.05 + bass * 0.02);
-  });
-
-  return (
-    <mesh ref={meshRef} position={[0, 0, -10]}>
-      <planeGeometry args={[50, 50]} />
-      <meshBasicMaterial color="#0a0015" />
     </mesh>
   );
 }
 
-// Main visualizer scene
+// Inner glowing core
+function GlowingCore() {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const audioData = useAudioAnalyser(true);
+
+  useFrame(() => {
+    if (!meshRef.current) return;
+
+    const audioData = getAudioData();
+    const bass = audioData?.bass ?? 0;
+    const scale = 0.3 + bass * 0.2;
+    meshRef.current.scale.setScalar(scale);
+
+    const material = meshRef.current.material as THREE.MeshBasicMaterial;
+    material.opacity = 0.5 + bass * 0.5;
+  });
+
+  return (
+    <mesh ref={meshRef}>
+      <sphereGeometry args={[1, 32, 32]} />
+      <meshBasicMaterial
+        color="#ffffff"
+        transparent
+        opacity={0.5}
+      />
+    </mesh>
+  );
+}
+
+// Main visualizer scene with all effects
 function CosmicOrbScene() {
+  const audioData = useAudioAnalyser(true);
+
   return (
     <>
-      <color attach="background" args={['#0a0015']} />
-      <ambientLight intensity={0.3} />
-      <pointLight position={[10, 10, 10]} intensity={1} />
-      <pointLight position={[-10, -10, 5]} intensity={0.5} color="#4a00e0" />
+      <color attach="background" args={['#050510']} />
+      <ambientLight intensity={0.2} />
+      <pointLight position={[10, 10, 10]} intensity={1} color="#a855f7" />
+      <pointLight position={[-10, -10, 5]} intensity={0.8} color="#06b6d4" />
 
+      <GlowingCore />
       <ReactiveOrb />
       <CircularWaveform />
-      <ParticleField />
-      <BackgroundGradient />
+      <SecondaryWaveform />
+
+      {/* GPU Particles - 5000 particles orbiting */}
+      <GPUParticles
+        count={5000}
+        size={0.015}
+        color="#a855f7"
+        secondaryColor="#06b6d4"
+        spread={5}
+        speed={0.8}
+        audioData={audioData}
+        behavior="orbit"
+        opacity={0.7}
+      />
+
+      {/* Second particle layer with different behavior */}
+      <GPUParticles
+        count={2000}
+        size={0.01}
+        color="#06b6d4"
+        secondaryColor="#22c55e"
+        spread={6}
+        speed={0.5}
+        audioData={audioData}
+        behavior="flow"
+        opacity={0.5}
+      />
 
       <OrbitControls
         enableZoom={false}
         enablePan={false}
         autoRotate
-        autoRotateSpeed={0.5}
+        autoRotateSpeed={0.3}
         maxPolarAngle={Math.PI / 1.5}
         minPolarAngle={Math.PI / 3}
+      />
+
+      {/* Post-processing effects */}
+      <AudioReactiveEffects
+        enableBloom
+        enableVignette
+        bloomIntensity={1.2}
+        bloomThreshold={0.6}
+        vignetteIntensity={0.4}
       />
     </>
   );
@@ -227,7 +447,8 @@ export function CosmicOrb(_props: VisualizerProps) {
     <div className="w-full h-full">
       <Canvas
         camera={{ position: [0, 0, 6], fov: 60 }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
+        dpr={[1, 2]}
       >
         <CosmicOrbScene />
       </Canvas>
@@ -240,7 +461,7 @@ registerVisualizer(
   {
     id: 'cosmic-orb',
     name: 'Cosmic Orb',
-    description: 'Abstract orb with particles and waveform',
+    description: 'Enhanced orb with GPU particles and effects',
     usesMetadata: false,
   },
   CosmicOrb

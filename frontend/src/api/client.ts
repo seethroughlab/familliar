@@ -53,6 +53,12 @@ export const tracksApi = {
     artist?: string;
     album?: string;
     genre?: string;
+    year_from?: number;
+    year_to?: number;
+    energy_min?: number;
+    energy_max?: number;
+    valence_min?: number;
+    valence_max?: number;
     include_features?: boolean;
   }): Promise<TrackListResponse> => {
     const { data } = await api.get('/tracks', { params });
@@ -369,9 +375,194 @@ export interface SyncStatus {
   progress: SyncProgress | null;
 }
 
+// Library Browser Types
+export interface ArtistSummary {
+  name: string;
+  track_count: number;
+  album_count: number;
+  first_track_id: string;
+}
+
+export interface ArtistListResponse {
+  items: ArtistSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// Artist Detail
+export interface ArtistAlbum {
+  name: string;
+  year: number | null;
+  track_count: number;
+  first_track_id: string;
+}
+
+export interface ArtistTrack {
+  id: string;
+  title: string | null;
+  album: string | null;
+  track_number: number | null;
+  duration_seconds: number | null;
+  year: number | null;
+}
+
+export interface ArtistDetailResponse {
+  name: string;
+  track_count: number;
+  album_count: number;
+  total_duration_seconds: number;
+
+  // From Last.fm
+  bio_summary: string | null;
+  bio_content: string | null;
+  image_url: string | null;
+  lastfm_url: string | null;
+  listeners: number | null;
+  playcount: number | null;
+  tags: string[];
+  similar_artists: Array<{
+    name: string;
+    url?: string;
+    image?: Array<{ size: string; '#text': string }>;
+  }>;
+
+  // Library content
+  albums: ArtistAlbum[];
+  tracks: ArtistTrack[];
+  first_track_id: string;
+
+  // Cache status
+  lastfm_fetched: boolean;
+  lastfm_error: string | null;
+}
+
+export interface AlbumSummary {
+  name: string;
+  artist: string;
+  year: number | null;
+  track_count: number;
+  first_track_id: string;
+}
+
+export interface AlbumListResponse {
+  items: AlbumSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+// Year Distribution (for Timeline browser)
+export interface YearCount {
+  year: number;
+  track_count: number;
+  album_count: number;
+  artist_count: number;
+}
+
+export interface YearDistributionResponse {
+  years: YearCount[];
+  total_with_year: number;
+  total_without_year: number;
+  min_year: number | null;
+  max_year: number | null;
+}
+
+// Mood Distribution (for MoodGrid browser)
+export interface MoodCell {
+  energy_min: number;
+  energy_max: number;
+  valence_min: number;
+  valence_max: number;
+  track_count: number;
+  sample_track_ids: string[];
+}
+
+export interface MoodDistributionResponse {
+  cells: MoodCell[];
+  grid_size: number;
+  total_with_mood: number;
+  total_without_mood: number;
+}
+
+// Music Map (for MusicMap browser)
+export interface MapNode {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  track_count: number;
+  first_track_id: string;
+}
+
+export interface MapEdge {
+  source: string;
+  target: string;
+  weight: number;
+}
+
+export interface MusicMapResponse {
+  nodes: MapNode[];
+  edges: MapEdge[];
+  entity_type: string;
+  total_entities: number;
+}
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
+    return data;
+  },
+
+  listArtists: async (params?: {
+    search?: string;
+    sort_by?: 'name' | 'track_count' | 'album_count';
+    page?: number;
+    page_size?: number;
+  }): Promise<ArtistListResponse> => {
+    const { data } = await api.get('/library/artists', { params });
+    return data;
+  },
+
+  getArtist: async (
+    artistName: string,
+    refreshLastfm = false
+  ): Promise<ArtistDetailResponse> => {
+    const { data } = await api.get(
+      `/library/artists/${encodeURIComponent(artistName)}`,
+      { params: { refresh_lastfm: refreshLastfm } }
+    );
+    return data;
+  },
+
+  listAlbums: async (params?: {
+    artist?: string;
+    search?: string;
+    sort_by?: 'name' | 'year' | 'track_count' | 'artist';
+    page?: number;
+    page_size?: number;
+  }): Promise<AlbumListResponse> => {
+    const { data } = await api.get('/library/albums', { params });
+    return data;
+  },
+
+  getYearDistribution: async (): Promise<YearDistributionResponse> => {
+    const { data } = await api.get('/library/years');
+    return data;
+  },
+
+  getMoodDistribution: async (gridSize = 10): Promise<MoodDistributionResponse> => {
+    const { data } = await api.get('/library/mood-distribution', {
+      params: { grid_size: gridSize },
+    });
+    return data;
+  },
+
+  getMusicMap: async (params?: {
+    entity_type?: 'artists' | 'albums';
+    limit?: number;
+  }): Promise<MusicMapResponse> => {
+    const { data } = await api.get('/library/map', { params });
     return data;
   },
 

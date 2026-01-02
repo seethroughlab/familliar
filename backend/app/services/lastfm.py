@@ -312,6 +312,47 @@ class LastfmService:
         except Exception:
             return []
 
+    async def get_artist_info(
+        self,
+        artist: str,
+        lang: str = "en",
+    ) -> dict[str, Any] | None:
+        """Get detailed artist info from Last.fm.
+
+        Returns artist data with: name, mbid, url, image, bio, stats, similar, tags.
+        This method does not require authentication (no session key needed).
+
+        Args:
+            artist: Artist name to look up
+            lang: ISO 639 alpha-2 language code for biography (default: en)
+
+        Returns:
+            Artist info dict or None if not found/error
+        """
+        if not self.is_configured():
+            return None
+
+        api_key, _ = self._get_credentials()
+        params = {
+            "method": "artist.getInfo",
+            "artist": artist,
+            "api_key": api_key,
+            "autocorrect": "1",
+            "lang": lang,
+            "format": "json",
+        }
+
+        try:
+            response = await self.client.get(self.API_URL, params=params)
+            data: dict[str, Any] = response.json()
+
+            if "error" in data:
+                return None
+
+            return data.get("artist")
+        except Exception:
+            return None
+
     async def close(self) -> None:
         """Close the HTTP client."""
         await self.client.aclose()

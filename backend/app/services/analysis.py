@@ -13,12 +13,13 @@ import numpy as np
 # Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
 # This allows the module to be imported on systems without torch
 _torch_available = False
+_torch_import_error: str | None = None
 if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() not in ("1", "true", "yes"):
     try:
         import torch
         _torch_available = True
-    except ImportError:
-        pass
+    except ImportError as e:
+        _torch_import_error = str(e)
 
 if TYPE_CHECKING:
     import torch  # For type hints only
@@ -95,6 +96,47 @@ def load_clap_model() -> tuple:  # Returns (model, processor)
         logger.info("CLAP model loaded successfully")
 
     return _clap_model, _clap_processor
+
+
+def get_analysis_capabilities() -> dict:
+    """Get current analysis capabilities and any issues.
+
+    Returns dict with:
+        - embeddings_enabled: bool - whether CLAP embeddings can be generated
+        - embeddings_disabled_reason: str | None - why embeddings are disabled
+        - features_enabled: bool - whether audio features can be extracted
+    """
+    embeddings_enabled = True
+    embeddings_disabled_reason = None
+
+    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+        embeddings_enabled = False
+        embeddings_disabled_reason = "Disabled via DISABLE_CLAP_EMBEDDINGS environment variable"
+    elif not _torch_available:
+        embeddings_enabled = False
+        embeddings_disabled_reason = f"PyTorch not available: {_torch_import_error or 'import failed'}"
+
+    return {
+        "embeddings_enabled": embeddings_enabled,
+        "embeddings_disabled_reason": embeddings_disabled_reason,
+        "features_enabled": True,  # librosa is always available
+    }
+
+
+def check_analysis_capabilities() -> None:
+    """Check and log analysis capabilities at startup.
+
+    Logs a warning if embeddings cannot be generated.
+    """
+    caps = get_analysis_capabilities()
+    if not caps["embeddings_enabled"]:
+        logger.warning(
+            f"CLAP embeddings DISABLED: {caps['embeddings_disabled_reason']}. "
+            "Audio similarity features (Music Map) will not work. "
+            "Install PyTorch to enable: uv add torch --optional analysis"
+        )
+    else:
+        logger.info("Analysis capabilities: features=enabled, embeddings=enabled")
 
 
 def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | None:

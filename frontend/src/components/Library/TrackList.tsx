@@ -18,6 +18,85 @@ interface TrackRowProps {
   gridColumns: string;
 }
 
+// Mobile card component for small screens
+function MobileTrackCard({
+  track,
+  index,
+  isCurrentTrack,
+  isPlaying,
+  onPlay,
+}: {
+  track: Track;
+  index: number;
+  isCurrentTrack: boolean;
+  isPlaying: boolean;
+  onPlay: () => void;
+}) {
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div
+      data-testid="track-row"
+      onClick={onPlay}
+      className={`group flex items-center gap-3 px-4 py-3 hover:bg-zinc-800/50 cursor-pointer border-b border-zinc-800/30 ${
+        isCurrentTrack ? 'bg-zinc-800/50' : ''
+      }`}
+    >
+      {/* Play button / index */}
+      <div className="w-8 flex-shrink-0 flex items-center justify-center">
+        <span className="group-hover:hidden text-zinc-400 text-sm">
+          {isCurrentTrack && isPlaying ? (
+            <div className="flex gap-0.5">
+              <div className="w-0.5 h-3 bg-green-500 animate-pulse" />
+              <div className="w-0.5 h-2 bg-green-500 animate-pulse delay-75" />
+              <div className="w-0.5 h-4 bg-green-500 animate-pulse delay-150" />
+            </div>
+          ) : (
+            index + 1
+          )}
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onPlay(); }}
+          className="hidden group-hover:flex items-center justify-center"
+        >
+          {isCurrentTrack && isPlaying ? (
+            <Pause className="w-4 h-4" fill="currentColor" />
+          ) : (
+            <Play className="w-4 h-4" fill="currentColor" />
+          )}
+        </button>
+      </div>
+
+      {/* Track info */}
+      <div className="flex-1 min-w-0">
+        <div className={`truncate font-medium ${isCurrentTrack ? 'text-green-500' : 'text-white'}`}>
+          {track.title || 'Unknown'}
+        </div>
+        <div className="text-sm text-zinc-400 truncate">
+          {track.artist || 'Unknown Artist'}
+          {track.album && <span className="text-zinc-500"> • {track.album}</span>}
+        </div>
+      </div>
+
+      {/* Duration */}
+      <div className="text-sm text-zinc-400 flex-shrink-0">
+        {formatDuration(track.duration_seconds)}
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        <FavoriteButton trackId={track.id} />
+        <OfflineButton trackId={track.id} />
+      </div>
+    </div>
+  );
+}
+
 function OfflineButton({ trackId }: { trackId: string }) {
   const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
 
@@ -333,62 +412,83 @@ export function TrackList({ search, artist, album }: TrackListProps) {
 
   return (
     <div>
-      {/* Header */}
-      <div
-        className="grid gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800"
-        style={{ gridTemplateColumns: gridColumns }}
-      >
-        <div>#</div>
-        <div>Title</div>
-        {visibleColumnIds.map((colId) => {
-          const colDef = getColumnDef(colId);
-          if (!colDef) return null;
-          const isDragging = draggedColId === colId;
-          const isDropTarget = dropTargetId === colId;
-          return (
-            <div
-              key={colId}
-              draggable
-              onDragStart={() => handleDragStart(colId)}
-              onDragOver={(e) => handleDragOver(e, colId)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, colId)}
-              onDragEnd={handleDragEnd}
-              className={`cursor-grab select-none ${
-                colDef.align === 'right' ? 'text-right' :
-                colDef.align === 'center' ? 'text-center' : ''
-              } ${isDragging ? 'opacity-50' : ''} ${
-                isDropTarget ? 'border-l-2 border-green-500' : ''
-              }`}
-              title={`${colDef.label} (drag to reorder)`}
-            >
-              {colDef.shortLabel || colDef.label}
-            </div>
-          );
-        })}
-        <div></div>
-        <div></div>
-      </div>
-
-      {/* Tracks */}
-      <div className="mt-2">
+      {/* Mobile view - card layout (visible below md breakpoint) */}
+      <div className="md:hidden">
         {data.items.map((track, index) => (
-          <TrackRow
+          <MobileTrackCard
             key={track.id}
             track={track}
             index={index}
             isCurrentTrack={currentTrack?.id === track.id}
             isPlaying={currentTrack?.id === track.id && isPlaying}
             onPlay={() => handlePlayTrack(track, index)}
-            visibleColumnIds={visibleColumnIds}
-            gridColumns={gridColumns}
           />
         ))}
+        {/* Mobile footer */}
+        <div className="px-4 py-4 text-sm text-zinc-500">
+          {data.total} tracks
+        </div>
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-4 text-sm text-zinc-500">
-        {data.total} tracks
+      {/* Desktop view - grid layout (visible at md and above) */}
+      <div className="hidden md:block">
+        {/* Header */}
+        <div
+          className="grid gap-4 px-4 py-2 text-sm text-zinc-400 border-b border-zinc-800"
+          style={{ gridTemplateColumns: gridColumns }}
+        >
+          <div>#</div>
+          <div>Title</div>
+          {visibleColumnIds.map((colId) => {
+            const colDef = getColumnDef(colId);
+            if (!colDef) return null;
+            const isDragging = draggedColId === colId;
+            const isDropTarget = dropTargetId === colId;
+            return (
+              <div
+                key={colId}
+                draggable
+                onDragStart={() => handleDragStart(colId)}
+                onDragOver={(e) => handleDragOver(e, colId)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, colId)}
+                onDragEnd={handleDragEnd}
+                className={`cursor-grab select-none ${
+                  colDef.align === 'right' ? 'text-right' :
+                  colDef.align === 'center' ? 'text-center' : ''
+                } ${isDragging ? 'opacity-50' : ''} ${
+                  isDropTarget ? 'border-l-2 border-green-500' : ''
+                }`}
+                title={`${colDef.label} (drag to reorder)`}
+              >
+                {colDef.shortLabel || colDef.label}
+              </div>
+            );
+          })}
+          <div></div>
+          <div></div>
+        </div>
+
+        {/* Tracks */}
+        <div className="mt-2">
+          {data.items.map((track, index) => (
+            <TrackRow
+              key={track.id}
+              track={track}
+              index={index}
+              isCurrentTrack={currentTrack?.id === track.id}
+              isPlaying={currentTrack?.id === track.id && isPlaying}
+              onPlay={() => handlePlayTrack(track, index)}
+              visibleColumnIds={visibleColumnIds}
+              gridColumns={gridColumns}
+            />
+          ))}
+        </div>
+
+        {/* Desktop footer */}
+        <div className="px-4 py-4 text-sm text-zinc-500">
+          {data.total} tracks
+        </div>
       </div>
     </div>
   );

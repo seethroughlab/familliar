@@ -62,6 +62,38 @@ Create dynamic playlists with rules:
 - Each profile has its own favorites and history
 - Simple profile switching (no passwords)
 
+## Screenshots
+
+<!-- Screenshots are auto-generated. Run `cd frontend && BASE_URL=http://localhost:5173 npm run screenshots` to update. -->
+
+| Library Track List | Mood Grid |
+|:--:|:--:|
+| ![Library](screenshots/01-library-tracks.png) | ![Mood Grid](screenshots/02-library-mood-grid.png) |
+
+| Music Map | Timeline |
+|:--:|:--:|
+| ![Music Map](screenshots/03-library-music-map.png) | ![Timeline](screenshots/04-library-timeline.png) |
+
+| Playlists | Settings |
+|:--:|:--:|
+| ![Playlists](screenshots/05-playlists.png) | ![Settings](screenshots/07-settings.png) |
+
+| Full Player | Visualizer |
+|:--:|:--:|
+| ![Full Player](screenshots/09-full-player.png) | ![Visualizer](screenshots/06-visualizer.png) |
+
+| Admin Setup |
+|:--:|
+| ![Admin Setup](screenshots/11-admin-setup.png) |
+
+### Mobile Interface
+
+Familiar is fully responsive with a touch-friendly card layout on mobile devices.
+
+| Library (Mobile) | Settings (Mobile) |
+|:--:|:--:|
+| ![Mobile Library](screenshots/12-mobile-library.png) | ![Mobile Settings](screenshots/13-mobile-settings.png) |
+
 ## Coming Soon
 
 Features planned for future releases:
@@ -92,6 +124,11 @@ Edit track metadata with changes written back to audio files:
 - Extended fields: composer, conductor, sort fields, lyrics
 - Artwork upload and management
 - MusicBrainz lookup for auto-populating metadata
+
+## Documentation
+
+- **[Library Browser API](docs/LIBRARY_BROWSERS.md)** - Create custom 2D/3D library visualizations
+- **[REST API Reference](docs/REST-API.md)** - Backend REST API documentation
 
 ## Quick Start (Docker)
 

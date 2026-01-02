@@ -157,6 +157,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Validate library paths and log warnings
     validate_library_paths()
 
+    # Check analysis capabilities (warns if embeddings disabled)
+    from app.services.analysis import check_analysis_capabilities
+    check_analysis_capabilities()
+
     # Start background task manager
     from app.services.background import get_background_manager
     bg = get_background_manager()

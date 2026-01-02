@@ -77,6 +77,12 @@ async def list_tracks(
     artist: str | None = None,
     album: str | None = None,
     genre: str | None = None,
+    year_from: int | None = Query(None, description="Filter tracks from this year (inclusive)"),
+    year_to: int | None = Query(None, description="Filter tracks up to this year (inclusive)"),
+    energy_min: float | None = Query(None, ge=0, le=1, description="Minimum energy (0-1)"),
+    energy_max: float | None = Query(None, ge=0, le=1, description="Maximum energy (0-1)"),
+    valence_min: float | None = Query(None, ge=0, le=1, description="Minimum valence (0-1)"),
+    valence_max: float | None = Query(None, ge=0, le=1, description="Maximum valence (0-1)"),
     include_features: bool = Query(False, description="Include audio analysis features"),
 ) -> TrackListResponse:
     """List tracks with optional filtering and pagination."""
@@ -100,6 +106,56 @@ async def list_tracks(
         query = query.where(Track.album.ilike(f"%{album}%"))
     if genre:
         query = query.where(Track.genre.ilike(f"%{genre}%"))
+    if year_from is not None:
+        query = query.where(Track.year >= year_from)
+    if year_to is not None:
+        query = query.where(Track.year <= year_to)
+
+    # Audio feature filters (requires joining with analysis)
+    # Note: must check `is not None` since 0.0 is a valid filter value but falsy
+    has_feature_filter = any(x is not None for x in [energy_min, energy_max, valence_min, valence_max])
+    if has_feature_filter:
+        from sqlalchemy import cast, Float
+        from sqlalchemy.dialects.postgresql import JSONB
+
+        # Join with latest analysis that has features
+        analysis_subq = (
+            select(
+                TrackAnalysis.track_id,
+                func.max(TrackAnalysis.version).label("max_version")
+            )
+            .where(TrackAnalysis.features.isnot(None))
+            .group_by(TrackAnalysis.track_id)
+            .subquery()
+        )
+        query = query.join(
+            analysis_subq,
+            Track.id == analysis_subq.c.track_id
+        ).join(
+            TrackAnalysis,
+            (TrackAnalysis.track_id == analysis_subq.c.track_id) &
+            (TrackAnalysis.version == analysis_subq.c.max_version)
+        )
+
+        # Filter by energy range
+        if energy_min is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["energy"].astext, Float) >= energy_min
+            )
+        if energy_max is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["energy"].astext, Float) <= energy_max
+            )
+
+        # Filter by valence range
+        if valence_min is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["valence"].astext, Float) >= valence_min
+            )
+        if valence_max is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["valence"].astext, Float) <= valence_max
+            )
 
     # Get total count
     count_query = select(func.count()).select_from(query.subquery())

@@ -244,7 +244,7 @@ export function LibrarySync() {
           )}
 
           {/* Stats grid */}
-          <div className="grid grid-cols-4 gap-2 text-center text-xs">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
             <div className="bg-zinc-700/50 rounded p-2">
               <div className="text-green-400 font-medium">{progress.new_tracks}</div>
               <div className="text-zinc-500">New</div>
@@ -282,7 +282,7 @@ export function LibrarySync() {
 
       {/* Completed summary */}
       {syncStatus?.status === 'completed' && progress && (
-        <div className="mt-3 grid grid-cols-4 gap-2 text-center text-xs">
+        <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs">
           <div className="bg-zinc-700/50 rounded p-2">
             <div className="text-green-400 font-medium">{progress.new_tracks}</div>
             <div className="text-zinc-500">New</div>

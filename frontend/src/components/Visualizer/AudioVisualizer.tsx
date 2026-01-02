@@ -2,9 +2,10 @@
  * Audio Visualizer Component.
  *
  * Dynamically renders the selected visualizer from the registry.
+ * Passes the full VisualizerProps API to each visualizer component.
  */
 import { Suspense } from 'react';
-import type { Track } from '../../types';
+import type { Track, TrackFeatures } from '../../types';
 import type { LyricLine } from '../../api/client';
 import { getVisualizer, DEFAULT_VISUALIZER_ID } from './types';
 import { useVisualizerStore } from '../../stores/visualizerStore';
@@ -17,6 +18,9 @@ interface AudioVisualizerProps {
   artworkUrl?: string | null;
   lyrics?: LyricLine[] | null;
   currentTime?: number;
+  duration?: number;
+  isPlaying?: boolean;
+  features?: TrackFeatures | null;
   className?: string;
 }
 
@@ -33,6 +37,9 @@ export function AudioVisualizer({
   artworkUrl = null,
   lyrics = null,
   currentTime = 0,
+  duration = 0,
+  isPlaying = false,
+  features = null,
   className = '',
 }: AudioVisualizerProps) {
   const { visualizerId } = useVisualizerStore();
@@ -58,6 +65,9 @@ export function AudioVisualizer({
           artworkUrl={artworkUrl}
           lyrics={lyrics}
           currentTime={currentTime}
+          duration={duration}
+          isPlaying={isPlaying}
+          features={features}
         />
       </Suspense>
     </div>

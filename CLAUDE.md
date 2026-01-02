@@ -63,6 +63,21 @@ frontend/
 2. Export from `Settings/index.tsx`
 3. Add to settings tabs in main Settings component
 
+### Regenerate README screenshots
+Screenshots for the README are auto-generated using Playwright:
+
+1. Ensure backend is running: `cd backend && make run`
+2. Start frontend dev server: `cd frontend && npm run dev`
+3. Run screenshot script: `cd frontend && BASE_URL=http://localhost:5173 npm run screenshots`
+
+Screenshots are saved to `screenshots/` directory. The script is in `frontend/e2e/screenshots.spec.ts`.
+
+To add new screenshots:
+1. Add a new test case to `screenshots.spec.ts`
+2. Use the `selectBrowser()` helper to switch library views
+3. Use `navigateToTab()` helper to switch between Library/Playlists/Settings/Visualizer
+4. Update README.md to include the new screenshot
+
 ## Configuration
 
 Most settings are configured via the admin UI (Settings panel):

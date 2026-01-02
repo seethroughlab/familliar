@@ -240,13 +240,15 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
       setImportProgress(100);
       setState('complete');
 
-      // Invalidate and refetch all tracks queries to refresh the library
+      // Invalidate and refetch all library-related queries to refresh browsers
       await queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[0] === 'tracks' || query.queryKey[0] === 'library',
-      });
-      await queryClient.refetchQueries({
-        predicate: (query) => query.queryKey[0] === 'tracks',
-        type: 'active',
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return typeof key === 'string' && (
+            key === 'tracks' ||
+            key.startsWith('library')
+          );
+        },
       });
 
       onImportComplete?.();

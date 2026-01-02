@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from app.api.deps import DbSession
 from app.api.ratelimit import SCAN_RATE_LIMIT, limiter
 from app.config import settings
-from app.db.models import AlbumType, Track, TrackStatus
+from app.db.models import AlbumType, Track, TrackAnalysis, TrackStatus
 from app.services.import_service import ImportService, MusicImportError, save_upload_to_temp
 from app.services.scanner import LibraryScanner
 from app.services.tasks import get_sync_progress
@@ -71,6 +71,762 @@ class SyncStatus(BaseModel):
     status: str  # "idle", "running", "completed", "error"
     message: str
     progress: SyncProgress | None = None
+
+
+# ============================================================================
+# Artist & Album Browsing
+# ============================================================================
+
+
+class ArtistSummary(BaseModel):
+    """Artist with aggregated stats."""
+
+    name: str
+    track_count: int
+    album_count: int
+    first_track_id: str  # For artwork lookup
+
+
+class ArtistListResponse(BaseModel):
+    """Paginated list of artists."""
+
+    items: list[ArtistSummary]
+    total: int
+    page: int
+    page_size: int
+
+
+@router.get("/artists", response_model=ArtistListResponse)
+async def list_artists(
+    db: DbSession,
+    search: str | None = None,
+    sort_by: str = "name",  # name, track_count, album_count
+    page: int = 1,
+    page_size: int = 100,
+) -> ArtistListResponse:
+    """Get distinct artists with aggregated stats.
+
+    Returns artists sorted by name (default), track count, or album count.
+    Includes first_track_id for artwork lookup.
+    """
+    from sqlalchemy import cast, desc, literal_column
+    from sqlalchemy.dialects.postgresql import TEXT
+
+    # Base query: group by artist, count tracks and albums
+    # Cast UUID to text for min() since PostgreSQL doesn't support min(uuid)
+    base_query = (
+        select(
+            Track.artist.label("name"),
+            func.count(Track.id).label("track_count"),
+            func.count(func.distinct(Track.album)).label("album_count"),
+            func.min(cast(Track.id, TEXT)).label("first_track_id"),  # Cast to text for min()
+        )
+        .where(
+            Track.artist.isnot(None),
+            Track.artist != "",
+            Track.status == TrackStatus.ACTIVE,
+        )
+        .group_by(Track.artist)
+    )
+
+    # Apply search filter
+    if search:
+        base_query = base_query.having(func.lower(Track.artist).contains(search.lower()))
+
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total = await db.scalar(count_query) or 0
+
+    # Apply sorting
+    if sort_by == "track_count":
+        base_query = base_query.order_by(desc(literal_column("track_count")), Track.artist)
+    elif sort_by == "album_count":
+        base_query = base_query.order_by(desc(literal_column("album_count")), Track.artist)
+    else:
+        base_query = base_query.order_by(func.lower(Track.artist))
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    base_query = base_query.offset(offset).limit(page_size)
+
+    result = await db.execute(base_query)
+    rows = result.all()
+
+    items = [
+        ArtistSummary(
+            name=row.name,
+            track_count=row.track_count,
+            album_count=row.album_count,
+            first_track_id=str(row.first_track_id),
+        )
+        for row in rows
+    ]
+
+    return ArtistListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+# ============================================================================
+# Artist Detail
+# ============================================================================
+
+
+class ArtistAlbum(BaseModel):
+    """Album belonging to an artist in the library."""
+
+    name: str
+    year: int | None
+    track_count: int
+    first_track_id: str
+
+
+class ArtistTrack(BaseModel):
+    """Track belonging to an artist."""
+
+    id: str
+    title: str | None
+    album: str | None
+    track_number: int | None
+    duration_seconds: float | None
+    year: int | None
+
+
+class ArtistDetailResponse(BaseModel):
+    """Detailed artist info with bio, albums, and tracks."""
+
+    # Basic info (from library)
+    name: str
+    track_count: int
+    album_count: int
+    total_duration_seconds: float
+
+    # From Last.fm (may be None if not fetched/available)
+    bio_summary: str | None = None
+    bio_content: str | None = None
+    image_url: str | None = None
+    lastfm_url: str | None = None
+    listeners: int | None = None
+    playcount: int | None = None
+    tags: list[str] = []
+    similar_artists: list[dict] = []
+
+    # Library content
+    albums: list[ArtistAlbum]
+    tracks: list[ArtistTrack]
+
+    # First track ID for fallback artwork
+    first_track_id: str
+
+    # Cache status
+    lastfm_fetched: bool = False
+    lastfm_error: str | None = None
+
+
+@router.get("/artists/{artist_name}", response_model=ArtistDetailResponse)
+async def get_artist_detail(
+    db: DbSession,
+    artist_name: str,
+    refresh_lastfm: bool = False,
+) -> ArtistDetailResponse:
+    """Get detailed artist information including Last.fm bio and library content.
+
+    Fetches and caches Last.fm data. Cache expires after 30 days.
+    Use refresh_lastfm=true to force a refresh.
+
+    Args:
+        artist_name: The artist name (URL-encoded)
+        refresh_lastfm: Force refresh of Last.fm data
+    """
+    from datetime import datetime, timedelta
+    from typing import Any
+    from urllib.parse import unquote
+
+    from sqlalchemy import cast
+    from sqlalchemy.dialects.postgresql import TEXT
+
+    from app.db.models import ArtistInfo
+    from app.services.lastfm import get_lastfm_service
+
+    # URL decode the artist name
+    artist_name = unquote(artist_name)
+    artist_normalized = artist_name.lower().strip()
+
+    # Get library stats for this artist
+    stats_query = (
+        select(
+            func.count(Track.id).label("track_count"),
+            func.count(func.distinct(Track.album)).label("album_count"),
+            func.sum(Track.duration_seconds).label("total_duration"),
+            func.min(cast(Track.id, TEXT)).label("first_track_id"),
+        )
+        .where(
+            func.lower(Track.artist) == artist_normalized,
+            Track.status == TrackStatus.ACTIVE,
+        )
+    )
+    result = await db.execute(stats_query)
+    stats = result.one_or_none()
+
+    if not stats or stats.track_count == 0:
+        raise HTTPException(status_code=404, detail="Artist not found in library")
+
+    # Get albums by this artist
+    albums_query = (
+        select(
+            Track.album.label("name"),
+            func.max(Track.year).label("year"),
+            func.count(Track.id).label("track_count"),
+            func.min(cast(Track.id, TEXT)).label("first_track_id"),
+        )
+        .where(
+            func.lower(Track.artist) == artist_normalized,
+            Track.status == TrackStatus.ACTIVE,
+            Track.album.isnot(None),
+            Track.album != "",
+        )
+        .group_by(Track.album)
+        .order_by(func.max(Track.year).desc().nullslast(), Track.album)
+    )
+    albums_result = await db.execute(albums_query)
+    albums = [
+        ArtistAlbum(
+            name=row.name or "Unknown Album",
+            year=row.year,
+            track_count=row.track_count,
+            first_track_id=str(row.first_track_id),
+        )
+        for row in albums_result.all()
+    ]
+
+    # Get tracks by this artist
+    tracks_query = (
+        select(Track)
+        .where(
+            func.lower(Track.artist) == artist_normalized,
+            Track.status == TrackStatus.ACTIVE,
+        )
+        .order_by(Track.album, Track.disc_number, Track.track_number, Track.title)
+        .limit(500)  # Limit to prevent huge responses
+    )
+    tracks_result = await db.execute(tracks_query)
+    tracks = [
+        ArtistTrack(
+            id=str(t.id),
+            title=t.title,
+            album=t.album,
+            track_number=t.track_number,
+            duration_seconds=t.duration_seconds,
+            year=t.year,
+        )
+        for t in tracks_result.scalars().all()
+    ]
+
+    # Check for cached Last.fm data
+    cache_max_age = timedelta(days=30)
+    lastfm_data: ArtistInfo | None = None
+    lastfm_fetched = False
+    lastfm_error: str | None = None
+
+    cached = await db.get(ArtistInfo, artist_normalized)
+
+    if cached and not refresh_lastfm:
+        cache_age = datetime.utcnow() - cached.fetched_at
+        if cache_age < cache_max_age:
+            lastfm_fetched = True
+            lastfm_data = cached
+            lastfm_error = cached.fetch_error
+
+    # Fetch from Last.fm if needed
+    if not lastfm_data or refresh_lastfm:
+        lastfm_service = get_lastfm_service()
+        if lastfm_service.is_configured():
+            try:
+                info = await lastfm_service.get_artist_info(artist_name)
+                if info:
+                    # Extract image URL (prefer extralarge)
+                    images = info.get("image", [])
+                    image_urls: dict[str, str] = {
+                        img.get("size"): img.get("#text")
+                        for img in images
+                        if img.get("#text")
+                    }
+
+                    # Extract similar artists
+                    similar = info.get("similar", {}).get("artist", [])
+
+                    # Extract tags
+                    tags = [
+                        t.get("name")
+                        for t in info.get("tags", {}).get("tag", [])
+                        if t.get("name")
+                    ]
+
+                    # Create or update cache entry
+                    if cached:
+                        cached.artist_name = info.get("name", artist_name)
+                        cached.musicbrainz_id = info.get("mbid")
+                        cached.lastfm_url = info.get("url")
+                        cached.bio_summary = info.get("bio", {}).get("summary")
+                        cached.bio_content = info.get("bio", {}).get("content")
+                        cached.image_small = image_urls.get("small")
+                        cached.image_medium = image_urls.get("medium")
+                        cached.image_large = image_urls.get("large")
+                        cached.image_extralarge = image_urls.get("extralarge")
+                        cached.listeners = (
+                            int(info.get("stats", {}).get("listeners", 0)) or None
+                        )
+                        cached.playcount = (
+                            int(info.get("stats", {}).get("playcount", 0)) or None
+                        )
+                        cached.similar_artists = similar
+                        cached.tags = tags
+                        cached.fetched_at = datetime.utcnow()
+                        cached.fetch_error = None
+                    else:
+                        cached = ArtistInfo(
+                            artist_name_normalized=artist_normalized,
+                            artist_name=info.get("name", artist_name),
+                            musicbrainz_id=info.get("mbid"),
+                            lastfm_url=info.get("url"),
+                            bio_summary=info.get("bio", {}).get("summary"),
+                            bio_content=info.get("bio", {}).get("content"),
+                            image_small=image_urls.get("small"),
+                            image_medium=image_urls.get("medium"),
+                            image_large=image_urls.get("large"),
+                            image_extralarge=image_urls.get("extralarge"),
+                            listeners=(
+                                int(info.get("stats", {}).get("listeners", 0)) or None
+                            ),
+                            playcount=(
+                                int(info.get("stats", {}).get("playcount", 0)) or None
+                            ),
+                            similar_artists=similar,
+                            tags=tags,
+                        )
+                        db.add(cached)
+
+                    await db.commit()
+                    lastfm_data = cached
+                    lastfm_fetched = True
+                    lastfm_error = None
+                else:
+                    # Artist not found on Last.fm - cache the miss
+                    if not cached:
+                        cached = ArtistInfo(
+                            artist_name_normalized=artist_normalized,
+                            artist_name=artist_name,
+                            fetch_error="Artist not found on Last.fm",
+                        )
+                        db.add(cached)
+                        await db.commit()
+                    lastfm_error = "Artist not found on Last.fm"
+            except Exception as e:
+                lastfm_error = str(e)
+
+    # Build response
+    return ArtistDetailResponse(
+        name=artist_name,
+        track_count=stats.track_count,
+        album_count=stats.album_count,
+        total_duration_seconds=stats.total_duration or 0,
+        bio_summary=lastfm_data.bio_summary if lastfm_data else None,
+        bio_content=lastfm_data.bio_content if lastfm_data else None,
+        image_url=(
+            lastfm_data.image_extralarge or lastfm_data.image_large
+            if lastfm_data
+            else None
+        ),
+        lastfm_url=lastfm_data.lastfm_url if lastfm_data else None,
+        listeners=lastfm_data.listeners if lastfm_data else None,
+        playcount=lastfm_data.playcount if lastfm_data else None,
+        tags=lastfm_data.tags if lastfm_data else [],
+        similar_artists=lastfm_data.similar_artists if lastfm_data else [],
+        albums=albums,
+        tracks=tracks,
+        first_track_id=str(stats.first_track_id),
+        lastfm_fetched=lastfm_fetched,
+        lastfm_error=lastfm_error,
+    )
+
+
+class AlbumSummary(BaseModel):
+    """Album with metadata."""
+
+    name: str
+    artist: str
+    year: int | None
+    track_count: int
+    first_track_id: str  # For artwork lookup
+
+
+class AlbumListResponse(BaseModel):
+    """Paginated list of albums."""
+
+    items: list[AlbumSummary]
+    total: int
+    page: int
+    page_size: int
+
+
+@router.get("/albums", response_model=AlbumListResponse)
+async def list_albums(
+    db: DbSession,
+    artist: str | None = None,
+    search: str | None = None,
+    sort_by: str = "name",  # name, year, track_count, artist
+    page: int = 1,
+    page_size: int = 100,
+) -> AlbumListResponse:
+    """Get distinct albums with metadata.
+
+    Returns albums sorted by name (default), year, track count, or artist.
+    Includes first_track_id for artwork lookup.
+    """
+    from sqlalchemy import cast, desc, literal_column
+    from sqlalchemy.dialects.postgresql import TEXT
+
+    # Base query: group by (artist, album), get year and track count
+    # Cast UUID to text for min() since PostgreSQL doesn't support min(uuid)
+    base_query = (
+        select(
+            Track.album.label("name"),
+            Track.artist.label("artist"),
+            func.max(Track.year).label("year"),  # Use max year in case of inconsistency
+            func.count(Track.id).label("track_count"),
+            func.min(cast(Track.id, TEXT)).label("first_track_id"),
+        )
+        .where(
+            Track.album.isnot(None),
+            Track.album != "",
+            Track.status == TrackStatus.ACTIVE,
+        )
+        .group_by(Track.artist, Track.album)
+    )
+
+    # Apply artist filter
+    if artist:
+        base_query = base_query.having(Track.artist == artist)
+
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        base_query = base_query.having(
+            func.lower(Track.album).contains(search_lower)
+            | func.lower(Track.artist).contains(search_lower)
+        )
+
+    # Get total count
+    count_query = select(func.count()).select_from(base_query.subquery())
+    total = await db.scalar(count_query) or 0
+
+    # Apply sorting
+    if sort_by == "year":
+        base_query = base_query.order_by(desc(literal_column("year")), func.lower(Track.album))
+    elif sort_by == "track_count":
+        base_query = base_query.order_by(desc(literal_column("track_count")), func.lower(Track.album))
+    elif sort_by == "artist":
+        base_query = base_query.order_by(func.lower(Track.artist), func.lower(Track.album))
+    else:
+        base_query = base_query.order_by(func.lower(Track.album))
+
+    # Apply pagination
+    offset = (page - 1) * page_size
+    base_query = base_query.offset(offset).limit(page_size)
+
+    result = await db.execute(base_query)
+    rows = result.all()
+
+    items = [
+        AlbumSummary(
+            name=row.name or "Unknown Album",
+            artist=row.artist or "Unknown Artist",
+            year=row.year,
+            track_count=row.track_count,
+            first_track_id=str(row.first_track_id),
+        )
+        for row in rows
+    ]
+
+    return AlbumListResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
+
+
+# ============================================================================
+# Visualization Aggregations
+# ============================================================================
+
+
+class YearCount(BaseModel):
+    """Track count for a single year."""
+
+    year: int
+    track_count: int
+    album_count: int
+    artist_count: int
+
+
+class YearDistributionResponse(BaseModel):
+    """Year distribution for timeline visualization."""
+
+    years: list[YearCount]
+    total_with_year: int
+    total_without_year: int
+    min_year: int | None
+    max_year: int | None
+
+
+@router.get("/years", response_model=YearDistributionResponse)
+async def get_year_distribution(db: DbSession) -> YearDistributionResponse:
+    """Get track counts grouped by year for timeline visualization.
+
+    Returns aggregated data suitable for large libraries.
+    """
+    # Query for year distribution
+    year_query = (
+        select(
+            Track.year,
+            func.count(Track.id).label("track_count"),
+            func.count(func.distinct(Track.album)).label("album_count"),
+            func.count(func.distinct(Track.artist)).label("artist_count"),
+        )
+        .where(
+            Track.year.isnot(None),
+            Track.status == TrackStatus.ACTIVE,
+        )
+        .group_by(Track.year)
+        .order_by(Track.year)
+    )
+
+    result = await db.execute(year_query)
+    rows = result.all()
+
+    years = [
+        YearCount(
+            year=row.year,
+            track_count=row.track_count,
+            album_count=row.album_count,
+            artist_count=row.artist_count,
+        )
+        for row in rows
+    ]
+
+    # Count tracks without year
+    without_year = await db.scalar(
+        select(func.count(Track.id)).where(
+            Track.year.is_(None),
+            Track.status == TrackStatus.ACTIVE,
+        )
+    ) or 0
+
+    total_with = sum(y.track_count for y in years)
+    min_year = years[0].year if years else None
+    max_year = years[-1].year if years else None
+
+    return YearDistributionResponse(
+        years=years,
+        total_with_year=total_with,
+        total_without_year=without_year,
+        min_year=min_year,
+        max_year=max_year,
+    )
+
+
+class MoodCell(BaseModel):
+    """A cell in the mood grid with track count."""
+
+    energy_min: float
+    energy_max: float
+    valence_min: float
+    valence_max: float
+    track_count: int
+    # Sample track IDs for this cell (for preview/playback)
+    sample_track_ids: list[str]
+
+
+class MoodDistributionResponse(BaseModel):
+    """Mood distribution for 2D visualization."""
+
+    cells: list[MoodCell]
+    grid_size: int  # Number of cells per axis
+    total_with_mood: int
+    total_without_mood: int
+
+
+@router.get("/mood-distribution", response_model=MoodDistributionResponse)
+async def get_mood_distribution(
+    db: DbSession,
+    grid_size: int = 10,
+) -> MoodDistributionResponse:
+    """Get mood (energy × valence) distribution for heatmap visualization.
+
+    Divides the 0-1 × 0-1 space into a grid and counts tracks per cell.
+    Returns sample track IDs per cell for preview/playback.
+    """
+    from sqlalchemy.orm import selectinload
+
+    # Fetch all tracks with analysis
+    tracks_query = (
+        select(Track)
+        .options(selectinload(Track.analyses))
+        .where(Track.status == TrackStatus.ACTIVE)
+    )
+    result = await db.execute(tracks_query)
+    tracks = result.scalars().all()
+
+    # Build grid
+    cell_size = 1.0 / grid_size
+    cells: dict[tuple[int, int], list[str]] = {}
+
+    total_with_mood = 0
+    total_without_mood = 0
+
+    for track in tracks:
+        # Get latest analysis
+        if not track.analyses:
+            total_without_mood += 1
+            continue
+
+        latest = max(track.analyses, key=lambda a: a.version)
+        features = latest.features or {}
+
+        energy = features.get("energy")
+        valence = features.get("valence")
+
+        if energy is None or valence is None:
+            total_without_mood += 1
+            continue
+
+        total_with_mood += 1
+
+        # Determine cell
+        energy_cell = min(int(energy * grid_size), grid_size - 1)
+        valence_cell = min(int(valence * grid_size), grid_size - 1)
+        key = (energy_cell, valence_cell)
+
+        if key not in cells:
+            cells[key] = []
+        cells[key].append(str(track.id))
+
+    # Build response
+    mood_cells = []
+    for (e_cell, v_cell), track_ids in cells.items():
+        mood_cells.append(
+            MoodCell(
+                energy_min=e_cell * cell_size,
+                energy_max=(e_cell + 1) * cell_size,
+                valence_min=v_cell * cell_size,
+                valence_max=(v_cell + 1) * cell_size,
+                track_count=len(track_ids),
+                sample_track_ids=track_ids[:5],  # Keep up to 5 samples
+            )
+        )
+
+    return MoodDistributionResponse(
+        cells=mood_cells,
+        grid_size=grid_size,
+        total_with_mood=total_with_mood,
+        total_without_mood=total_without_mood,
+    )
+
+
+# ============================================================================
+# Music Map (Embedding-based Similarity)
+# ============================================================================
+
+
+class MapNode(BaseModel):
+    """A node in the music map."""
+
+    id: str
+    name: str
+    x: float
+    y: float
+    track_count: int
+    first_track_id: str
+
+
+class MapEdge(BaseModel):
+    """An edge connecting similar nodes."""
+
+    source: str
+    target: str
+    weight: float
+
+
+class MusicMapResponse(BaseModel):
+    """Response for music map visualization."""
+
+    nodes: list[MapNode]
+    edges: list[MapEdge]
+    entity_type: str
+    total_entities: int
+
+
+@router.get("/map", response_model=MusicMapResponse)
+async def get_music_map(
+    db: DbSession,
+    entity_type: str = "artists",  # artists, albums
+    limit: int = 200,
+) -> MusicMapResponse:
+    """Get 2D positions for artists/albums based on audio similarity.
+
+    Uses UMAP dimensionality reduction on CLAP embeddings to position
+    entities so that similar-sounding music appears close together.
+
+    This is computationally expensive - results should be cached on the frontend.
+
+    Args:
+        entity_type: "artists" or "albums"
+        limit: Maximum entities to include (default 200, max 500)
+    """
+    from app.services.embedding_map import get_embedding_map_service
+
+    if entity_type not in ("artists", "albums"):
+        raise HTTPException(status_code=400, detail="entity_type must be 'artists' or 'albums'")
+
+    limit = min(limit, 500)  # Cap at 500 for performance
+
+    service = get_embedding_map_service()
+
+    try:
+        map_data = await service.compute_map(db, entity_type=entity_type, limit=limit)
+    except ImportError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Map computation failed: {e}")
+
+    return MusicMapResponse(
+        nodes=[
+            MapNode(
+                id=n.id,
+                name=n.name,
+                x=n.x,
+                y=n.y,
+                track_count=n.track_count,
+                first_track_id=n.first_track_id,
+            )
+            for n in map_data.nodes
+        ],
+        edges=[
+            MapEdge(source=e.source, target=e.target, weight=e.weight)
+            for e in map_data.edges
+        ],
+        entity_type=entity_type,
+        total_entities=len(map_data.nodes),
+    )
+
+
+# ============================================================================
+# Library Stats
+# ============================================================================
 
 
 @router.get("/stats", response_model=LibraryStats)
@@ -345,8 +1101,17 @@ async def import_music(
         import_dir = Path(result["import_path"])
 
         async def scan_import():
-            scanner = LibraryScanner(db)
-            await scanner.scan(import_dir, full_scan=True)
+            # Create new db session for background task (request session is closed)
+            from app.db.session import async_session_maker
+            async with async_session_maker() as bg_db:
+                try:
+                    scanner = LibraryScanner(bg_db)
+                    await scanner.scan(import_dir, full_scan=True)
+                    await bg_db.commit()
+                except Exception as e:
+                    await bg_db.rollback()
+                    import logging
+                    logging.getLogger(__name__).error(f"Background scan failed: {e}")
 
         background_tasks.add_task(scan_import)
 
@@ -527,16 +1292,25 @@ async def import_execute(
         if result["queue_analysis"] and scan_paths and settings.music_library_paths:
             from pathlib import Path
 
+            from app.db.session import async_session_maker
             from app.services.scanner import LibraryScanner
 
             library_root = Path(settings.music_library_paths[0])
 
             async def scan_import():
-                scanner = LibraryScanner(db)
-                for rel_path in scan_paths:
-                    scan_dir = library_root / rel_path
-                    if scan_dir.exists():
-                        await scanner.scan(scan_dir, full_scan=True)
+                # Create new db session for background task (request session is closed)
+                async with async_session_maker() as bg_db:
+                    try:
+                        scanner = LibraryScanner(bg_db)
+                        for rel_path in scan_paths:
+                            scan_dir = library_root / rel_path
+                            if scan_dir.exists():
+                                await scanner.scan(scan_dir, full_scan=True)
+                        await bg_db.commit()
+                    except Exception as e:
+                        await bg_db.rollback()
+                        import logging
+                        logging.getLogger(__name__).error(f"Background scan failed: {e}")
 
             background_tasks.add_task(scan_import)
 
@@ -560,6 +1334,11 @@ class AnalysisStatus(BaseModel):
     current_file: str | None = None
     error: str | None = None
     heartbeat: str | None = None
+    # Embedding coverage - helps detect silent failures
+    with_embeddings: int = 0
+    without_embeddings: int = 0
+    embeddings_enabled: bool = True
+    embeddings_disabled_reason: str | None = None
 
 
 @router.get("/analysis/status", response_model=AnalysisStatus)
@@ -567,12 +1346,17 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
     """Get current audio analysis status with stuck detection.
 
     Returns analysis progress and detects if the worker has stalled.
+    Also reports embedding coverage to help detect silent failures.
     """
     from datetime import datetime, timedelta
 
     from sqlalchemy import or_
 
     from app.config import ANALYSIS_VERSION
+    from app.services.analysis import get_analysis_capabilities
+
+    # Get analysis capabilities
+    caps = get_analysis_capabilities()
 
     # Get counts from database
     total = await db.scalar(select(func.count(Track.id))) or 0
@@ -582,6 +1366,12 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
     failed = await db.scalar(
         select(func.count(Track.id)).where(Track.analysis_failed_at.isnot(None))
     ) or 0
+
+    # Count tracks with/without embeddings
+    with_embeddings = await db.scalar(
+        select(func.count(TrackAnalysis.id)).where(TrackAnalysis.embedding.isnot(None))
+    ) or 0
+    without_embeddings = analyzed - with_embeddings
 
     # Pending = not analyzed and not recently failed
     failure_cutoff = datetime.utcnow() - timedelta(hours=24)
@@ -597,6 +1387,19 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
 
     percent = (analyzed / total * 100) if total > 0 else 100.0
 
+    # Common fields for all responses
+    common = {
+        "total": total,
+        "analyzed": analyzed,
+        "pending": pending,
+        "failed": failed,
+        "percent": round(percent, 1),
+        "with_embeddings": with_embeddings,
+        "without_embeddings": without_embeddings,
+        "embeddings_enabled": caps["embeddings_enabled"],
+        "embeddings_disabled_reason": caps["embeddings_disabled_reason"],
+    }
+
     # Check if background analysis tasks are running
     from app.services.background import get_background_manager
 
@@ -606,33 +1409,17 @@ async def get_analysis_status(db: DbSession) -> AnalysisStatus:
     if active_tasks > 0:
         return AnalysisStatus(
             status="running",
-            total=total,
-            analyzed=analyzed,
-            pending=pending,
-            failed=failed,
-            percent=round(percent, 1),
             current_file=f"Processing {active_tasks} tracks...",
+            **common,
         )
 
     # No active analysis tasks - check if there's pending work
     if pending > 0:
-        return AnalysisStatus(
-            status="idle",
-            total=total,
-            analyzed=analyzed,
-            pending=pending,
-            failed=failed,
-            percent=round(percent, 1),
-        )
+        return AnalysisStatus(status="idle", **common)
 
-    return AnalysisStatus(
-        status="complete",
-        total=total,
-        analyzed=analyzed,
-        pending=0,
-        failed=failed,
-        percent=100.0,
-    )
+    # Override percent to 100 for complete status
+    common["percent"] = 100.0
+    return AnalysisStatus(status="complete", **common)
 
 
 class AnalysisStartResponse(BaseModel):

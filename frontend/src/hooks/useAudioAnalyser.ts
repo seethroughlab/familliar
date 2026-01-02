@@ -10,6 +10,14 @@ export interface AudioAnalysisData {
   treble: number;
 }
 
+// Shared ref for audio data that can be read inside useFrame
+const sharedAudioDataRef: { current: AudioAnalysisData | null } = { current: null };
+
+// Get current audio data synchronously (for use in useFrame)
+export function getAudioData(): AudioAnalysisData | null {
+  return sharedAudioDataRef.current;
+}
+
 export function useAudioAnalyser(enabled: boolean = true): AudioAnalysisData | null {
   const [data, setData] = useState<AudioAnalysisData | null>(null);
   const animationFrameRef = useRef<number | undefined>(undefined);
@@ -74,14 +82,19 @@ export function useAudioAnalyser(enabled: boolean = true): AudioAnalysisData | n
     }
     const treble = trebleSum / (binCount - midEnd);
 
-    setData({
+    const newData: AudioAnalysisData = {
       frequencyData: new Uint8Array(freqData),
       timeDomainData: new Uint8Array(timeDomainDataRef.current),
       averageFrequency,
       bass: bass / 255,
       mid: mid / 255,
       treble: treble / 255,
-    });
+    };
+
+    // Update shared ref for useFrame access
+    sharedAudioDataRef.current = newData;
+
+    setData(newData);
 
     animationFrameRef.current = requestAnimationFrame(analyse);
   }, []);

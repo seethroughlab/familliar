@@ -1,20 +1,49 @@
 /**
  * Typography Wave Visualizer.
  *
- * Artist and title text with wave distortion and audio-reactive scaling.
+ * Lyrics with wave distortion and audio-reactive scaling.
+ * Falls back to track title/artist if no lyrics available.
  */
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { useAudioAnalyser } from '../../../hooks/useAudioAnalyser';
 import { registerVisualizer, type VisualizerProps } from '../types';
 
-export function TypographyWave({ track }: VisualizerProps) {
+export function TypographyWave({ track, lyrics, currentTime }: VisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioData = useAudioAnalyser(true);
   const animationRef = useRef<number | undefined>(undefined);
   const timeRef = useRef(0);
 
+  // Find current and next lyric lines
+  const { currentLine, nextLine } = useMemo(() => {
+    if (!lyrics || lyrics.length === 0) {
+      return { currentLine: null, nextLine: null };
+    }
+
+    let currentIdx = -1;
+    for (let i = lyrics.length - 1; i >= 0; i--) {
+      if (lyrics[i].time <= currentTime) {
+        currentIdx = i;
+        break;
+      }
+    }
+
+    const current = currentIdx >= 0 ? lyrics[currentIdx] : null;
+    const next = currentIdx < lyrics.length - 1 ? lyrics[currentIdx + 1] : null;
+
+    return {
+      currentLine: current?.text || null,
+      nextLine: next?.text || null,
+    };
+  }, [lyrics, currentTime]);
+
+  const hasLyrics = lyrics && lyrics.length > 0;
   const title = track?.title || 'Unknown Title';
   const artist = track?.artist || 'Unknown Artist';
+
+  // Use current lyric or fall back to title
+  const mainText = currentLine || title;
+  const secondaryText = hasLyrics ? (nextLine || '') : artist;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -48,22 +77,31 @@ export function TypographyWave({ track }: VisualizerProps) {
 
       timeRef.current += 0.016; // ~60fps
 
-      // Draw title with wave effect
-      const titleSize = 48 + bass * 20;
-      ctx.font = `bold ${titleSize}px system-ui, -apple-system, sans-serif`;
+      // Calculate font size based on text length to fit screen
+      const maxWidth = width * 0.9;
+      let mainSize = 56 + bass * 20;
+      ctx.font = `bold ${mainSize}px system-ui, -apple-system, sans-serif`;
+
+      // Scale down if text is too wide
+      let measuredWidth = ctx.measureText(mainText).width;
+      if (measuredWidth > maxWidth) {
+        mainSize = mainSize * (maxWidth / measuredWidth);
+        ctx.font = `bold ${mainSize}px system-ui, -apple-system, sans-serif`;
+      }
+
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       // Draw each character with wave offset
-      const titleChars = title.split('');
-      const titleWidth = ctx.measureText(title).width;
-      let xOffset = (width - titleWidth) / 2;
+      const mainChars = mainText.split('');
+      const mainWidth = ctx.measureText(mainText).width;
+      let xOffset = (width - mainWidth) / 2;
 
-      titleChars.forEach((char, i) => {
+      mainChars.forEach((char, i) => {
         const charWidth = ctx.measureText(char).width;
         const waveOffset = Math.sin(timeRef.current * 2 + i * 0.3) * (10 + bass * 20);
         const freqIndex = frequencyData
-          ? Math.floor((i / titleChars.length) * frequencyData.length)
+          ? Math.floor((i / mainChars.length) * frequencyData.length)
           : 0;
         const freqValue = frequencyData ? frequencyData[freqIndex] / 255 : 0;
 
@@ -80,26 +118,36 @@ export function TypographyWave({ track }: VisualizerProps) {
         xOffset += charWidth;
       });
 
-      // Draw artist with subtler effect
-      const artistSize = 28 + mid * 10;
-      ctx.font = `${artistSize}px system-ui, -apple-system, sans-serif`;
-      ctx.shadowBlur = 5 + mid * 10;
+      // Draw secondary text (next lyric or artist) with subtler effect
+      if (secondaryText) {
+        let secondarySize = 28 + mid * 10;
+        ctx.font = `${secondarySize}px system-ui, -apple-system, sans-serif`;
 
-      const artistChars = artist.split('');
-      const artistWidth = ctx.measureText(artist).width;
-      xOffset = (width - artistWidth) / 2;
+        // Scale down if too wide
+        measuredWidth = ctx.measureText(secondaryText).width;
+        if (measuredWidth > maxWidth) {
+          secondarySize = secondarySize * (maxWidth / measuredWidth);
+          ctx.font = `${secondarySize}px system-ui, -apple-system, sans-serif`;
+        }
 
-      artistChars.forEach((char, i) => {
-        const charWidth = ctx.measureText(char).width;
-        const waveOffset = Math.sin(timeRef.current * 1.5 + i * 0.2 + Math.PI) * (5 + mid * 10);
+        ctx.shadowBlur = 5 + mid * 10;
 
-        const hue = 180 + i * 5; // Cyan range
-        ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
-        ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+        const secondaryChars = secondaryText.split('');
+        const secondaryWidth = ctx.measureText(secondaryText).width;
+        xOffset = (width - secondaryWidth) / 2;
 
-        ctx.fillText(char, xOffset + charWidth / 2, height * 0.6 + waveOffset);
-        xOffset += charWidth;
-      });
+        secondaryChars.forEach((char, i) => {
+          const charWidth = ctx.measureText(char).width;
+          const waveOffset = Math.sin(timeRef.current * 1.5 + i * 0.2 + Math.PI) * (5 + mid * 10);
+
+          const hue = 180 + i * 5; // Cyan range
+          ctx.fillStyle = `hsl(${hue}, 70%, 60%)`;
+          ctx.shadowColor = `hsl(${hue}, 100%, 50%)`;
+
+          ctx.fillText(char, xOffset + charWidth / 2, height * 0.6 + waveOffset);
+          xOffset += charWidth;
+        });
+      }
 
       // Reset shadow for next frame
       ctx.shadowBlur = 0;
@@ -150,7 +198,7 @@ export function TypographyWave({ track }: VisualizerProps) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [title, artist, audioData]);
+  }, [mainText, secondaryText, audioData]);
 
   return (
     <div className="w-full h-full bg-[#0a0015]">
@@ -167,7 +215,7 @@ registerVisualizer(
   {
     id: 'typography-wave',
     name: 'Typography Wave',
-    description: 'Artist and title with wave effects',
+    description: 'Lyrics with wave distortion effects',
     usesMetadata: true,
   },
   TypographyWave

@@ -10,7 +10,7 @@ export function VisualizerView() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
 
-  const { currentTrack, currentTime, isPlaying } = usePlayerStore();
+  const { currentTrack, currentTime, duration, isPlaying } = usePlayerStore();
 
   // Fetch lyrics for visualizer
   useEffect(() => {
@@ -100,6 +100,9 @@ export function VisualizerView() {
         artworkUrl={artworkUrl}
         lyrics={lyrics}
         currentTime={currentTime}
+        duration={duration}
+        isPlaying={isPlaying}
+        features={currentTrack?.features ?? null}
         className="absolute inset-0"
       />
 
