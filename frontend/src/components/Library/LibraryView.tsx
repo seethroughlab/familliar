@@ -152,27 +152,6 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     setSelectedArtist(null);
   }, []);
 
-  // Filter to artist's tracks (used internally after viewing artist detail)
-  const _handleFilterToArtist = useCallback(
-    (artistName: string) => {
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('artist');
-        next.delete('album');
-        next.delete('yearFrom');
-        next.delete('yearTo');
-        next.delete('energyMin');
-        next.delete('energyMax');
-        next.delete('valenceMin');
-        next.delete('valenceMax');
-        next.delete('view');
-        next.set('artist', artistName);
-        return next;
-      });
-    },
-    [setSearchParams]
-  );
-
   const handleGoToAlbum = useCallback(
     (artistName: string, albumName: string) => {
       setSearchParams((prev) => {

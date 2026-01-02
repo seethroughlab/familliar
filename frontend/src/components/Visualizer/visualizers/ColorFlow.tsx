@@ -64,19 +64,6 @@ const RingMaterial = shaderMaterial(
 
 extend({ RingMaterial });
 
-/* eslint-disable @typescript-eslint/no-namespace */
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      ringMaterial: THREE.ShaderMaterial & {
-        uTime?: number;
-        uBass?: number;
-        uColor?: THREE.Color;
-      };
-    }
-  }
-}
-
 // GPU Flow Particles using instanced mesh
 function FlowParticles({ palette }: { palette: string[] }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -272,6 +259,7 @@ function GlowingRings({ palette }: { palette: string[] }) {
           ]}
         >
           <torusGeometry args={[1.2 + i * 0.4, 0.03 + i * 0.01, 16, 100]} />
+          {/* @ts-expect-error - Custom R3F element registered via extend() */}
           <ringMaterial
             ref={(el: THREE.ShaderMaterial | null) => {
               if (el) materialsRef.current[i] = el;

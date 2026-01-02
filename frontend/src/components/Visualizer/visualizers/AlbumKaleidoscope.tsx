@@ -184,29 +184,6 @@ const KaleidoscopeMaterial = shaderMaterial(
 
 extend({ KaleidoscopeMaterial });
 
-/* eslint-disable @typescript-eslint/no-namespace */
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      kaleidoscopeMaterial: THREE.ShaderMaterial & {
-        uTexture?: THREE.Texture;
-        uTime?: number;
-        uSegments?: number;
-        uRotation?: number;
-        uInnerRotation?: number;
-        uTwist?: number;
-        uScale?: number;
-        uBass?: number;
-        uMid?: number;
-        uTreble?: number;
-        uIntensity?: number;
-        uChromaticAberration?: number;
-        uRadialBlur?: number;
-      };
-    }
-  }
-}
-
 // Sparkle particles along kaleidoscope edges
 function SparkleParticles({ segments }: { segments: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
@@ -409,6 +386,7 @@ function KaleidoscopeShader({ texture }: { texture: THREE.Texture }) {
   return (
     <mesh position={[0, 0, 0]}>
       <planeGeometry args={[6, 6]} />
+      {/* @ts-expect-error - Custom R3F element registered via extend() */}
       <kaleidoscopeMaterial
         ref={materialRef}
         uTexture={texture}

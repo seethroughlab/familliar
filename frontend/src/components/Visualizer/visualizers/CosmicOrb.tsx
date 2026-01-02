@@ -163,24 +163,6 @@ const OrbMaterial = shaderMaterial(
 
 extend({ OrbMaterial });
 
-// Declare the JSX element type
-/* eslint-disable @typescript-eslint/no-namespace */
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      orbMaterial: THREE.ShaderMaterial & {
-        uTime?: number;
-        uBass?: number;
-        uMid?: number;
-        uTreble?: number;
-        uIntensity?: number;
-        uColor?: THREE.Color;
-        uEmissive?: THREE.Color;
-      };
-    }
-  }
-}
-
 // Enhanced circular waveform with glow
 function CircularWaveform() {
   const meshRef = useRef<THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>>(null);
@@ -328,6 +310,7 @@ function ReactiveOrb() {
   return (
     <mesh ref={meshRef}>
       <icosahedronGeometry args={[0.8, 4]} />
+      {/* @ts-expect-error - Custom R3F element registered via extend() */}
       <orbMaterial
         ref={materialRef}
         transparent
@@ -390,7 +373,7 @@ function CosmicOrbScene() {
         secondaryColor="#06b6d4"
         spread={5}
         speed={0.8}
-        audioData={audioData}
+        audioData={null}
         behavior="orbit"
         opacity={0.7}
       />
@@ -403,7 +386,7 @@ function CosmicOrbScene() {
         secondaryColor="#22c55e"
         spread={6}
         speed={0.5}
-        audioData={audioData}
+        audioData={null}
         behavior="flow"
         opacity={0.5}
       />

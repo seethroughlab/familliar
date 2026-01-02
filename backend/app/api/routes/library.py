@@ -242,7 +242,6 @@ async def get_artist_detail(
         refresh_lastfm: Force refresh of Last.fm data
     """
     from datetime import datetime, timedelta
-    from typing import Any
     from urllib.parse import unquote
 
     from sqlalchemy import cast
