@@ -3,7 +3,7 @@
 For fresh databases: Creates all tables using SQLAlchemy models.
 For existing databases: This is stamped without running (tables already exist).
 
-Revision ID: baseline
+Revision ID: 20241231_000000_baseline
 Revises:
 Create Date: 2024-12-31 00:00:00
 """
@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
-revision: str = "baseline"
+revision: str = "20241231_000000_baseline"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

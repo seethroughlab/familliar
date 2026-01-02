@@ -94,6 +94,7 @@ def setup_logging() -> None:
     log_level = logging.DEBUG if settings.debug else logging.INFO
 
     # Choose formatter based on environment
+    formatter: logging.Formatter
     if settings.debug:
         formatter = DevelopmentFormatter()
     else:
