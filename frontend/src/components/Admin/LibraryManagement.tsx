@@ -10,11 +10,8 @@ import {
   XCircle,
   AlertTriangle,
   HardDrive,
-  Music,
-  Clock,
   FileAudio,
   Trash2,
-  AlertCircle,
 } from 'lucide-react';
 import { LibraryOrganizer } from '../Settings/LibraryOrganizer';
 
@@ -56,18 +53,6 @@ interface SyncStatus {
   progress: SyncProgress | null;
 }
 
-interface AnalysisStatus {
-  status: 'idle' | 'running' | 'stuck' | 'complete';
-  total: number;
-  analyzed: number;
-  pending: number;
-  failed: number;
-  percent: number;
-  current_file?: string;
-  heartbeat?: string;
-  error?: string;
-}
-
 interface LibraryStats {
   total_tracks: number;
   total_albums: number;
@@ -88,7 +73,6 @@ interface MissingTrack {
 
 export function LibraryManagement() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
-  const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
   const [missingTracks, setMissingTracks] = useState<MissingTrack[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,9 +84,8 @@ export function LibraryManagement() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [syncRes, analysisRes, statsRes, missingRes] = await Promise.all([
+      const [syncRes, statsRes, missingRes] = await Promise.all([
         fetch('/api/v1/library/sync/status'),
-        fetch('/api/v1/library/analysis/status'),
         fetch('/api/v1/library/stats'),
         fetch('/api/v1/library/missing'),
       ]);
@@ -111,11 +94,6 @@ export function LibraryManagement() {
         const data = await syncRes.json();
         setSyncStatus(data);
         setSyncing(data.status === 'running' || data.status === 'started');
-      }
-
-      if (analysisRes.ok) {
-        const data = await analysisRes.json();
-        setAnalysisStatus(data);
       }
 
       if (statsRes.ok) {
@@ -235,23 +213,49 @@ export function LibraryManagement() {
         </div>
 
         {libraryStats && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-white">{libraryStats.total_tracks.toLocaleString()}</div>
-              <div className="text-xs text-zinc-500">Tracks</div>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-white">{libraryStats.total_tracks.toLocaleString()}</div>
+                <div className="text-xs text-zinc-500">Tracks</div>
+              </div>
+              <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-white">{libraryStats.total_albums.toLocaleString()}</div>
+                <div className="text-xs text-zinc-500">Albums</div>
+              </div>
+              <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-white">{libraryStats.total_artists.toLocaleString()}</div>
+                <div className="text-xs text-zinc-500">Artists</div>
+              </div>
+              <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                <div className="text-2xl font-bold text-white">{libraryStats.analyzed_tracks.toLocaleString()}</div>
+                <div className="text-xs text-zinc-500">Analyzed</div>
+              </div>
             </div>
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-white">{libraryStats.total_albums.toLocaleString()}</div>
-              <div className="text-xs text-zinc-500">Albums</div>
-            </div>
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-white">{libraryStats.total_artists.toLocaleString()}</div>
-              <div className="text-xs text-zinc-500">Artists</div>
-            </div>
-            <div className="bg-zinc-800 rounded-lg p-3 text-center">
-              <div className="text-2xl font-bold text-white">{libraryStats.analyzed_tracks.toLocaleString()}</div>
-              <div className="text-xs text-zinc-500">Analyzed</div>
-            </div>
+
+            {/* Analysis progress bar */}
+            {libraryStats.total_tracks > 0 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>Audio Analysis</span>
+                  <span>
+                    {libraryStats.pending_analysis === 0 ? (
+                      <span className="text-green-400">Complete</span>
+                    ) : (
+                      `${libraryStats.pending_analysis.toLocaleString()} pending`
+                    )}
+                  </span>
+                </div>
+                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      libraryStats.pending_analysis === 0 ? 'bg-green-500' : 'bg-cyan-500'
+                    }`}
+                    style={{ width: `${(libraryStats.analyzed_tracks / libraryStats.total_tracks) * 100}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -384,60 +388,6 @@ export function LibraryManagement() {
             </div>
           )}
         </div>
-      </section>
-
-      {/* Analysis Status (read-only) */}
-      <section className="bg-zinc-900 rounded-xl p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="p-2 rounded-lg bg-cyan-500/20">
-            <Music className="w-5 h-5 text-cyan-400" />
-          </div>
-          <div className="flex-1">
-            <h2 className="font-medium text-white">Audio Analysis Status</h2>
-            <p className="text-sm text-zinc-500">BPM, key, and audio features</p>
-          </div>
-          {analysisStatus && (
-            <span className={`flex items-center gap-1 text-sm ${
-              analysisStatus.pending === 0 ? 'text-green-400' : 'text-yellow-400'
-            }`}>
-              {analysisStatus.pending === 0 ? (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Complete
-                </>
-              ) : (
-                <>
-                  <Clock className="w-4 h-4" />
-                  {analysisStatus.pending.toLocaleString()} pending
-                </>
-              )}
-            </span>
-          )}
-        </div>
-
-        {analysisStatus && (
-          <div className="space-y-3">
-            {/* Progress bar */}
-            <div className="h-2 bg-zinc-800 rounded-full overflow-hidden">
-              <div
-                className="h-full transition-all duration-300 bg-cyan-500"
-                style={{ width: `${analysisStatus.percent}%` }}
-              />
-            </div>
-
-            <div className="flex justify-between text-sm text-zinc-400">
-              <span>{analysisStatus.analyzed.toLocaleString()} analyzed</span>
-              <span>{analysisStatus.percent.toFixed(1)}%</span>
-            </div>
-
-            {analysisStatus.failed > 0 && (
-              <div className="flex items-center gap-2 text-sm text-red-400">
-                <AlertCircle className="w-4 h-4" />
-                {analysisStatus.failed} failed
-              </div>
-            )}
-          </div>
-        )}
       </section>
 
       {/* Missing Tracks */}
