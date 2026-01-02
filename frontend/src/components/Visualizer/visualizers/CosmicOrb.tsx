@@ -182,8 +182,8 @@ declare global {
 
 // Enhanced circular waveform with glow
 function CircularWaveform() {
-  const meshRef = useRef<THREE.Line>(null);
-  const audioData = useAudioAnalyser(true);
+  const meshRef = useRef<THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>>(null);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
 
   const geometry = useMemo(() => {
@@ -232,21 +232,14 @@ function CircularWaveform() {
   });
 
   return (
-    <line ref={meshRef} geometry={geometry}>
-      <lineBasicMaterial
-        color="#00ffff"
-        linewidth={2}
-        transparent
-        opacity={0.9}
-      />
-    </line>
+    <primitive object={new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: '#00ffff', transparent: true, opacity: 0.9 }))} ref={meshRef} />
   );
 }
 
 // Second waveform ring with phase offset
 function SecondaryWaveform() {
-  const meshRef = useRef<THREE.Line>(null);
-  const audioData = useAudioAnalyser(true);
+  const meshRef = useRef<THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>>(null);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
 
   const geometry = useMemo(() => {
@@ -294,14 +287,7 @@ function SecondaryWaveform() {
   });
 
   return (
-    <line ref={meshRef} geometry={geometry}>
-      <lineBasicMaterial
-        color="#a855f7"
-        linewidth={1}
-        transparent
-        opacity={0.6}
-      />
-    </line>
+    <primitive object={new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: '#a855f7', transparent: true, opacity: 0.6 }))} ref={meshRef} />
   );
 }
 
@@ -309,7 +295,7 @@ function SecondaryWaveform() {
 function ReactiveOrb() {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   useFrame((_, delta) => {
     if (!materialRef.current) return;
@@ -353,7 +339,7 @@ function ReactiveOrb() {
 // Inner glowing core
 function GlowingCore() {
   const meshRef = useRef<THREE.Mesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -381,7 +367,7 @@ function GlowingCore() {
 
 // Main visualizer scene with all effects
 function CosmicOrbScene() {
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   return (
     <>

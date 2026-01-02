@@ -79,7 +79,7 @@ declare global {
 // GPU Flow Particles using instanced mesh
 function FlowParticles({ palette }: { palette: string[] }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
   const count = 8000;
 
@@ -225,7 +225,7 @@ function FlowParticles({ palette }: { palette: string[] }) {
 function GlowingRings({ palette }: { palette: string[] }) {
   const groupRef = useRef<THREE.Group>(null);
   const materialsRef = useRef<THREE.ShaderMaterial[]>([]);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
 
   useFrame((_, delta) => {
@@ -272,7 +272,7 @@ function GlowingRings({ palette }: { palette: string[] }) {
         >
           <torusGeometry args={[1.2 + i * 0.4, 0.03 + i * 0.01, 16, 100]} />
           <ringMaterial
-            ref={(el) => {
+            ref={(el: THREE.ShaderMaterial | null) => {
               if (el) materialsRef.current[i] = el;
             }}
             transparent
@@ -290,9 +290,9 @@ function GlowingRings({ palette }: { palette: string[] }) {
 // Central energy core
 function EnergyCore({ palette }: { palette: string[] }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
-  useFrame((_, delta) => {
+  useFrame(() => {
     if (!meshRef.current) return;
 
     const audioData = getAudioData();
@@ -361,7 +361,7 @@ const ReflectiveGround = memo(function ReflectiveGround({ palette }: { palette: 
 
 // Scene with fog and lighting
 function ColorFlowScene({ palette }: { palette: string[] }) {
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   const bgColor = useMemo(() => {
     const color = new THREE.Color(palette[0]);

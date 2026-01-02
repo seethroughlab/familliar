@@ -13,13 +13,13 @@
 import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { registerVisualizer, type VisualizerProps } from '../types';
+import { type VisualizerProps } from '../../types';
 import {
   useAudioAnalyser,
   getAudioData,
   useArtworkPalette,
   useBeatSync,
-} from '../hooks';
+} from '../../hooks';
 
 /**
  * Inner scene component - runs inside the Canvas.
@@ -40,8 +40,9 @@ function ExampleScene({
   // Enable audio analysis
   useAudioAnalyser(true);
 
-  // Get beat sync data
-  const { beatProgress, onBeat } = useBeatSync(bpm, currentTime);
+  // Get beat sync data (available for use in animations)
+  // const { beatProgress, onBeat } = useBeatSync(bpm, currentTime);
+  useBeatSync(bpm, currentTime);
 
   // Animation loop
   useFrame((_, delta) => {
@@ -119,7 +120,6 @@ export function ExampleVisualizer({
   artworkUrl,
   features,
   currentTime,
-  isPlaying,
 }: VisualizerProps) {
   // Extract colors from artwork
   const palette = useArtworkPalette(artworkUrl);
@@ -152,17 +152,15 @@ export function ExampleVisualizer({
   );
 }
 
-// Register the visualizer
-// Uncomment this to add it to the visualizer picker
-/*
-registerVisualizer(
-  {
-    id: 'example-visualizer',
-    name: 'Example Visualizer',
-    description: 'Template visualizer demonstrating the API',
-    usesMetadata: true,
-    author: 'Familiar',
-  },
-  ExampleVisualizer
-);
-*/
+// To register this visualizer, add to your file:
+// import { registerVisualizer } from '../../types';
+// registerVisualizer(
+//   {
+//     id: 'example-visualizer',
+//     name: 'Example Visualizer',
+//     description: 'Template visualizer demonstrating the API',
+//     usesMetadata: true,
+//     author: 'Familiar',
+//   },
+//   ExampleVisualizer
+// );

@@ -209,7 +209,7 @@ declare global {
 // Sparkle particles along kaleidoscope edges
 function SparkleParticles({ segments }: { segments: number }) {
   const meshRef = useRef<THREE.InstancedMesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
   const particleCount = 300;
 
@@ -238,10 +238,8 @@ function SparkleParticles({ segments }: { segments: number }) {
     timeRef.current += delta;
     const time = timeRef.current;
 
-    const audioData = getAudioData();
-    const bass = audioData?.bass ?? 0;
-    const treble = audioData?.treble ?? 0;
-    const intensity = (audioData?.averageFrequency ?? 0) / 255;
+    const audio = getAudioData();
+    const bass = audio?.bass ?? 0;
 
     // Spawn new particles on beat
     if (bass > 0.3 && Math.random() < bass * 0.5) {
@@ -329,7 +327,7 @@ function SparkleParticles({ segments }: { segments: number }) {
 // Outer ring decoration
 function OuterRing() {
   const meshRef = useRef<THREE.Mesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
 
   useFrame((_, delta) => {
@@ -366,7 +364,7 @@ function OuterRing() {
 // Main kaleidoscope component using shader
 function KaleidoscopeShader({ texture }: { texture: THREE.Texture }) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const timeRef = useRef(0);
   const rotationRef = useRef(0);
   const innerRotationRef = useRef(0);

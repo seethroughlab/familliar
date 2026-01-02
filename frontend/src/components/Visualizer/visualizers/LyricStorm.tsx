@@ -8,8 +8,8 @@
  * - Bloom, chromatic aberration, and film grain post-processing
  */
 import { useRef, useEffect, useMemo, useState } from 'react';
-import { Canvas, useFrame, useThree, extend } from '@react-three/fiber';
-import { Text, shaderMaterial } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { useAudioAnalyser, getAudioData } from '../../../hooks/useAudioAnalyser';
 import { registerVisualizer, type VisualizerProps } from '../types';
@@ -36,7 +36,7 @@ let wordIdCounter = 0;
 function SwarmParticles() {
   const meshRef = useRef<THREE.InstancedMesh>(null);
   const lightRef = useRef<THREE.PointLight>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const count = 3000;
 
   const particles = useMemo(() => {
@@ -130,14 +130,12 @@ function SwarmParticles() {
 function WordParticles({
   words,
   currentLineWords,
-  onSpawnComplete,
 }: {
   words: string[];
   currentLineWords: string[];
-  onSpawnComplete: () => void;
 }) {
   const groupRef = useRef<THREE.Group>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
   const [wordList, setWordList] = useState<Word3D[]>([]);
   const wordsRef = useRef<Word3D[]>([]);
   const spawnedLineRef = useRef<string[]>([]);
@@ -149,7 +147,6 @@ function WordParticles({
     if (!groupRef.current) return;
 
     timeRef.current += delta;
-    const time = timeRef.current;
 
     const audioData = getAudioData();
     const bass = audioData?.bass ?? 0;
@@ -286,7 +283,7 @@ function WordParticles({
 // Background plane
 function BackgroundPlane() {
   const meshRef = useRef<THREE.Mesh>(null);
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -312,7 +309,7 @@ function LyricStormScene({
   allWords: string[];
   currentLineWords: string[];
 }) {
-  const audioData = useAudioAnalyser(true);
+  useAudioAnalyser(true);
 
   return (
     <>
@@ -328,7 +325,6 @@ function LyricStormScene({
       <WordParticles
         words={allWords}
         currentLineWords={currentLineWords}
-        onSpawnComplete={() => {}}
       />
 
       <AudioReactiveEffects

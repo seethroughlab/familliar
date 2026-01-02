@@ -11,7 +11,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Map as MapIcon, Loader2, ZoomIn, ZoomOut, Maximize2, Users, Disc } from 'lucide-react';
-import { libraryApi, tracksApi, type MapNode, type MapEdge } from '../../../api/client';
+import { libraryApi, tracksApi, type MapNode } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 
 // Register this browser

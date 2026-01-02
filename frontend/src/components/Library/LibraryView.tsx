@@ -153,7 +153,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   }, []);
 
   // Filter to artist's tracks (used internally after viewing artist detail)
-  const handleFilterToArtist = useCallback(
+  const _handleFilterToArtist = useCallback(
     (artistName: string) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
