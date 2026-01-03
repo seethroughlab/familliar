@@ -354,7 +354,7 @@ async def get_worker_status(db: DbSession) -> WorkerStatus:
             status="online",
             active_tasks=active_task_list[:10],  # Limit to 10
             processed_total=0,  # Not tracked in new system
-            concurrency=2,  # ProcessPoolExecutor max_workers
+            concurrency=1,  # ProcessPoolExecutor max_workers
         ))
 
     except Exception as e:
