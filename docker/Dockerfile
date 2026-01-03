@@ -57,6 +57,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # =============================================================================
 FROM python-base AS production
 
+# Version injected at build time (from git tag)
+ARG VERSION=dev
+RUN echo "${VERSION}" > /app/VERSION
+
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \

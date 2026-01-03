@@ -10,7 +10,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.api.deps import DbSession
-from app.config import ANALYSIS_VERSION
+from app.config import ANALYSIS_VERSION, get_app_version
 
 router = APIRouter(tags=["diagnostics"])
 
@@ -133,7 +133,7 @@ async def export_diagnostics(db: DbSession) -> DiagnosticsExport:
 
     return DiagnosticsExport(
         exported_at=datetime.now(UTC).isoformat(),
-        version="0.1.0",
+        version=get_app_version(),
         deployment_mode="docker" if is_running_in_docker() else "local",
         system_info=get_system_info(),
         system_health=system_health,

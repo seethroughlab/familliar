@@ -39,6 +39,7 @@ from app.api.routes import (
     videos,
 )
 from app.api.routes import settings as settings_routes
+from app.config import get_app_version
 from app.config import settings as app_config
 from app.logging_config import get_logger, setup_logging
 
@@ -178,7 +179,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 app = FastAPI(
     title="Familiar",
     description="LLM-powered local music player API",
-    version="0.1.0",
+    version=get_app_version(),
     lifespan=lifespan,
 )
 

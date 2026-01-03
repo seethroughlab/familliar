@@ -3,6 +3,15 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def get_app_version() -> str:
+    """Get app version from VERSION file (set at Docker build time) or fallback."""
+    version_file = Path("/app/VERSION")
+    if version_file.exists():
+        return version_file.read_text().strip()
+    # Fallback for local development
+    return "dev"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

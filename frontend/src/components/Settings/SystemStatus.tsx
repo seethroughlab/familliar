@@ -483,8 +483,8 @@ export function SystemStatus() {
         </div>
       )}
 
-      {/* Report Issue Button */}
-      <div className="mt-4 pt-4 border-t border-zinc-700">
+      {/* Report Issue Button & Version */}
+      <div className="mt-4 pt-4 border-t border-zinc-700 flex items-center justify-between">
         <button
           onClick={handleReportIssue}
           className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-white hover:bg-zinc-700/50 rounded transition-colors"
@@ -492,6 +492,7 @@ export function SystemStatus() {
           <Bug className="w-4 h-4" />
           Report Issue
         </button>
+        <span className="text-xs text-zinc-600">{health.version}</span>
       </div>
 
       {/* Report Issue Modal */}

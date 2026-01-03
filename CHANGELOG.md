@@ -12,11 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Energy: Now uses dB scale normalization (-60dB→0, -6dB→1) instead of raw RMS values
   - Valence: Chroma is now rotated to detected key before comparing major/minor intervals
 - **Database connection exhaustion** during library sync - `queue_unanalyzed_tracks()` now reuses the shared connection pool instead of creating a new engine on each call
-- **Stale Redis state on restart** - Container restart while sync is running no longer blocks future syncs
-- **Process pool crash recovery** - Audio analysis now auto-recovers from BrokenProcessPool errors instead of requiring container restart
 
 ### Changed
 - Bumped ANALYSIS_VERSION to 3 (all tracks will be re-analyzed with corrected energy/valence)
+
+## [0.2.1] - 2026-01-03
+
+### Fixed
+- **Process pool crash recovery** - Audio analysis now auto-recovers from BrokenProcessPool errors instead of requiring container restart
+- **Stale Redis state on restart** - Container restart while sync is running no longer blocks future syncs
 
 ## [0.2.0] - 2026-01-02
 
@@ -93,5 +97,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Library management moved to Admin page (cleaner Settings panel)
 
 [0.2.2]: https://github.com/seethroughlab/familliar/releases/tag/v0.2.2
+[0.2.1]: https://github.com/seethroughlab/familliar/releases/tag/v0.2.1
 [0.2.0]: https://github.com/seethroughlab/familliar/releases/tag/v0.2.0
 [0.1.0]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.0

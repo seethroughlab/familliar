@@ -1074,6 +1074,7 @@ export interface SystemHealth {
   services: ServiceStatus[];
   warnings: string[];
   deployment_mode: 'docker' | 'local';
+  version: string;
 }
 
 export interface WorkerTask {

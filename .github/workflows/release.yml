@@ -64,6 +64,15 @@ jobs:
           npm ci
           npm run build
 
+      - name: Get version from tag
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
@@ -73,6 +82,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

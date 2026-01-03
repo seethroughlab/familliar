@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 
 from app.api.deps import DbSession
-from app.config import ANALYSIS_VERSION
+from app.config import ANALYSIS_VERSION, get_app_version
 from app.db.models import Track
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,7 @@ class SystemHealth(BaseModel):
     services: list[ServiceStatus]
     warnings: list[str] = []
     deployment_mode: str = "local"  # "docker" or "local"
+    version: str = "dev"
 
 
 def is_running_in_docker() -> bool:
@@ -256,6 +257,7 @@ async def system_health_check(db: DbSession) -> SystemHealth:
         services=services,
         warnings=warnings,
         deployment_mode="docker" if is_running_in_docker() else "local",
+        version=get_app_version(),
     )
 
 
