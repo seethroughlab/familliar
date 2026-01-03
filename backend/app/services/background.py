@@ -12,6 +12,7 @@ import logging
 import multiprocessing as mp
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from typing import Any
 
 import redis
@@ -53,13 +54,28 @@ class BackgroundManager:
     def executor(self) -> ProcessPoolExecutor:
         """Lazy ProcessPoolExecutor with spawn context."""
         if self._executor is None:
-            # Use spawn to get clean processes (fork can inherit corrupted OpenBLAS state)
-            self._executor = ProcessPoolExecutor(
-                max_workers=2,
-                mp_context=mp_context,
-            )
-            logger.info("ProcessPoolExecutor initialized with spawn context (2 workers)")
+            self._create_executor()
         return self._executor
+
+    def _create_executor(self) -> None:
+        """Create a new ProcessPoolExecutor with spawn context."""
+        # Use spawn to get clean processes (fork can inherit corrupted OpenBLAS state)
+        self._executor = ProcessPoolExecutor(
+            max_workers=2,
+            mp_context=mp_context,
+        )
+        logger.info("ProcessPoolExecutor initialized with spawn context (2 workers)")
+
+    def _reset_executor(self) -> None:
+        """Reset the executor after a crash. Creates a fresh process pool."""
+        if self._executor is not None:
+            try:
+                self._executor.shutdown(wait=False)
+            except Exception:
+                pass
+            self._executor = None
+        self._create_executor()
+        logger.warning("ProcessPoolExecutor was reset after crash")
 
     async def startup(self) -> None:
         """Initialize scheduler on app startup."""
@@ -183,14 +199,34 @@ class BackgroundManager:
             self._current_sync_task.cancel()
         self._release_sync_lock()
 
-    async def run_cpu_bound(self, func: Callable, *args: Any) -> Any:
+    async def run_cpu_bound(self, func: Callable, *args: Any, max_retries: int = 1) -> Any:
         """Run CPU-bound function in process pool (spawned, not forked).
 
         This is the key to avoiding OpenBLAS SIGSEGV - spawned processes
         don't inherit corrupted library state from the parent.
+
+        If the process pool crashes (BrokenProcessPool), it will be automatically
+        recreated and the operation retried once.
         """
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(self.executor, func, *args)
+        retries = 0
+        last_error = None
+
+        while retries <= max_retries:
+            try:
+                return await loop.run_in_executor(self.executor, func, *args)
+            except BrokenProcessPool as e:
+                last_error = e
+                if retries < max_retries:
+                    logger.warning(
+                        f"Process pool crashed, recreating and retrying "
+                        f"(attempt {retries + 1}/{max_retries + 1})"
+                    )
+                    self._reset_executor()
+                    retries += 1
+                else:
+                    raise
+        raise last_error  # Should not reach here, but for type safety
 
     async def run_analysis(self, track_id: str) -> dict[str, Any]:
         """Queue a track for analysis.
