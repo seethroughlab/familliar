@@ -141,16 +141,22 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: [backend-lint, frontend-lint]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Free up disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          df -h
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v6
+        timeout-minutes: 25
         with:
           context: .
           file: docker/Dockerfile
