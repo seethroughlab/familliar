@@ -849,9 +849,11 @@ async def get_library_stats(db: DbSession) -> LibraryStats:
         select(func.count(Track.id)).where(Track.album_type == AlbumType.SOUNDTRACK)
     ) or 0
 
-    # Analysis status
+    # Analysis status - count only tracks at current analysis version
+    from app.config import ANALYSIS_VERSION
+
     analyzed_tracks = await db.scalar(
-        select(func.count(Track.id)).where(Track.analysis_version > 0)
+        select(func.count(Track.id)).where(Track.analysis_version >= ANALYSIS_VERSION)
     ) or 0
 
     return LibraryStats(
