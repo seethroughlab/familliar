@@ -77,8 +77,48 @@ class BackgroundManager:
         self._create_executor()
         logger.warning("ProcessPoolExecutor was reset after crash")
 
+    def _cleanup_stale_redis_state(self) -> None:
+        """Clean up stale Redis state from previous runs.
+
+        This handles the case where the container was restarted while a sync
+        was running - the Redis state would still show "running" with a stale
+        heartbeat, blocking new syncs from starting.
+        """
+        from datetime import datetime, timedelta
+
+        try:
+            # Check sync progress for stale "running" state
+            data: bytes | None = self.redis.get("familiar:sync:progress")  # type: ignore[assignment]
+            if data:
+                progress = json.loads(data)
+                if progress.get("status") == "running":
+                    heartbeat = progress.get("last_heartbeat")
+                    if heartbeat:
+                        try:
+                            hb_time = datetime.fromisoformat(heartbeat)
+                            age = datetime.now() - hb_time
+                            # If heartbeat is older than 2 minutes, it's stale
+                            if age > timedelta(minutes=2):
+                                logger.info(
+                                    f"Clearing stale sync state (heartbeat was {age.total_seconds():.0f}s ago)"
+                                )
+                                self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+                        except (ValueError, TypeError):
+                            # Invalid timestamp, clear it
+                            logger.info("Clearing sync state with invalid heartbeat")
+                            self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+                    else:
+                        # No heartbeat but status is running - stale
+                        logger.info("Clearing sync state with missing heartbeat")
+                        self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup stale Redis state: {e}")
+
     async def startup(self) -> None:
         """Initialize scheduler on app startup."""
+        # Clean up any stale Redis state from previous runs
+        self._cleanup_stale_redis_state()
+
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.triggers.cron import CronTrigger
