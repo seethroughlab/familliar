@@ -61,10 +61,10 @@ class BackgroundManager:
         """Create a new ProcessPoolExecutor with spawn context."""
         # Use spawn to get clean processes (fork can inherit corrupted OpenBLAS state)
         self._executor = ProcessPoolExecutor(
-            max_workers=2,
+            max_workers=1,  # Single worker to limit memory (CLAP model is ~1.5GB)
             mp_context=mp_context,
         )
-        logger.info("ProcessPoolExecutor initialized with spawn context (2 workers)")
+        logger.info("ProcessPoolExecutor initialized with spawn context (1 worker)")
 
     def _reset_executor(self) -> None:
         """Reset the executor after a crash. Creates a fresh process pool."""
