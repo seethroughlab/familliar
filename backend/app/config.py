@@ -85,7 +85,8 @@ class Settings(BaseSettings):
 # Analysis version constant - bump when analysis pipeline changes
 # v1: Placeholder features only
 # v2: Real CLAP embeddings + librosa features
-ANALYSIS_VERSION = 2
+# v3: Fixed energy normalization (dB scale) and valence (key-aware chroma)
+ANALYSIS_VERSION = 3
 
 # Supported audio formats
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".aif"}

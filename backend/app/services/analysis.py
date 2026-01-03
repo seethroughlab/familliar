@@ -243,9 +243,12 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     key_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     features["key"] = key_names[key_idx]
 
-    # Energy (RMS energy normalized)
+    # Energy (RMS energy normalized to 0-1 using dB scale)
     rms = librosa.feature.rms(y=y)[0]
-    features["energy"] = float(np.mean(rms))
+    rms_mean = float(np.mean(rms))
+    # Convert to dB, normalize: -60dB (very quiet) -> 0, -6dB (loud) -> 1
+    rms_db = 20 * np.log10(rms_mean + 1e-10)
+    features["energy"] = float(np.clip((rms_db + 60) / 54, 0, 1))
 
     # Spectral features for danceability approximation
     spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
@@ -280,10 +283,14 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     features["instrumentalness"] = float(max(0, 1 - vocal_ratio))
 
     # Valence: approximation based on mode (major/minor) and brightness
-    # Major keys (higher chroma energy in major thirds) tend to sound "happier"
-    # Use chroma pattern and spectral brightness instead of tonnetz (which crashes)
-    major_thirds = chroma[[0, 4, 7], :]  # C, E, G (major chord roots)
-    minor_thirds = chroma[[0, 3, 7], :]  # C, Eb, G (minor chord roots)
+    # Rotate chroma to detected key so we compare the correct intervals
+    # key_idx was computed above for the "key" feature
+    chroma_rotated = np.roll(chroma, -key_idx, axis=0)
+    # Now index 0 is the tonic - compare major vs minor third intervals
+    # Major: tonic(0), major 3rd(4), 5th(7) - sounds "happier"
+    # Minor: tonic(0), minor 3rd(3), 5th(7) - sounds "sadder"
+    major_thirds = chroma_rotated[[0, 4, 7], :]
+    minor_thirds = chroma_rotated[[0, 3, 7], :]
     major_energy = np.mean(major_thirds)
     minor_energy = np.mean(minor_thirds)
     mode_indicator = (major_energy - minor_energy) / (major_energy + minor_energy + 1e-6)
