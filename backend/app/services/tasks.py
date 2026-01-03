@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
+from sqlalchemy import update
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import ANALYSIS_VERSION, settings
@@ -787,7 +788,7 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
                     # Reset analysis version so they get re-analyzed
                     for track_id in missing_embedding_ids:
                         await db.execute(
-                            Track.__table__.update()
+                            update(Track)
                             .where(Track.id == track_id)
                             .values(analysis_version=0, analyzed_at=None)
                         )

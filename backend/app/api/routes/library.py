@@ -1,6 +1,7 @@
 """Library management endpoints."""
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel
@@ -772,7 +773,7 @@ class MusicMapResponse(BaseModel):
 @router.get("/map", response_model=MusicMapResponse)
 async def get_music_map(
     db: DbSession,
-    entity_type: str = "artists",  # artists, albums
+    entity_type: Literal["artists", "albums"] = "artists",
     limit: int = 200,
 ) -> MusicMapResponse:
     """Get 2D positions for artists/albums based on audio similarity.
@@ -787,9 +788,6 @@ async def get_music_map(
         limit: Maximum entities to include (default 200, max 500)
     """
     from app.services.embedding_map import get_embedding_map_service
-
-    if entity_type not in ("artists", "albums"):
-        raise HTTPException(status_code=400, detail="entity_type must be 'artists' or 'albums'")
 
     limit = min(limit, 500)  # Cap at 500 for performance
 
