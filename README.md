@@ -1,7 +1,7 @@
 # Familiar
 
 [![CI](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml)
-[![Release](https://github.com/seethroughlab/familliar/actions/workflows/release.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/release.yml)
+[![Release](https://github.com/seethroughlab/familliar/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/seethroughlab/familliar/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An LLM-powered local music player that combines library management with AI-powered discovery. Your music, your server, your data.
