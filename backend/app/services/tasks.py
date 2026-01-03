@@ -711,104 +711,87 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
     Returns the number of tracks queued.
     """
     from sqlalchemy import and_, or_, select
-    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
     from app.db.models import Track, TrackAnalysis
+    from app.db.session import async_session_maker
     from app.services.analysis import get_analysis_capabilities
     from app.services.background import get_background_manager
-
-    local_engine = create_async_engine(
-        settings.database_url,
-        echo=False,
-        future=True,
-    )
-    local_session_maker = async_sessionmaker(
-        local_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
 
     # Check if embeddings are now enabled
     caps = get_analysis_capabilities()
     embeddings_enabled = caps["embeddings_enabled"]
 
     queued = 0
-    try:
-        async with local_session_maker() as db:
-            # Skip tracks that failed recently (within 24 hours)
-            failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+    async with async_session_maker() as db:
+        # Skip tracks that failed recently (within 24 hours)
+        failure_cutoff = datetime.utcnow() - timedelta(hours=24)
 
-            # First, get tracks that need basic analysis
+        # First, get tracks that need basic analysis
+        result = await db.execute(
+            select(Track.id)
+            .where(
+                and_(
+                    or_(
+                        Track.analysis_version == 0,
+                        Track.analysis_version < ANALYSIS_VERSION,
+                        Track.analyzed_at.is_(None),
+                    ),
+                    or_(
+                        Track.analysis_failed_at.is_(None),
+                        Track.analysis_failed_at < failure_cutoff,
+                    ),
+                )
+            )
+            .limit(limit)
+        )
+        track_ids = set(str(row[0]) for row in result.fetchall())
+
+        # If embeddings are now enabled, also get tracks missing embeddings
+        if embeddings_enabled and len(track_ids) < limit:
+            remaining_limit = limit - len(track_ids)
             result = await db.execute(
                 select(Track.id)
+                .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
                 .where(
                     and_(
-                        or_(
-                            Track.analysis_version == 0,
-                            Track.analysis_version < ANALYSIS_VERSION,
-                            Track.analyzed_at.is_(None),
-                        ),
+                        TrackAnalysis.embedding.is_(None),
+                        Track.analysis_version >= ANALYSIS_VERSION,
                         or_(
                             Track.analysis_failed_at.is_(None),
                             Track.analysis_failed_at < failure_cutoff,
                         ),
                     )
                 )
-                .limit(limit)
+                .limit(remaining_limit)
             )
-            track_ids = set(str(row[0]) for row in result.fetchall())
+            missing_embedding_ids = set(str(row[0]) for row in result.fetchall())
 
-            # If embeddings are now enabled, also get tracks missing embeddings
-            if embeddings_enabled and len(track_ids) < limit:
-                remaining_limit = limit - len(track_ids)
-                result = await db.execute(
-                    select(Track.id)
-                    .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
-                    .where(
-                        and_(
-                            TrackAnalysis.embedding.is_(None),
-                            Track.analysis_version >= ANALYSIS_VERSION,
-                            or_(
-                                Track.analysis_failed_at.is_(None),
-                                Track.analysis_failed_at < failure_cutoff,
-                            ),
-                        )
-                    )
-                    .limit(remaining_limit)
+            if missing_embedding_ids:
+                logger.info(
+                    f"Found {len(missing_embedding_ids)} tracks with missing embeddings "
+                    "(embeddings now enabled)"
                 )
-                missing_embedding_ids = set(str(row[0]) for row in result.fetchall())
-
-                if missing_embedding_ids:
-                    logger.info(
-                        f"Found {len(missing_embedding_ids)} tracks with missing embeddings "
-                        "(embeddings now enabled)"
+                # Reset analysis version so they get re-analyzed
+                for track_id in missing_embedding_ids:
+                    await db.execute(
+                        update(Track)
+                        .where(Track.id == track_id)
+                        .values(analysis_version=0, analyzed_at=None)
                     )
-                    # Reset analysis version so they get re-analyzed
-                    for track_id in missing_embedding_ids:
-                        await db.execute(
-                            update(Track)
-                            .where(Track.id == track_id)
-                            .values(analysis_version=0, analyzed_at=None)
-                        )
-                    await db.commit()
-                    track_ids.update(missing_embedding_ids)
+                await db.commit()
+                track_ids.update(missing_embedding_ids)
 
-            if not track_ids:
-                logger.info("No tracks need analysis")
-                return 0
+        if not track_ids:
+            logger.info("No tracks need analysis")
+            return 0
 
-            # Queue each track for analysis
-            bg = get_background_manager()
-            for track_id in track_ids:
-                await bg.run_analysis(track_id)
-                queued += 1
+        # Queue each track for analysis
+        bg = get_background_manager()
+        for track_id in track_ids:
+            await bg.run_analysis(track_id)
+            queued += 1
 
-            logger.info(f"Queued {queued} tracks for analysis")
-
-    finally:
-        await local_engine.dispose()
+        logger.info(f"Queued {queued} tracks for analysis")
 
     return queued
 
