@@ -501,13 +501,13 @@ class TestConcurrentSyncPrevention:
 
         This is the key test that prevents the duplicate tracks bug.
         """
+        import json
+        from datetime import datetime
+
         import redis
 
         from app.config import settings
         from app.services.background import get_background_manager
-
-        import json
-        from datetime import datetime
 
         r = redis.from_url(settings.redis_url)
         bg = get_background_manager()

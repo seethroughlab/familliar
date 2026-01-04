@@ -659,6 +659,26 @@ familiar/
     └── videos/       # Downloaded music videos
 ```
 
+## Open Questions
+
+We'd love your feedback on these potential features:
+
+### Should Familiar support GPU acceleration for audio analysis?
+
+Currently, audio analysis runs on CPU only (~6-7 seconds per track). GPU acceleration could speed up the CLAP embedding generation by 3-5x, but comes with trade-offs:
+
+**Pros:**
+- Faster initial library scan (important for large libraries)
+- CLAP embeddings ~3-5x faster on GPU
+
+**Cons:**
+- Docker image size increases from ~1.5GB to ~3-4GB
+- Requires nvidia-docker and CUDA drivers on host
+- Most NAS devices don't have GPUs
+- librosa (BPM, key detection) is CPU-only regardless
+
+**Would GPU support be useful for your setup?** [Open an issue](https://github.com/seethroughlab/familliar/issues) to share your thoughts!
+
 ## Reporting Issues
 
 Found a bug or have a feature request? Please open an issue:
