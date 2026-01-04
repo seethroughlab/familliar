@@ -59,6 +59,11 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-4400}:8000"
+    # Increase file descriptor limit for large libraries
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     # Resource limits to prevent system overload during analysis
     deploy:
       resources:
