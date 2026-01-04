@@ -45,12 +45,12 @@ COPY backend/uv.lock ./
 COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production, with analysis extras)
-# Install CPU-only PyTorch first (~200MB vs ~5GB for CUDA version)
-# Note: We install torch separately to avoid CUDA dependencies, then sync other packages
+# Install CPU-only PyTorch AFTER uv sync (~200MB vs ~5GB for CUDA version)
+# Note: uv sync removes packages not in lockfile, so torch must come last
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv && \
-    uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
-    uv sync --frozen --no-dev --extra analysis --no-install-package torch
+    uv sync --frozen --no-dev --extra analysis && \
+    uv pip install torch --index-url https://download.pytorch.org/whl/cpu
 
 # =============================================================================
 # Stage 4: Production image
