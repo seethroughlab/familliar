@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: familiar-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: familiar
       POSTGRES_PASSWORD: familiar
@@ -20,6 +21,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: familiar-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
