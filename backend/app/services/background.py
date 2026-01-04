@@ -11,6 +11,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import time
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -19,6 +20,10 @@ from typing import Any
 import redis
 
 from app.config import settings
+
+# Rate limiting for executor recreation to prevent runaway process spawning
+EXECUTOR_RESET_COOLDOWN = 30.0  # Minimum seconds between executor resets
+EXECUTOR_MAX_CONSECUTIVE_FAILURES = 5  # Max failures before giving up
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +61,11 @@ class BackgroundManager:
         self._current_sync_task: asyncio.Task | None = None
         self._analysis_tasks: dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
+        # Executor rate limiting state
+        self._executor_lock = asyncio.Lock()  # Protects executor reset
+        self._last_executor_reset: float = 0.0
+        self._consecutive_executor_failures: int = 0
+        self._executor_disabled: bool = False
 
     @property
     def redis(self) -> redis.Redis:
@@ -81,16 +91,51 @@ class BackgroundManager:
         )
         logger.info("ProcessPoolExecutor initialized with spawn context (1 worker, nice=10)")
 
-    def _reset_executor(self) -> None:
-        """Reset the executor after a crash. Creates a fresh process pool."""
+    def _reset_executor(self) -> bool:
+        """Reset the executor after a crash. Creates a fresh process pool.
+
+        Returns True if reset succeeded, False if rate-limited or disabled.
+        """
+        # Check if executor is disabled due to too many failures
+        if self._executor_disabled:
+            logger.error("Executor is disabled due to repeated failures - not resetting")
+            return False
+
+        # Check cooldown period
+        now = time.monotonic()
+        time_since_last_reset = now - self._last_executor_reset
+        if time_since_last_reset < EXECUTOR_RESET_COOLDOWN:
+            logger.warning(
+                f"Executor reset rate-limited (last reset {time_since_last_reset:.1f}s ago, "
+                f"cooldown is {EXECUTOR_RESET_COOLDOWN}s)"
+            )
+            return False
+
+        # Track consecutive failures
+        self._consecutive_executor_failures += 1
+        if self._consecutive_executor_failures >= EXECUTOR_MAX_CONSECUTIVE_FAILURES:
+            self._executor_disabled = True
+            logger.error(
+                f"Executor disabled after {self._consecutive_executor_failures} consecutive "
+                f"failures - analysis will be unavailable until restart"
+            )
+            return False
+
+        # Shutdown old executor (wait briefly to allow cleanup)
         if self._executor is not None:
             try:
-                self._executor.shutdown(wait=False)
+                self._executor.shutdown(wait=True, cancel_futures=True)
             except Exception:
                 pass
             self._executor = None
+
         self._create_executor()
-        logger.warning("ProcessPoolExecutor was reset after crash")
+        self._last_executor_reset = now
+        logger.warning(
+            f"ProcessPoolExecutor was reset after crash "
+            f"(failure {self._consecutive_executor_failures}/{EXECUTOR_MAX_CONSECUTIVE_FAILURES})"
+        )
+        return True
 
     def _cleanup_stale_redis_state(self) -> None:
         """Clean up stale Redis state from previous runs.
@@ -285,23 +330,42 @@ class BackgroundManager:
         don't inherit corrupted library state from the parent.
 
         If the process pool crashes (BrokenProcessPool), it will be automatically
-        recreated and the operation retried once.
+        recreated and the operation retried once, subject to rate limiting.
         """
+        # Check if executor is disabled before even trying
+        if self._executor_disabled:
+            raise RuntimeError("Process pool executor is disabled due to repeated failures")
+
         loop = asyncio.get_event_loop()
         retries = 0
-        last_error = None
+        last_error: Exception | None = None
 
         while retries <= max_retries:
             try:
-                return await loop.run_in_executor(self.executor, func, *args)
+                result = await loop.run_in_executor(self.executor, func, *args)
+                # Success! Reset failure counter
+                self._consecutive_executor_failures = 0
+                return result
             except BrokenProcessPool as e:
                 last_error = e
                 if retries < max_retries:
-                    logger.warning(
-                        f"Process pool crashed, recreating and retrying "
-                        f"(attempt {retries + 1}/{max_retries + 1})"
-                    )
-                    self._reset_executor()
+                    # Use lock to prevent concurrent reset attempts
+                    async with self._executor_lock:
+                        # Double-check the executor wasn't already reset while waiting
+                        if self._executor_disabled:
+                            raise RuntimeError(
+                                "Process pool executor is disabled due to repeated failures"
+                            )
+                        logger.warning(
+                            f"Process pool crashed, attempting reset "
+                            f"(attempt {retries + 1}/{max_retries + 1})"
+                        )
+                        reset_ok = self._reset_executor()
+                        if not reset_ok:
+                            # Rate-limited or disabled, don't retry
+                            raise RuntimeError(
+                                "Process pool reset failed (rate-limited or disabled)"
+                            ) from e
                     retries += 1
                 else:
                     raise
