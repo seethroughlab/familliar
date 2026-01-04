@@ -8,6 +8,7 @@ import gc
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -38,6 +39,7 @@ def log_memory(label: str) -> None:
     """Log current memory usage with a label."""
     mem_mb = get_memory_mb()
     logger.info(f"[MEMORY] {label}: {mem_mb:.1f} MB (PID {os.getpid()})")
+    sys.stdout.flush()  # Ensure log is written before potential OOM
 
 # Redis client for progress reporting
 _redis_client: redis.Redis | None = None
