@@ -506,18 +506,30 @@ class TestConcurrentSyncPrevention:
         from app.config import settings
         from app.services.background import get_background_manager
 
+        import json
+        from datetime import datetime
+
         r = redis.from_url(settings.redis_url)
         bg = get_background_manager()
 
-        # Clean up any stale lock
-        r.delete("familiar:sync:lock")
+        # Clean up any stale state
+        r.delete("familiar:sync:lock", "familiar:sync:progress")
 
         try:
-            # Simulate a sync already running by acquiring the lock
+            # Simulate a sync already running by acquiring the lock AND setting progress
+            # (lock without progress is now treated as stale/orphaned)
             lock_acquired = r.set("familiar:sync:lock", "1", nx=True, ex=60)
             assert lock_acquired, "Should acquire fresh lock"
 
-            # is_sync_running should detect the lock
+            # Set progress with recent heartbeat
+            progress = {
+                "status": "running",
+                "phase": "reading",
+                "last_heartbeat": datetime.now().isoformat(),
+            }
+            r.set("familiar:sync:progress", json.dumps(progress), ex=60)
+
+            # is_sync_running should detect the lock with valid heartbeat
             assert bg.is_sync_running() is True, "Should detect running sync via Redis lock"
 
             # Attempting to start another sync should fail
@@ -528,7 +540,7 @@ class TestConcurrentSyncPrevention:
 
         finally:
             # Clean up
-            r.delete("familiar:sync:lock")
+            r.delete("familiar:sync:lock", "familiar:sync:progress")
 
     async def test_sync_lock_is_released_after_completion(self, clean_db):
         """Sync lock should be released after sync completes (success or failure)."""

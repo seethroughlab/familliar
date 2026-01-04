@@ -204,31 +204,55 @@ class BackgroundManager:
         return len(self._analysis_tasks)
 
     def is_sync_running(self) -> bool:
-        """Check if a library sync is currently running."""
+        """Check if a library sync is currently running.
+
+        Also detects and clears stale locks from crashed syncs.
+        """
+        from datetime import datetime, timedelta
+
         # Check local task first
         if self._current_sync_task and not self._current_sync_task.done():
             return True
 
-        # Check Redis lock
+        # Check Redis state
         try:
-            if self.redis.get("familiar:sync:lock"):
-                return True
-
-            # Also check progress status
+            has_lock = bool(self.redis.get("familiar:sync:lock"))
             data: bytes | None = self.redis.get("familiar:sync:progress")  # type: ignore[assignment]
+
             if data:
                 progress = json.loads(data)
                 if progress.get("status") == "running":
                     # Check if heartbeat is recent
                     heartbeat = progress.get("last_heartbeat")
                     if heartbeat:
-                        from datetime import datetime, timedelta
                         try:
                             hb_time = datetime.fromisoformat(heartbeat)
-                            if datetime.now() - hb_time < timedelta(minutes=2):
+                            age = datetime.now() - hb_time
+                            if age < timedelta(minutes=2):
+                                # Recent heartbeat = sync is actively running
                                 return True
+                            elif has_lock:
+                                # Stale heartbeat with lock = crashed sync, clean up
+                                logger.info(
+                                    f"Clearing stale sync lock (heartbeat was {age.total_seconds():.0f}s ago)"
+                                )
+                                self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+                                return False
                         except (ValueError, TypeError):
-                            pass
+                            # Invalid timestamp with lock = stale, clean up
+                            if has_lock:
+                                logger.info("Clearing sync lock with invalid heartbeat")
+                                self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+                            return False
+
+            # Lock exists but no progress data = stale lock, clean up
+            if has_lock and not data:
+                logger.info("Clearing orphaned sync lock (no progress data)")
+                self.redis.delete("familiar:sync:lock")
+                return False
+
+            return has_lock
+
         except Exception:
             pass
 
