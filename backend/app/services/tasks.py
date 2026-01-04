@@ -570,6 +570,14 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
     This function is designed to run in a spawned process to isolate
     librosa/numpy crashes from the main API process.
     """
+    # Configure logging for subprocess (spawned processes don't inherit parent's config)
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(message)s',
+        force=True,  # Override any existing config
+    )
+
     from sqlalchemy import select
 
     from app.db.models import Track, TrackAnalysis
