@@ -23,6 +23,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql:ro
+    logging:
+      driver: journald
+      options:
+        tag: "familiar-postgres"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U familiar"]
       interval: 10s
@@ -37,6 +41,10 @@ services:
     restart: unless-stopped
     volumes:
       - redis_data:/data
+    logging:
+      driver: journald
+      options:
+        tag: "familiar-redis"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -51,6 +59,20 @@ services:
     restart: unless-stopped
     ports:
       - "${API_PORT:-4400}:8000"
+    # Resource limits to prevent system overload during analysis
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'    # Max 2 CPU cores
+          memory: 4G     # Max 4GB RAM
+        reservations:
+          cpus: '0.5'    # Guaranteed 0.5 cores
+          memory: 512M   # Guaranteed 512MB
+    # Use journald for persistent logging that survives reboots
+    logging:
+      driver: journald
+      options:
+        tag: "familiar-api"
     volumes:
       - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
       - app_data:/app/data  # Persists settings.json

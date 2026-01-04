@@ -10,6 +10,7 @@ import asyncio
 import json
 import logging
 import multiprocessing as mp
+import os
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -20,6 +21,19 @@ import redis
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _analysis_worker_init() -> None:
+    """Initialize analysis worker process with low priority.
+
+    Sets nice value to 10 (lower priority) so analysis doesn't starve
+    other system processes. Nice range is -20 (highest) to 19 (lowest).
+    """
+    try:
+        os.nice(10)
+        logging.info(f"Analysis worker started with nice=10 (PID {os.getpid()})")
+    except Exception as e:
+        logging.warning(f"Could not set nice priority: {e}")
 
 # Force spawn context to avoid fork issues with numpy/OpenBLAS
 mp_context = mp.get_context("spawn")
@@ -63,8 +77,9 @@ class BackgroundManager:
         self._executor = ProcessPoolExecutor(
             max_workers=1,  # Single worker to limit memory (CLAP model is ~1.5GB)
             mp_context=mp_context,
+            initializer=_analysis_worker_init,  # Run workers at lower priority
         )
-        logger.info("ProcessPoolExecutor initialized with spawn context (1 worker)")
+        logger.info("ProcessPoolExecutor initialized with spawn context (1 worker, nice=10)")
 
     def _reset_executor(self) -> None:
         """Reset the executor after a crash. Creates a fresh process pool."""
