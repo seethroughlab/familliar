@@ -4,8 +4,10 @@ Tasks run in-process using asyncio and ProcessPoolExecutor.
 Progress is reported via Redis for frontend consumption.
 """
 
+import gc
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -19,6 +21,23 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.config import ANALYSIS_VERSION, settings
 
 logger = logging.getLogger(__name__)
+
+
+def get_memory_mb() -> float:
+    """Get current process memory usage in MB."""
+    try:
+        import resource
+        # Get memory in KB, convert to MB
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        return usage.ru_maxrss / 1024  # macOS returns bytes, Linux returns KB
+    except Exception:
+        return 0.0
+
+
+def log_memory(label: str) -> None:
+    """Log current memory usage with a label."""
+    mem_mb = get_memory_mb()
+    logger.info(f"[MEMORY] {label}: {mem_mb:.1f} MB (PID {os.getpid()})")
 
 # Redis client for progress reporting
 _redis_client: redis.Redis | None = None
@@ -564,6 +583,9 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
     )
     from app.services.artwork import extract_and_save_artwork
 
+    # Log memory at start of analysis
+    log_memory("analysis_start")
+
     track_info = None
     try:
         with sync_session_maker() as db:
@@ -589,12 +611,17 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
                 artist=track.artist,
                 album=track.album,
             )
+            log_memory("after_artwork")
 
             # Extract audio features with librosa
             features: dict[str, Any] = extract_features(file_path)
+            gc.collect()  # Force garbage collection after feature extraction
+            log_memory("after_features")
 
             # Generate CLAP embedding for similarity search
             embedding = extract_embedding(file_path)
+            gc.collect()  # Force garbage collection after embedding
+            log_memory("after_embedding")
 
             # Generate AcoustID fingerprint
             acoustid_fingerprint = None
@@ -621,6 +648,8 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
 
             if musicbrainz_metadata:
                 features["musicbrainz"] = musicbrainz_metadata
+
+            log_memory("after_metadata")
 
             # Create or update analysis record
             analysis = TrackAnalysis(
@@ -652,12 +681,17 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
             track.analysis_failed_at = None
 
             db.commit()
+            log_memory("after_commit")
 
             logger.info(
                 f"Analysis complete for {track.title}: "
                 f"BPM={features.get('bpm')}, Key={features.get('key')}, "
                 f"Embedding={'Yes' if embedding else 'No'}"
             )
+
+            # Final cleanup and memory logging
+            gc.collect()
+            log_memory("analysis_end")
 
             return {
                 "track_id": track_id,
