@@ -568,9 +568,10 @@ class TestConcurrentSyncPrevention:
         r = redis.from_url(settings.redis_url)
         bg = get_background_manager()
 
-        # Clean up
+        # Clean up Redis and local task state
         r.delete("familiar:sync:lock")
         r.delete("familiar:sync:progress")
+        bg._current_sync_task = None  # Reset local task state from previous tests
 
         try:
             # Create stale progress (old heartbeat, no lock)
