@@ -169,8 +169,6 @@ jobs:
           file: docker/Dockerfile
           push: false
           tags: familiar:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
   e2e-test:
     name: E2E Tests (Playwright)
