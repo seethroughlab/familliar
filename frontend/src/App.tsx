@@ -56,20 +56,44 @@ function AppContent() {
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const queryClient = useQueryClient();
 
-  // Determine initial tab from URL path (e.g., /settings from OAuth callback)
-  const initialTab = (): RightPanelTab => {
+  // Determine initial tab from URL hash or path
+  const getTabFromUrl = (): RightPanelTab => {
+    // Check hash first (e.g., #settings, #playlists)
+    const hash = window.location.hash.slice(1); // Remove #
+    if (hash === 'settings' || hash === 'playlists' || hash === 'visualizer' || hash === 'library') {
+      return hash;
+    }
+    // Fall back to pathname (e.g., /settings from OAuth callback)
     const path = window.location.pathname;
-    const search = window.location.search;
-    logger.debug('[AppContent] initialTab called, path:', path, 'search:', search);
+    logger.debug('[AppContent] getTabFromUrl, hash:', hash, 'path:', path);
     if (path === '/settings') return 'settings';
     if (path === '/playlists') return 'playlists';
+    if (path === '/visualizer') return 'visualizer';
     return 'library';
   };
-  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>(() => {
-    const tab = initialTab();
+
+  const [rightPanelTab, setRightPanelTabState] = useState<RightPanelTab>(() => {
+    const tab = getTabFromUrl();
     logger.debug('[AppContent] Initial tab set to:', tab);
     return tab;
   });
+
+  // Wrap setRightPanelTab to also update URL hash
+  const setRightPanelTab = useCallback((tab: RightPanelTab) => {
+    setRightPanelTabState(tab);
+    // Update hash without triggering a scroll
+    window.history.replaceState(null, '', `#${tab}`);
+  }, []);
+
+  // Listen for hash changes (back/forward navigation)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const tab = getTabFromUrl();
+      setRightPanelTabState(tab);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
   const [showFullPlayer, setShowFullPlayer] = useState(false);
   // Listening sessions disabled for v0.1.0
   // const [showSessionPanel, setShowSessionPanel] = useState(false);
