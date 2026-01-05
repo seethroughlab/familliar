@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.8] - 2026-01-05
+
+### Changed
+
+- **Made Features and Embeddings first-class sync phases** instead of sub-phases
+  - Cleaner API: `phase: "features"` and `phase: "embeddings"` instead of `sub_phase`
+  - Simplified frontend phase tracking logic
+
 ## [0.1.0-alpha.7] - 2026-01-04
 
 ### Changed
@@ -120,7 +128,8 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.7...HEAD
+[Unreleased]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.8...HEAD
+[0.1.0-alpha.8]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.4...v0.1.0-alpha.5

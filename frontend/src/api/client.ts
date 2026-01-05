@@ -339,13 +339,10 @@ export interface RecentImport {
 }
 
 // Unified Sync Types
-export type SyncPhase = 'idle' | 'discovering' | 'reading' | 'analyzing' | 'complete' | 'error';
-
-export type AnalysisSubPhase = 'features' | 'embeddings';
+export type SyncPhase = 'idle' | 'discovering' | 'reading' | 'features' | 'embeddings' | 'complete' | 'error';
 
 export interface SyncProgress {
   phase: SyncPhase;
-  sub_phase?: AnalysisSubPhase;  // Only set during 'analyzing' phase
   phase_message: string;
 
   // Discovery/scan metrics

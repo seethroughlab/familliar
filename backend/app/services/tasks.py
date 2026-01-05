@@ -198,29 +198,53 @@ class SyncProgressReporter:
             "started_at": self.started_at,
         })
 
-    def set_analyzing(
+    def set_features(
         self,
         analyzed: int,
         pending: int,
         total: int,
         scan_stats: dict[str, int] | None = None,
-        sub_phase: str = "features",
     ) -> None:
-        """Phase 3: Audio analysis (features extraction or embedding generation)."""
+        """Phase 3: Feature extraction (librosa, artwork, AcoustID)."""
         pct = int(analyzed / total * 100) if total > 0 else 0
         stats = scan_stats or {}
 
-        # Choose message based on sub-phase
-        if sub_phase == "embeddings":
-            phase_msg = f"Generating embeddings... {analyzed}/{total} ({pct}%)"
-        else:
-            phase_msg = f"Extracting features... {analyzed}/{total} ({pct}%)"
+        self._update({
+            "status": "running",
+            "phase": "features",
+            "phase_message": f"Extracting features... {analyzed}/{total} ({pct}%)",
+            "files_discovered": stats.get("files_total", 0),
+            "files_processed": stats.get("files_total", 0),
+            "files_total": stats.get("files_total", 0),
+            "new_tracks": stats.get("new_tracks", 0),
+            "updated_tracks": stats.get("updated_tracks", 0),
+            "unchanged_tracks": stats.get("unchanged_tracks", 0),
+            "relocated_tracks": stats.get("relocated_tracks", 0),
+            "marked_missing": stats.get("marked_missing", 0),
+            "recovered": stats.get("recovered", 0),
+            "tracks_analyzed": analyzed,
+            "tracks_pending_analysis": pending,
+            "tracks_total": total,
+            "analysis_percent": pct,
+            "current_item": None,
+            "started_at": self.started_at,
+        })
+
+    def set_embeddings(
+        self,
+        analyzed: int,
+        pending: int,
+        total: int,
+        scan_stats: dict[str, int] | None = None,
+    ) -> None:
+        """Phase 4: Embedding generation (CLAP model)."""
+        pct = int(analyzed / total * 100) if total > 0 else 0
+        stats = scan_stats or {}
 
         self._update({
             "status": "running",
-            "phase": "analyzing",
-            "sub_phase": sub_phase,
-            "phase_message": phase_msg,
+            "phase": "embeddings",
+            "phase_message": f"Generating embeddings... {analyzed}/{total} ({pct}%)",
             "files_discovered": stats.get("files_total", 0),
             "files_processed": stats.get("files_total", 0),
             "files_total": stats.get("files_total", 0),
@@ -401,12 +425,11 @@ async def run_library_sync(
                     await queue_tracks_for_features(limit=100)
 
                 last_pending_features = pending_features
-                progress.set_analyzing(
+                progress.set_features(
                     analyzed=features_done,
                     pending=pending_features,
                     total=total_tracks,
                     scan_stats=scan_stats,
-                    sub_phase="features",
                 )
 
                 await asyncio.sleep(2)
@@ -453,12 +476,11 @@ async def run_library_sync(
                         await queue_tracks_for_embeddings(limit=100)
 
                     last_pending_embeddings = pending_embeddings
-                    progress.set_analyzing(
+                    progress.set_embeddings(
                         analyzed=embeddings_done,
                         pending=pending_embeddings,
                         total=total_tracks,
                         scan_stats=scan_stats,
-                        sub_phase="embeddings",
                     )
 
                     await asyncio.sleep(2)
