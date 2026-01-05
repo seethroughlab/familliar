@@ -189,7 +189,7 @@ The release workflow automatically detects pre-releases by checking for a hyphen
 
 ```bash
 # On your server
-docker pull ghcr.io/seethroughlab/familliar:0.3.0-beta.1
+docker pull ghcr.io/seethroughlab/familiar:0.3.0-beta.1
 docker compose -f docker/docker-compose.prod.yml up -d
 ```
 

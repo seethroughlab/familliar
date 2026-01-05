@@ -1,7 +1,7 @@
 # Familiar
 
-[![CI](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml/badge.svg)](https://github.com/seethroughlab/familliar/actions/workflows/ci.yml)
-[![Release](https://github.com/seethroughlab/familliar/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/seethroughlab/familliar/actions/workflows/release.yml)
+[![CI](https://github.com/seethroughlab/familiar/actions/workflows/ci.yml/badge.svg)](https://github.com/seethroughlab/familiar/actions/workflows/ci.yml)
+[![Release](https://github.com/seethroughlab/familiar/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/seethroughlab/familiar/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 An LLM-powered local music player that combines library management with AI-powered discovery. Your music, your server, your data.
@@ -146,7 +146,7 @@ The easiest way to run Familiar is with Docker:
 
 ```bash
 # Clone the repository
-git clone https://github.com/seethroughlab/familliar.git
+git clone https://github.com/seethroughlab/familiar.git
 cd familliar/docker
 
 # Copy and configure environment
@@ -176,7 +176,7 @@ Access the web UI at http://localhost:4400, then go to `/admin` to configure API
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/seethroughlab/familliar.git
+   git clone https://github.com/seethroughlab/familiar.git
    cd familliar/docker
    ```
 
@@ -263,7 +263,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
          retries: 5
 
      api:
-       image: ghcr.io/seethroughlab/familliar:latest
+       image: ghcr.io/seethroughlab/familiar:latest
        container_name: familiar-api
        restart: unless-stopped
        ports:
@@ -303,12 +303,12 @@ If you want to access Familiar over HTTPS using OMV's SSL certificate (recommend
 
 1. Create a proxy configuration file:
    ```bash
-   nano /etc/nginx/openmediavault-webgui.d/familliar.conf
+   nano /etc/nginx/openmediavault-webgui.d/familiar.conf
    ```
 
 2. Add this content:
    ```nginx
-   location /familliar/ {
+   location /familiar/ {
        proxy_pass http://127.0.0.1:4400/;
        proxy_http_version 1.1;
        proxy_set_header Upgrade $http_upgrade;
@@ -325,7 +325,7 @@ If you want to access Familiar over HTTPS using OMV's SSL certificate (recommend
    nginx -t && systemctl reload nginx
    ```
 
-4. Access Familiar at `https://your-omv-ip/familliar/`
+4. Access Familiar at `https://your-omv-ip/familiar/`
 
 #### Updating on OpenMediaVault
 
@@ -333,7 +333,7 @@ To update to a new version:
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/seethroughlab/familliar:latest
+docker pull ghcr.io/seethroughlab/familiar:latest
 
 # Restart the containers
 cd /path/to/familiar
@@ -455,7 +455,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
          retries: 5
 
      api:
-       image: ghcr.io/seethroughlab/familliar:latest
+       image: ghcr.io/seethroughlab/familiar:latest
        container_name: familiar-api
        restart: unless-stopped
        ports:
@@ -677,13 +677,13 @@ Currently, audio analysis runs on CPU only (~6-7 seconds per track). GPU acceler
 - Most NAS devices don't have GPUs
 - librosa (BPM, key detection) is CPU-only regardless
 
-**Would GPU support be useful for your setup?** [Open an issue](https://github.com/seethroughlab/familliar/issues) to share your thoughts!
+**Would GPU support be useful for your setup?** [Open an issue](https://github.com/seethroughlab/familiar/issues) to share your thoughts!
 
 ## Reporting Issues
 
 Found a bug or have a feature request? Please open an issue:
 
-**[GitHub Issues](https://github.com/seethroughlab/familliar/issues)**
+**[GitHub Issues](https://github.com/seethroughlab/familiar/issues)**
 
 When reporting bugs, please include:
 - Your platform (OS, NAS model if applicable, Docker version)

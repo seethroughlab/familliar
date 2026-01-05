@@ -1,7 +1,7 @@
 # Development compose file for NAS (openmediavault)
-# Mounts code from /opt/familliar for quick updates via rsync
+# Mounts code from /opt/familiar for quick updates via rsync
 # Usage on NAS:
-#   1. Clone repo to /opt/familliar
+#   1. Clone repo to /opt/familiar
 #   2. Run: docker compose -f docker-compose.dev.yml up -d
 #   3. From dev machine: make deploy-dev
 #
@@ -42,17 +42,17 @@ services:
       - familiar-network
 
   api:
-    image: ghcr.io/seethroughlab/familliar:latest
+    image: ghcr.io/seethroughlab/familiar:latest
     container_name: familiar-api
     restart: unless-stopped
     ports:
       - "4400:8000"
     volumes:
       # Mount code for quick updates (rsync + restart)
-      - /opt/familliar/backend/app:/app/app:ro
-      - /opt/familliar/frontend/dist:/app/static:ro
+      - /opt/familiar/backend/app:/app/app:ro
+      - /opt/familiar/frontend/dist:/app/static:ro
       # Data persistence (app reads from /app/data relative to workdir)
-      - /opt/familliar/data:/app/data
+      - /opt/familiar/data:/app/data
       # NAS storage locations for folder browser
       - /srv:/srv:ro
       - /media:/media:ro

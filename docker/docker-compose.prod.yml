@@ -54,7 +54,7 @@ services:
       - familiar-network
 
   api:
-    image: ghcr.io/seethroughlab/familliar:${FAMILIAR_VERSION:-latest}
+    image: ghcr.io/seethroughlab/familiar:${FAMILIAR_VERSION:-latest}
     container_name: familiar-api
     restart: unless-stopped
     ports:

@@ -182,7 +182,7 @@ export function SystemStatus() {
   };
 
   const openGitHubIssues = () => {
-    window.open('https://github.com/seethroughlab/familliar/issues/new', '_blank');
+    window.open('https://github.com/seethroughlab/familiar/issues/new', '_blank');
   };
 
   const getStatusIcon = (status: string) => {
