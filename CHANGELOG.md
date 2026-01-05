@@ -7,6 +7,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7] - 2026-01-04
+
+### Changed
+
+- **Split analysis into separate phases** for better memory efficiency
+  - Phase 1: Feature extraction (librosa, artwork, AcoustID) - ~1-2GB memory
+  - Phase 2: Embedding generation (CLAP model) - ~2-3GB memory
+  - Each phase runs in its own subprocess that exits after completion
+  - Peak memory reduced from ~5GB to ~3GB, works on 4GB containers
+- **Updated sync UI** to show 4 phases: Discover → Read → Features → Embeddings
+- **Environment variable** `DISABLE_CLAP_EMBEDDINGS=true` now skips embedding phase entirely
+
+## [0.1.0-alpha.6] - 2026-01-04
+
+### Fixed
+
+- Rate-limited ProcessPoolExecutor recreation to prevent runaway process spawning
+- Increased file descriptor limit to prevent EMFILE errors during bulk analysis
+
+## [0.1.0-alpha.5] - 2026-01-04
+
+### Fixed
+
+- Detect and clear stale sync locks on every sync attempt (not just container startup)
+- Add restart policies to postgres and redis containers in docker-compose
+
+### Changed
+
+- Reliability improvements for production deployment
+
+## [0.1.0-alpha.4] - 2026-01-04
+
+### Fixed
+
+- Install PyTorch after uv sync to prevent package removal during build
+- Flush stdout after memory logs to preserve output on OOM
+
+## [0.1.0-alpha.3] - 2026-01-04
+
+### Fixed
+
+- Configure logging in analysis subprocess for better debugging
+
+## [0.1.0-alpha.2] - 2026-01-03
+
+### Added
+
+- Memory tracking in analysis subprocess for debugging OOM issues
+
+### Fixed
+
+- Reduce uvicorn workers to 1 to prevent OOM during analysis
+- Library stats now correctly counts tracks at current ANALYSIS_VERSION
+
+### Changed
+
+- Disable Docker layer cache for more reliable builds
+- More aggressive disk cleanup during Docker build
+
 ## [0.1.0-alpha.1] - 2026-01-03
 
 First alpha release of Familiar - an LLM-powered local music player.
@@ -61,5 +120,11 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.1...HEAD
+[Unreleased]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.7...HEAD
+[0.1.0-alpha.7]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
+[0.1.0-alpha.6]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
+[0.1.0-alpha.5]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
+[0.1.0-alpha.4]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
+[0.1.0-alpha.3]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
+[0.1.0-alpha.2]: https://github.com/seethroughlab/familliar/compare/v0.1.0-alpha.1...v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/seethroughlab/familliar/releases/tag/v0.1.0-alpha.1
