@@ -85,7 +85,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/api': {
-        target: 'http://localhost:4400',
+        target: process.env.VITE_API_TARGET || 'http://localhost:4400',
         changeOrigin: true,
         timeout: 300000, // 5 minute timeout for long operations like Spotify sync
       },

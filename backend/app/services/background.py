@@ -330,7 +330,11 @@ class BackgroundManager:
         don't inherit corrupted library state from the parent.
 
         If the process pool crashes (BrokenProcessPool), it will be automatically
-        recreated and the operation retried once, subject to rate limiting.
+        recreated and the operation retried once.
+
+        When multiple tasks hit a crash simultaneously, only one will reset the
+        executor (others are rate-limited). Rate-limited tasks will retry with
+        the newly-reset executor rather than failing immediately.
         """
         # Check if executor is disabled before even trying
         if self._executor_disabled:
@@ -349,23 +353,38 @@ class BackgroundManager:
             except BrokenProcessPool as e:
                 last_error = e
                 if retries < max_retries:
-                    # Use lock to prevent concurrent reset attempts
+                    # Use lock to serialize reset attempts
                     async with self._executor_lock:
-                        # Double-check the executor wasn't already reset while waiting
+                        # Check if executor was disabled while waiting for lock
                         if self._executor_disabled:
                             raise RuntimeError(
                                 "Process pool executor is disabled due to repeated failures"
                             )
-                        logger.warning(
-                            f"Process pool crashed, attempting reset "
-                            f"(attempt {retries + 1}/{max_retries + 1})"
-                        )
-                        reset_ok = self._reset_executor()
-                        if not reset_ok:
-                            # Rate-limited or disabled, don't retry
-                            raise RuntimeError(
-                                "Process pool reset failed (rate-limited or disabled)"
-                            ) from e
+
+                        # Check if executor was already reset by another task while we waited
+                        # If so, _reset_executor will be rate-limited but that's OK - we'll
+                        # just retry with the already-reset executor
+                        time_since_reset = time.monotonic() - self._last_executor_reset
+                        if time_since_reset < EXECUTOR_RESET_COOLDOWN:
+                            # Another task just reset it - the executor should be fresh
+                            logger.info(
+                                f"Executor was reset {time_since_reset:.1f}s ago by another task, "
+                                "retrying with fresh executor"
+                            )
+                        else:
+                            # No recent reset - we need to do it
+                            logger.warning(
+                                f"Process pool crashed, attempting reset "
+                                f"(attempt {retries + 1}/{max_retries + 1})"
+                            )
+                            reset_ok = self._reset_executor()
+                            if not reset_ok:
+                                # Disabled due to too many failures
+                                raise RuntimeError(
+                                    "Process pool executor is disabled due to repeated failures"
+                                ) from e
+
+                    # Retry with the (potentially new) executor
                     retries += 1
                 else:
                     raise

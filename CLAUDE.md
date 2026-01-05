@@ -110,6 +110,36 @@ DATABASE_URL="..." REDIS_URL="..." uv run uvicorn app.main:app --reload --port 4
 npm run dev
 ```
 
+## Development Workflow
+
+### Local Development (Default)
+Backend and frontend run locally with hot-reload:
+```bash
+# Terminal 1: Start database + redis
+docker compose up -d
+
+# Terminal 2: Backend with hot-reload
+cd backend && make run
+
+# Terminal 3: Frontend dev server
+cd frontend && npm run dev
+```
+
+### Testing Against Remote NAS (openmediavault)
+For testing with the real 23K track library via Tailscale:
+
+**Frontend-only changes (fastest):**
+```bash
+make dev-remote  # Vite dev server proxies to NAS backend
+```
+
+**Full-stack changes:**
+```bash
+make deploy-dev  # Build + rsync to NAS + restart (~30 sec)
+```
+
+**IMPORTANT:** Do NOT use the full Docker build + GitHub Actions workflow for iterative development - that takes ~1 hour per change. Use `make deploy-dev` instead.
+
 ## Code Conventions
 
 - Backend uses async SQLAlchemy with `DbSession` dependency

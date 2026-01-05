@@ -1,0 +1,91 @@
+# Development compose file for NAS (openmediavault)
+# Mounts code from /opt/familliar for quick updates via rsync
+# Usage on NAS:
+#   1. Clone repo to /opt/familliar
+#   2. Run: docker compose -f docker-compose.dev.yml up -d
+#   3. From dev machine: make deploy-dev
+#
+# This allows ~30 second deploys instead of ~1 hour Docker rebuilds
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: familiar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: familiar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-familiar}
+      POSTGRES_DB: familiar
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-pgvector.sql:/docker-entrypoint-initdb.d/init-pgvector.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U familiar"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - familiar-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: familiar-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - familiar-network
+
+  api:
+    image: ghcr.io/seethroughlab/familliar:latest
+    container_name: familiar-api
+    restart: unless-stopped
+    ports:
+      - "4400:8000"
+    volumes:
+      # Mount code for quick updates (rsync + restart)
+      - /opt/familliar/backend/app:/app/app:ro
+      - /opt/familliar/frontend/dist:/app/static:ro
+      # Data persistence
+      - /opt/familliar/data:/data
+      # NAS storage locations for folder browser
+      - /srv:/srv:ro
+      - /media:/media:ro
+      - /mnt:/mnt:ro
+      - /volume1:/volume1:ro
+      - /volume2:/volume2:ro
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
+      - REDIS_URL=redis://redis:6379/0
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:4400}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
+      - LASTFM_API_SECRET=${LASTFM_API_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/v1/health', timeout=20)"]
+      interval: 30s
+      timeout: 30s
+      start_period: 30s
+      retries: 3
+    networks:
+      - familiar-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  familiar-network:
+    driver: bridge
