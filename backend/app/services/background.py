@@ -371,37 +371,135 @@ class BackgroundManager:
                     raise
         raise last_error  # Should not reach here, but for type safety
 
-    async def run_analysis(self, track_id: str) -> dict[str, Any]:
+    async def run_analysis(
+        self,
+        track_id: str,
+        phase: str = "full",
+    ) -> dict[str, Any]:
         """Queue a track for analysis.
+
+        Args:
+            track_id: Track UUID
+            phase: Which phase to run:
+                - "full": Features + embeddings (default, for backwards compatibility)
+                - "features": Only extract features (librosa, artwork, AcoustID)
+                - "embedding": Only generate CLAP embedding
 
         Runs in process pool to isolate potential crashes.
         """
-        # Check if already analyzing this track
-        if track_id in self._analysis_tasks:
-            task = self._analysis_tasks[track_id]
+        # Use different task keys for different phases to allow tracking separately
+        task_key = f"{track_id}:{phase}"
+
+        # Check if already analyzing this track+phase
+        if task_key in self._analysis_tasks:
+            task = self._analysis_tasks[task_key]
             if not task.done():
                 return {"status": "already_queued"}
 
-        # Create analysis task
-        task = asyncio.create_task(self._do_analysis(track_id))
-        self._analysis_tasks[track_id] = task
+        # Create analysis task for the specified phase
+        if phase == "features":
+            task = asyncio.create_task(self._do_features(track_id))
+        elif phase == "embedding":
+            task = asyncio.create_task(self._do_embedding(track_id))
+        else:
+            task = asyncio.create_task(self._do_analysis(track_id))
 
+        self._analysis_tasks[task_key] = task
         return {"status": "queued"}
 
-    async def _do_analysis(self, track_id: str) -> dict[str, Any]:
-        """Execute track analysis in process pool."""
-        from app.services.tasks import run_track_analysis
+    async def _do_features(self, track_id: str) -> dict[str, Any]:
+        """Execute feature extraction only (Phase 1).
 
+        Runs librosa, artwork extraction, AcoustID in a subprocess.
+        Memory usage: ~1-2GB peak.
+        """
+        from app.services.tasks import run_track_features
+
+        task_key = f"{track_id}:features"
         try:
-            # Run in process pool to isolate librosa/numpy crashes
-            result = await self.run_cpu_bound(run_track_analysis, track_id)
+            result = await self.run_cpu_bound(run_track_features, track_id)
             return result
+        except Exception as e:
+            logger.error(f"Feature extraction failed for {track_id}: {e}")
+            return {"status": "error", "error": str(e)}
+        finally:
+            self._analysis_tasks.pop(task_key, None)
+
+    async def _do_embedding(self, track_id: str) -> dict[str, Any]:
+        """Execute embedding generation only (Phase 2).
+
+        Runs CLAP model in a subprocess.
+        Memory usage: ~2-3GB peak.
+        """
+        import os
+
+        from app.services.tasks import run_track_embedding
+
+        task_key = f"{track_id}:embedding"
+        try:
+            # Check if CLAP embeddings are disabled
+            clap_disabled = os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in (
+                "1", "true", "yes"
+            )
+            if clap_disabled:
+                return {"status": "skipped", "embedding_generated": False}
+
+            result = await self.run_cpu_bound(run_track_embedding, track_id)
+            return result
+        except Exception as e:
+            logger.error(f"Embedding generation failed for {track_id}: {e}")
+            return {"status": "error", "error": str(e)}
+        finally:
+            self._analysis_tasks.pop(task_key, None)
+
+    async def _do_analysis(self, track_id: str) -> dict[str, Any]:
+        """Execute full track analysis in process pool.
+
+        Runs in two separate subprocess phases to reduce peak memory:
+        1. Features phase: librosa, artwork, AcoustID (~1-2GB memory)
+        2. Embedding phase: CLAP model (~2-3GB memory)
+
+        Each subprocess exits after completion, freeing its memory before
+        the next phase starts. This keeps peak memory under ~3GB instead
+        of ~5GB when both run together.
+        """
+        import os
+
+        from app.services.tasks import run_track_embedding, run_track_features
+
+        task_key = f"{track_id}:full"
+        try:
+            # Phase 1: Extract features (librosa, artwork, fingerprint)
+            features_result = await self.run_cpu_bound(run_track_features, track_id)
+
+            if features_result.get("status") != "success":
+                return features_result
+
+            # Phase 2: Extract CLAP embedding (if enabled)
+            clap_disabled = os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in (
+                "1", "true", "yes"
+            )
+
+            if clap_disabled:
+                return {
+                    **features_result,
+                    "embedding_generated": False,
+                    "embedding_skipped": True,
+                }
+
+            embedding_result = await self.run_cpu_bound(run_track_embedding, track_id)
+
+            return {
+                **features_result,
+                "embedding_generated": embedding_result.get("embedding_generated", False),
+                "embedding_error": embedding_result.get("error"),
+            }
+
         except Exception as e:
             logger.error(f"Analysis failed for {track_id}: {e}")
             return {"status": "error", "error": str(e)}
         finally:
-            # Clean up task reference
-            self._analysis_tasks.pop(track_id, None)
+            self._analysis_tasks.pop(task_key, None)
 
     async def run_spotify_sync(
         self,

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { RefreshCw, CheckCircle, AlertCircle, Loader2, Music, FolderSearch, FileText, Activity } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Loader2, Music, FolderSearch, FileText, Activity, Cpu, Sparkles } from 'lucide-react';
 import { libraryApi, type SyncStatus, type SyncPhase } from '../../api/client';
 
 export function LibrarySync() {
@@ -81,19 +81,6 @@ export function LibrarySync() {
     }
   };
 
-  const getPhaseLabel = (phase: SyncPhase) => {
-    switch (phase) {
-      case 'discovering':
-        return 'Discover';
-      case 'reading':
-        return 'Read';
-      case 'analyzing':
-        return 'Analyze';
-      default:
-        return phase;
-    }
-  };
-
   const getStatusIcon = () => {
     if (isStarting) {
       return <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />;
@@ -141,24 +128,28 @@ export function LibrarySync() {
   const isRunning = syncStatus?.status === 'running';
   const progress = syncStatus?.progress;
 
-  // Calculate overall progress percentage
+  // Calculate overall progress percentage (4 phases)
   const getOverallProgress = () => {
     if (!progress) return 0;
     const phase = progress.phase;
 
     if (phase === 'discovering') {
-      return 5; // Discovery is quick
+      return 5; // Discovery is quick (0-5%)
     }
     if (phase === 'reading') {
       const readProgress = progress.files_total > 0
         ? (progress.files_processed / progress.files_total) * 100
         : 0;
-      // Reading is 10-50% of overall
-      return 10 + (readProgress * 0.4);
+      // Reading is 5-30% of overall
+      return 5 + (readProgress * 0.25);
     }
     if (phase === 'analyzing') {
-      // Analyzing is 50-100% of overall
-      return 50 + (progress.analysis_percent * 0.5);
+      // Features phase is 30-65%, Embeddings phase is 65-100%
+      if (progress.sub_phase === 'embeddings') {
+        return 65 + (progress.analysis_percent * 0.35);
+      }
+      // Features phase (default)
+      return 30 + (progress.analysis_percent * 0.35);
     }
     if (phase === 'complete') {
       return 100;
@@ -207,25 +198,76 @@ export function LibrarySync() {
       {/* Phase indicators when running */}
       {isRunning && progress && (
         <div className="mt-4 space-y-3">
-          {/* Phase steps */}
+          {/* Phase steps - 4 phases: Discover → Read → Features → Embeddings */}
           <div className="flex items-center justify-between">
-            {(['discovering', 'reading', 'analyzing'] as SyncPhase[]).map((phase, i) => (
-              <div key={phase} className="flex items-center">
-                <div className="flex items-center gap-1.5">
-                  {getPhaseIcon(phase, progress.phase)}
-                  <span className={`text-xs ${
-                    phase === progress.phase ? 'text-blue-400' :
-                    (['discovering', 'reading', 'analyzing'].indexOf(progress.phase) > i || progress.phase === 'complete')
-                      ? 'text-green-400' : 'text-zinc-600'
-                  }`}>
-                    {getPhaseLabel(phase)}
-                  </span>
-                </div>
-                {i < 2 && (
-                  <div className="w-8 h-px bg-zinc-700 mx-2" />
-                )}
+            {/* Discover */}
+            <div className="flex items-center">
+              <div className="flex items-center gap-1.5">
+                {getPhaseIcon('discovering', progress.phase)}
+                <span className={`text-xs ${
+                  progress.phase === 'discovering' ? 'text-blue-400' :
+                  ['reading', 'analyzing', 'complete'].includes(progress.phase) ? 'text-green-400' : 'text-zinc-600'
+                }`}>
+                  Discover
+                </span>
               </div>
-            ))}
+              <div className="w-4 sm:w-8 h-px bg-zinc-700 mx-1 sm:mx-2" />
+            </div>
+
+            {/* Read */}
+            <div className="flex items-center">
+              <div className="flex items-center gap-1.5">
+                {getPhaseIcon('reading', progress.phase)}
+                <span className={`text-xs ${
+                  progress.phase === 'reading' ? 'text-blue-400' :
+                  ['analyzing', 'complete'].includes(progress.phase) ? 'text-green-400' : 'text-zinc-600'
+                }`}>
+                  Read
+                </span>
+              </div>
+              <div className="w-4 sm:w-8 h-px bg-zinc-700 mx-1 sm:mx-2" />
+            </div>
+
+            {/* Features */}
+            <div className="flex items-center">
+              <div className="flex items-center gap-1.5">
+                {progress.phase === 'analyzing' && progress.sub_phase === 'features' ? (
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                ) : (progress.phase === 'analyzing' && progress.sub_phase === 'embeddings') || progress.phase === 'complete' ? (
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                ) : progress.phase === 'analyzing' ? (
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                ) : (
+                  <Cpu className="w-4 h-4 text-zinc-600" />
+                )}
+                <span className={`text-xs ${
+                  progress.phase === 'analyzing' && progress.sub_phase !== 'embeddings' ? 'text-blue-400' :
+                  (progress.phase === 'analyzing' && progress.sub_phase === 'embeddings') || progress.phase === 'complete' ? 'text-green-400' : 'text-zinc-600'
+                }`}>
+                  Features
+                </span>
+              </div>
+              <div className="w-4 sm:w-8 h-px bg-zinc-700 mx-1 sm:mx-2" />
+            </div>
+
+            {/* Embeddings */}
+            <div className="flex items-center">
+              <div className="flex items-center gap-1.5">
+                {progress.phase === 'analyzing' && progress.sub_phase === 'embeddings' ? (
+                  <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                ) : progress.phase === 'complete' ? (
+                  <CheckCircle className="w-4 h-4 text-green-400" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-zinc-600" />
+                )}
+                <span className={`text-xs ${
+                  progress.phase === 'analyzing' && progress.sub_phase === 'embeddings' ? 'text-blue-400' :
+                  progress.phase === 'complete' ? 'text-green-400' : 'text-zinc-600'
+                }`}>
+                  Embeddings
+                </span>
+              </div>
+            </div>
           </div>
 
           {/* Progress bar */}

@@ -16,7 +16,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import update
+from sqlalchemy import and_, update
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import ANALYSIS_VERSION, settings
@@ -204,14 +204,23 @@ class SyncProgressReporter:
         pending: int,
         total: int,
         scan_stats: dict[str, int] | None = None,
+        sub_phase: str = "features",
     ) -> None:
-        """Phase 3: Audio analysis."""
+        """Phase 3: Audio analysis (features extraction or embedding generation)."""
         pct = int(analyzed / total * 100) if total > 0 else 0
         stats = scan_stats or {}
+
+        # Choose message based on sub-phase
+        if sub_phase == "embeddings":
+            phase_msg = f"Generating embeddings... {analyzed}/{total} ({pct}%)"
+        else:
+            phase_msg = f"Extracting features... {analyzed}/{total} ({pct}%)"
+
         self._update({
             "status": "running",
             "phase": "analyzing",
-            "phase_message": f"Analyzing audio... {analyzed}/{total} ({pct}%)",
+            "sub_phase": sub_phase,
+            "phase_message": phase_msg,
             "files_discovered": stats.get("files_total", 0),
             "files_processed": stats.get("files_total", 0),
             "files_total": stats.get("files_total", 0),
@@ -366,13 +375,11 @@ async def run_library_sync(
         )
 
         try:
-            analyzed_count = 0
-            last_pending = -1
-
-            # Poll until analysis is complete
+            # Phase 3a: Feature extraction
+            # Wait for all tracks to have features extracted
+            last_pending_features = -1
             while True:
                 async with local_session_maker() as db:
-                    # Get counts
                     total_result = await db.execute(select(func.count(Track.id)))
                     total_tracks = total_result.scalar() or 0
 
@@ -381,27 +388,80 @@ async def run_library_sync(
                             Track.analysis_version >= ANALYSIS_VERSION
                         )
                     )
-                    analyzed_tracks = analyzed_result.scalar() or 0
-                    pending_tracks = total_tracks - analyzed_tracks
+                    features_done = analyzed_result.scalar() or 0
+                    pending_features = total_tracks - features_done
 
-                if pending_tracks == 0:
-                    analyzed_count = analyzed_tracks
+                if pending_features == 0:
                     break
 
-                # Queue more tracks for analysis if needed
-                if pending_tracks > 0 and (last_pending == -1 or pending_tracks >= last_pending):
-                    await queue_unanalyzed_tracks(limit=100)
+                # Queue more tracks for feature extraction
+                if pending_features > 0 and (
+                    last_pending_features == -1 or pending_features >= last_pending_features
+                ):
+                    await queue_tracks_for_features(limit=100)
 
-                last_pending = pending_tracks
+                last_pending_features = pending_features
                 progress.set_analyzing(
-                    analyzed=analyzed_tracks,
-                    pending=pending_tracks,
+                    analyzed=features_done,
+                    pending=pending_features,
                     total=total_tracks,
                     scan_stats=scan_stats,
+                    sub_phase="features",
                 )
 
-                # Wait before next poll
                 await asyncio.sleep(2)
+
+            # Phase 3b: Embedding generation (if enabled)
+            import os
+            clap_disabled = os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in (
+                "1", "true", "yes"
+            )
+
+            analyzed_count = features_done
+
+            if not clap_disabled:
+                last_pending_embeddings = -1
+                while True:
+                    async with local_session_maker() as db:
+                        # Count tracks with embeddings
+                        from app.db.models import TrackAnalysis
+                        embeddings_result = await db.execute(
+                            select(func.count(TrackAnalysis.id)).where(
+                                and_(
+                                    TrackAnalysis.version >= ANALYSIS_VERSION,
+                                    TrackAnalysis.embedding.is_not(None),
+                                )
+                            )
+                        )
+                        embeddings_done = embeddings_result.scalar() or 0
+
+                        # Total tracks that should have embeddings
+                        total_result = await db.execute(select(func.count(Track.id)))
+                        total_tracks = total_result.scalar() or 0
+
+                        pending_embeddings = total_tracks - embeddings_done
+
+                    if pending_embeddings == 0:
+                        analyzed_count = embeddings_done
+                        break
+
+                    # Queue more tracks for embedding generation
+                    if pending_embeddings > 0 and (
+                        last_pending_embeddings == -1
+                        or pending_embeddings >= last_pending_embeddings
+                    ):
+                        await queue_tracks_for_embeddings(limit=100)
+
+                    last_pending_embeddings = pending_embeddings
+                    progress.set_analyzing(
+                        analyzed=embeddings_done,
+                        pending=pending_embeddings,
+                        total=total_tracks,
+                        scan_stats=scan_stats,
+                        sub_phase="embeddings",
+                    )
+
+                    await asyncio.sleep(2)
 
         finally:
             await local_engine.dispose()
@@ -566,11 +626,12 @@ class _SyncProgressAdapter:
         self.sync_progress.error(msg)
 
 
-def run_track_analysis(track_id: str) -> dict[str, Any]:
-    """Analyze a single track - runs in subprocess via ProcessPoolExecutor.
+def run_track_features(track_id: str) -> dict[str, Any]:
+    """Extract audio features for a track - runs in subprocess via ProcessPoolExecutor.
 
-    This function is designed to run in a spawned process to isolate
-    librosa/numpy crashes from the main API process.
+    Phase 1 of analysis: artwork, librosa features, AcoustID, MusicBrainz.
+    This is separated from embedding extraction to reduce peak memory usage.
+    Each phase runs in its own subprocess that exits after completion.
     """
     # Configure logging for subprocess (spawned processes don't inherit parent's config)
     import logging
@@ -586,15 +647,13 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
     from app.db.session import sync_session_maker
     from app.services.analysis import (
         AnalysisError,
-        extract_embedding,
         extract_features,
         generate_fingerprint,
         identify_track,
     )
     from app.services.artwork import extract_and_save_artwork
 
-    # Log memory at start of analysis
-    log_memory("analysis_start")
+    log_memory("features_start")
 
     track_info = None
     try:
@@ -613,7 +672,7 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
             if not file_path.exists():
                 return {"error": f"File not found: {track.file_path}", "permanent": True}
 
-            logger.info(f"Analyzing track: {track.title} by {track.artist}")
+            logger.info(f"Extracting features: {track.title} by {track.artist}")
 
             # Extract and save artwork
             artwork_hash = extract_and_save_artwork(
@@ -625,13 +684,8 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
 
             # Extract audio features with librosa
             features: dict[str, Any] = extract_features(file_path)
-            gc.collect()  # Force garbage collection after feature extraction
+            gc.collect()
             log_memory("after_features")
-
-            # Generate CLAP embedding for similarity search
-            embedding = extract_embedding(file_path)
-            gc.collect()  # Force garbage collection after embedding
-            log_memory("after_embedding")
 
             # Generate AcoustID fingerprint
             acoustid_fingerprint = None
@@ -661,15 +715,7 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
 
             log_memory("after_metadata")
 
-            # Create or update analysis record
-            analysis = TrackAnalysis(
-                track_id=track.id,
-                version=ANALYSIS_VERSION,
-                features=features,
-                embedding=embedding,
-                acoustid=acoustid_fingerprint,
-            )
-
+            # Create or update analysis record (without embedding - that comes in phase 2)
             existing = db.execute(
                 select(TrackAnalysis)
                 .where(TrackAnalysis.track_id == track.id)
@@ -679,9 +725,16 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
 
             if existing_analysis:
                 existing_analysis.features = features
-                existing_analysis.embedding = embedding
                 existing_analysis.acoustid = acoustid_fingerprint
+                # Keep existing embedding if present
             else:
+                analysis = TrackAnalysis(
+                    track_id=track.id,
+                    version=ANALYSIS_VERSION,
+                    features=features,
+                    embedding=None,  # Embedding extracted in phase 2
+                    acoustid=acoustid_fingerprint,
+                )
                 db.add(analysis)
 
             # Update track analysis status
@@ -694,40 +747,37 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
             log_memory("after_commit")
 
             logger.info(
-                f"Analysis complete for {track.title}: "
-                f"BPM={features.get('bpm')}, Key={features.get('key')}, "
-                f"Embedding={'Yes' if embedding else 'No'}"
+                f"Features extracted for {track.title}: "
+                f"BPM={features.get('bpm')}, Key={features.get('key')}"
             )
 
-            # Final cleanup and memory logging
             gc.collect()
-            log_memory("analysis_end")
+            log_memory("features_end")
 
             return {
                 "track_id": track_id,
+                "file_path": str(file_path),
                 "status": "success",
+                "phase": "features",
                 "artwork_extracted": artwork_hash is not None,
                 "features_extracted": bool(features.get("bpm")),
-                "embedding_generated": embedding is not None,
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }
 
     except AnalysisError as e:
         error_msg = str(e)[:500]
-        logger.error(f"Analysis error for {track_id}: {error_msg}")
-        _record_task_failure("analyze_track", error_msg, track_info)
+        logger.error(f"Feature extraction error for {track_id}: {error_msg}")
+        _record_task_failure("extract_features", error_msg, track_info)
         return {"error": error_msg, "status": "failed", "permanent": True}
     except StaleDataError:
-        # Track was deleted during analysis (e.g., by library sync) - not an error
         logger.info(f"Track {track_id} was deleted during analysis, skipping")
         return {"status": "skipped", "reason": "track_deleted"}
     except Exception as e:
         error_msg = str(e)[:500]
-        logger.error(f"Error analyzing track {track_id}: {error_msg}")
-        _record_task_failure("analyze_track", error_msg, track_info)
+        logger.error(f"Error extracting features for {track_id}: {error_msg}")
+        _record_task_failure("extract_features", error_msg, track_info)
 
-        # Record failure in database
         try:
             with sync_session_maker() as db:
                 result = db.execute(
@@ -744,15 +794,230 @@ def run_track_analysis(track_id: str) -> dict[str, Any]:
         return {"error": error_msg, "status": "failed", "permanent": True}
 
 
+def run_track_embedding(track_id: str) -> dict[str, Any]:
+    """Extract CLAP embedding for a track - runs in subprocess via ProcessPoolExecutor.
+
+    Phase 2 of analysis: CLAP embedding for similarity search.
+    This runs in a separate subprocess from feature extraction to reduce peak memory.
+    The CLAP model uses ~2-3GB of memory, so isolating it prevents OOM kills.
+    """
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(message)s',
+        force=True,
+    )
+
+    from sqlalchemy import select
+
+    from app.db.models import Track, TrackAnalysis
+    from app.db.session import sync_session_maker
+    from app.services.analysis import AnalysisError, extract_embedding
+
+    log_memory("embedding_start")
+
+    try:
+        with sync_session_maker() as db:
+            result = db.execute(
+                select(Track).where(Track.id == UUID(track_id))
+            )
+            track = result.scalar_one_or_none()
+
+            if not track:
+                return {"error": f"Track not found: {track_id}", "permanent": True}
+
+            file_path = Path(track.file_path)
+
+            if not file_path.exists():
+                return {"error": f"File not found: {track.file_path}", "permanent": True}
+
+            logger.info(f"Extracting embedding: {track.title} by {track.artist}")
+
+            # Generate CLAP embedding for similarity search
+            embedding = extract_embedding(file_path)
+            gc.collect()
+            log_memory("after_embedding")
+
+            if embedding is None:
+                # Embeddings disabled or failed - not an error, just skip
+                logger.info(f"No embedding generated for {track.title} (CLAP disabled or failed)")
+                return {
+                    "track_id": track_id,
+                    "status": "success",
+                    "phase": "embedding",
+                    "embedding_generated": False,
+                }
+
+            # Update the existing analysis record with embedding
+            existing = db.execute(
+                select(TrackAnalysis)
+                .where(TrackAnalysis.track_id == track.id)
+                .where(TrackAnalysis.version == ANALYSIS_VERSION)
+            )
+            existing_analysis = existing.scalar_one_or_none()
+
+            if existing_analysis:
+                existing_analysis.embedding = embedding
+                db.commit()
+                logger.info(f"Embedding saved for {track.title}")
+            else:
+                # No analysis record yet - this shouldn't happen if phase 1 ran first
+                logger.warning(f"No analysis record found for {track_id}, skipping embedding save")
+                return {
+                    "track_id": track_id,
+                    "status": "skipped",
+                    "reason": "no_analysis_record",
+                    "embedding_generated": True,
+                }
+
+            gc.collect()
+            log_memory("embedding_end")
+
+            return {
+                "track_id": track_id,
+                "status": "success",
+                "phase": "embedding",
+                "embedding_generated": True,
+            }
+
+    except AnalysisError as e:
+        error_msg = str(e)[:500]
+        logger.error(f"Embedding extraction error for {track_id}: {error_msg}")
+        # Don't mark as failed - features were still extracted successfully
+        return {"error": error_msg, "status": "partial", "phase": "embedding"}
+    except StaleDataError:
+        logger.info(f"Track {track_id} was deleted during embedding, skipping")
+        return {"status": "skipped", "reason": "track_deleted"}
+    except Exception as e:
+        error_msg = str(e)[:500]
+        logger.error(f"Error extracting embedding for {track_id}: {error_msg}")
+        # Don't mark track as failed - features were still extracted
+        return {"error": error_msg, "status": "partial", "phase": "embedding"}
+
+
+def run_track_analysis(track_id: str) -> dict[str, Any]:
+    """Analyze a single track - runs in subprocess via ProcessPoolExecutor.
+
+    DEPRECATED: This function is kept for backwards compatibility.
+    New code should use run_track_features + run_track_embedding separately.
+
+    This combined function may cause OOM on memory-constrained systems.
+    """
+    # Run features first
+    result = run_track_features(track_id)
+    if result.get("status") != "success":
+        return result
+
+    # Then run embedding in same process (not ideal for memory, but maintains compatibility)
+    embedding_result = run_track_embedding(track_id)
+
+    # Merge results
+    return {
+        **result,
+        "embedding_generated": embedding_result.get("embedding_generated", False),
+    }
+
+
+async def queue_tracks_for_features(limit: int = 500) -> int:
+    """Queue tracks that need feature extraction (Phase 1).
+
+    This includes tracks that haven't been analyzed or have old analysis version.
+    Returns the number of tracks queued.
+    """
+    from sqlalchemy import and_, or_, select
+
+    from app.db.models import Track
+    from app.db.session import async_session_maker
+    from app.services.background import get_background_manager
+
+    queued = 0
+    async with async_session_maker() as db:
+        failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+
+        result = await db.execute(
+            select(Track.id)
+            .where(
+                and_(
+                    or_(
+                        Track.analysis_version == 0,
+                        Track.analysis_version < ANALYSIS_VERSION,
+                        Track.analyzed_at.is_(None),
+                    ),
+                    or_(
+                        Track.analysis_failed_at.is_(None),
+                        Track.analysis_failed_at < failure_cutoff,
+                    ),
+                )
+            )
+            .limit(limit)
+        )
+        track_ids = [str(row[0]) for row in result.fetchall()]
+
+    if track_ids:
+        manager = get_background_manager()
+        for track_id in track_ids:
+            await manager.run_analysis(track_id, phase="features")
+            queued += 1
+
+    return queued
+
+
+async def queue_tracks_for_embeddings(limit: int = 500) -> int:
+    """Queue tracks that need embedding generation (Phase 2).
+
+    This includes tracks with features extracted but no embedding.
+    Returns the number of tracks queued.
+    """
+    import os
+
+    from sqlalchemy import and_, or_, select
+
+    from app.db.models import Track, TrackAnalysis
+    from app.db.session import async_session_maker
+    from app.services.background import get_background_manager
+
+    # Skip if CLAP is disabled
+    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+        return 0
+
+    queued = 0
+    async with async_session_maker() as db:
+        failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+
+        # Find tracks with analysis record but no embedding
+        result = await db.execute(
+            select(Track.id)
+            .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
+            .where(
+                and_(
+                    TrackAnalysis.version >= ANALYSIS_VERSION,
+                    TrackAnalysis.embedding.is_(None),
+                    or_(
+                        Track.analysis_failed_at.is_(None),
+                        Track.analysis_failed_at < failure_cutoff,
+                    ),
+                )
+            )
+            .limit(limit)
+        )
+        track_ids = [str(row[0]) for row in result.fetchall()]
+
+    if track_ids:
+        manager = get_background_manager()
+        for track_id in track_ids:
+            await manager.run_analysis(track_id, phase="embedding")
+            queued += 1
+
+    return queued
+
+
 async def queue_unanalyzed_tracks(limit: int = 500) -> int:
     """Queue analysis for tracks that need analysis.
 
-    This includes:
-    - Tracks that haven't been analyzed yet
-    - Tracks analyzed with older version
-    - Tracks missing embeddings (if embeddings are now enabled)
+    DEPRECATED: Use queue_tracks_for_features() and queue_tracks_for_embeddings()
+    for better memory efficiency and progress tracking.
 
-    Returns the number of tracks queued.
+    This function is kept for backwards compatibility and queues for full analysis.
     """
     from sqlalchemy import and_, or_, select
 
@@ -761,16 +1026,13 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
     from app.services.analysis import get_analysis_capabilities
     from app.services.background import get_background_manager
 
-    # Check if embeddings are now enabled
     caps = get_analysis_capabilities()
     embeddings_enabled = caps["embeddings_enabled"]
 
     queued = 0
     async with async_session_maker() as db:
-        # Skip tracks that failed recently (within 24 hours)
         failure_cutoff = datetime.utcnow() - timedelta(hours=24)
 
-        # First, get tracks that need basic analysis
         result = await db.execute(
             select(Track.id)
             .where(
