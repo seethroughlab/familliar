@@ -71,6 +71,34 @@ interface MissingTrack {
   days_missing: number;
 }
 
+// Calculate overall sync progress percentage across 4 phases
+function getOverallProgress(progress: SyncProgress): number {
+  const phase = progress.phase;
+
+  if (phase === 'discovering') {
+    return 5; // Discovery is quick (0-5%)
+  }
+  if (phase === 'reading') {
+    const readProgress = progress.files_total > 0
+      ? (progress.files_processed / progress.files_total) * 100
+      : 0;
+    // Reading is 5-30% of overall
+    return 5 + (readProgress * 0.25);
+  }
+  if (phase === 'features') {
+    // Features phase is 30-65%
+    return 30 + (progress.analysis_percent * 0.35);
+  }
+  if (phase === 'embeddings') {
+    // Embeddings phase is 65-100%
+    return 65 + (progress.analysis_percent * 0.35);
+  }
+  if (phase === 'complete') {
+    return 100;
+  }
+  return 0;
+}
+
 export function LibraryManagement() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
@@ -326,11 +354,7 @@ export function LibraryManagement() {
                 <div
                   className={`h-full transition-all duration-300 ${syncIsStuck ? 'bg-amber-500' : 'bg-purple-500'}`}
                   style={{
-                    width: `${syncStatus.progress.phase === 'analyzing'
-                      ? syncStatus.progress.analysis_percent
-                      : syncStatus.progress.files_total > 0
-                        ? (syncStatus.progress.files_processed / syncStatus.progress.files_total) * 100
-                        : 0}%`
+                    width: `${getOverallProgress(syncStatus.progress)}%`
                   }}
                 />
               </div>
