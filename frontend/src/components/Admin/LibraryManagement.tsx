@@ -260,30 +260,6 @@ export function LibraryManagement() {
                 <div className="text-xs text-zinc-500">Analyzed</div>
               </div>
             </div>
-
-            {/* Analysis progress bar */}
-            {libraryStats.total_tracks > 0 && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-zinc-500">
-                  <span>Audio Analysis</span>
-                  <span>
-                    {libraryStats.pending_analysis === 0 ? (
-                      <span className="text-green-400">Complete</span>
-                    ) : (
-                      `${libraryStats.pending_analysis.toLocaleString()} pending`
-                    )}
-                  </span>
-                </div>
-                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                  <div
-                    className={`h-full transition-all duration-300 ${
-                      libraryStats.pending_analysis === 0 ? 'bg-green-500' : 'bg-cyan-500'
-                    }`}
-                    style={{ width: `${(libraryStats.analyzed_tracks / libraryStats.total_tracks) * 100}%` }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
         )}
       </section>
