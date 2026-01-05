@@ -694,6 +694,24 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             if not file_path.exists():
                 return {"error": f"File not found: {track.file_path}", "permanent": True}
 
+            # Skip tracks outside the "normal song" duration range
+            # - Too short (<30s): intros, sound effects, samples
+            # - Too long (>15min): DJ mixes, podcasts, audiobooks
+            MIN_ANALYSIS_DURATION = 30  # seconds
+            MAX_ANALYSIS_DURATION = 15 * 60  # 15 minutes
+            if track.duration_seconds:
+                if track.duration_seconds < MIN_ANALYSIS_DURATION:
+                    return {
+                        "error": f"Track too short for analysis ({int(track.duration_seconds)}s)",
+                        "permanent": True,
+                    }
+                if track.duration_seconds > MAX_ANALYSIS_DURATION:
+                    duration_mins = int(track.duration_seconds / 60)
+                    return {
+                        "error": f"Track too long for analysis ({duration_mins} min)",
+                        "permanent": True,
+                    }
+
             logger.info(f"Extracting features: {track.title} by {track.artist}")
 
             # Extract and save artwork

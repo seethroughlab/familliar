@@ -51,8 +51,8 @@ services:
       # Mount code for quick updates (rsync + restart)
       - /opt/familliar/backend/app:/app/app:ro
       - /opt/familliar/frontend/dist:/app/static:ro
-      # Data persistence
-      - /opt/familliar/data:/data
+      # Data persistence (app reads from /app/data relative to workdir)
+      - /opt/familliar/data:/app/data
       # NAS storage locations for folder browser
       - /srv:/srv:ro
       - /media:/media:ro
