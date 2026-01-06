@@ -864,15 +864,15 @@ export function AdminSetup() {
             </div>
             <div className="flex items-center justify-between mt-3">
               <p className="text-xs text-zinc-500">
-                Register at{' '}
                 <a
-                  href="https://acoustid.org/api-key"
+                  href="https://acoustid.org/new-application"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-400 hover:underline"
                 >
-                  acoustid.org
+                  Register an application
                 </a>
+                {' '}at acoustid.org (free)
               </p>
               {acoustidApiKey && (
                 <button
