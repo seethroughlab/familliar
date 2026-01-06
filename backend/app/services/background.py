@@ -156,7 +156,7 @@ class BackgroundManager:
                     if heartbeat:
                         try:
                             hb_time = datetime.fromisoformat(heartbeat)
-                            age = datetime.now() - hb_time
+                            age = datetime.utcnow() - hb_time
                             # If heartbeat is older than 2 minutes, it's stale
                             if age > timedelta(minutes=2):
                                 logger.info(
@@ -272,7 +272,7 @@ class BackgroundManager:
                     if heartbeat:
                         try:
                             hb_time = datetime.fromisoformat(heartbeat)
-                            age = datetime.now() - hb_time
+                            age = datetime.utcnow() - hb_time
                             if age < timedelta(minutes=2):
                                 # Recent heartbeat = sync is actively running
                                 return True

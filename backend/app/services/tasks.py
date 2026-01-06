@@ -692,6 +692,11 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             file_path = Path(track.file_path)
 
             if not file_path.exists():
+                # Mark as analyzed so it won't be re-queued (file is missing)
+                track.analysis_version = ANALYSIS_VERSION
+                track.analyzed_at = datetime.utcnow()
+                track.analysis_error = "File not found"
+                db.commit()
                 return {"error": f"File not found: {track.file_path}", "permanent": True}
 
             # Skip tracks outside the "normal song" duration range
@@ -700,15 +705,22 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             MIN_ANALYSIS_DURATION = 30  # seconds
             MAX_ANALYSIS_DURATION = 15 * 60  # 15 minutes
             if track.duration_seconds:
+                skip_reason = None
                 if track.duration_seconds < MIN_ANALYSIS_DURATION:
-                    return {
-                        "error": f"Track too short for analysis ({int(track.duration_seconds)}s)",
-                        "permanent": True,
-                    }
-                if track.duration_seconds > MAX_ANALYSIS_DURATION:
+                    skip_reason = f"Track too short ({int(track.duration_seconds)}s)"
+                elif track.duration_seconds > MAX_ANALYSIS_DURATION:
                     duration_mins = int(track.duration_seconds / 60)
+                    skip_reason = f"Track too long ({duration_mins} min)"
+
+                if skip_reason:
+                    # Mark as analyzed so it won't be re-queued
+                    track.analysis_version = ANALYSIS_VERSION
+                    track.analyzed_at = datetime.utcnow()
+                    track.analysis_error = skip_reason
+                    db.commit()
                     return {
-                        "error": f"Track too long for analysis ({duration_mins} min)",
+                        "error": skip_reason,
+                        "status": "skipped",
                         "permanent": True,
                     }
 
