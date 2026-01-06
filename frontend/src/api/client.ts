@@ -89,6 +89,11 @@ export const tracksApi = {
     const { data } = await api.get(`/tracks/${id}/lyrics`);
     return data;
   },
+
+  enrich: async (id: string): Promise<{ status: string; message: string }> => {
+    const { data } = await api.post(`/tracks/${id}/enrich`);
+    return data;
+  },
 };
 
 export interface LyricLine {
@@ -291,6 +296,9 @@ export interface AppSettingsResponse {
   anthropic_api_key: string | null;
   spotify_configured: boolean;
   lastfm_configured: boolean;
+  // Metadata enrichment
+  auto_enrich_metadata: boolean;
+  enrich_overwrite_existing: boolean;
 }
 
 export interface AppSettingsUpdate {
@@ -299,6 +307,9 @@ export interface AppSettingsUpdate {
   lastfm_api_key?: string;
   lastfm_api_secret?: string;
   anthropic_api_key?: string;
+  // Metadata enrichment
+  auto_enrich_metadata?: boolean;
+  enrich_overwrite_existing?: boolean;
 }
 
 export const appSettingsApi = {

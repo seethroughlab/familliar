@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { RecommendationsPanel } from './RecommendationsPanel';
 import * as offlineService from '../../services/offlineService';
+import { TrackContextMenu } from '../Library/TrackContextMenu';
+import type { ContextMenuState } from '../Library/types';
+import { initialContextMenuState } from '../Library/types';
+import type { Track } from '../../types';
 
 interface Props {
   playlistId: string;
@@ -12,10 +17,27 @@ interface Props {
 }
 
 export function PlaylistDetail({ playlistId, onBack }: Props) {
-  const { setQueue } = usePlayerStore();
+  const { setQueue, addToQueue } = usePlayerStore();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+  const [, setSearchParams] = useSearchParams();
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      isOpen: true,
+      track,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(initialContextMenuState);
+  }, []);
 
   const { data: playlist, isLoading } = useQuery({
     queryKey: ['playlist', playlistId],
@@ -209,10 +231,29 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       {/* Track list */}
       {playlist.tracks.length > 0 ? (
         <div className="space-y-1">
-          {playlist.tracks.map((track, idx) => (
+          {playlist.tracks.map((track, idx) => {
+            // Convert playlist track to full Track type for context menu
+            const fullTrack: Track = {
+              id: track.id,
+              file_path: '',
+              title: track.title || null,
+              artist: track.artist || null,
+              album: track.album || null,
+              album_artist: null,
+              album_type: 'album',
+              track_number: null,
+              disc_number: null,
+              year: null,
+              genre: null,
+              duration_seconds: track.duration_seconds || null,
+              format: null,
+              analysis_version: 0,
+            };
+            return (
             <div
               key={track.id}
               onClick={() => handlePlay(idx)}
+              onContextMenu={(e) => handleContextMenu(fullTrack, e)}
               className="group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-colors"
             >
               {/* Track number / Play button */}
@@ -251,7 +292,8 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                 {formatDuration(track.duration_seconds)}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="text-center py-12 text-zinc-500">
@@ -263,6 +305,51 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       {/* Recommendations (only for AI-generated playlists) */}
       {playlist.is_auto_generated && (
         <RecommendationsPanel playlistId={playlistId} />
+      )}
+
+      {/* Context menu */}
+      {contextMenu.isOpen && contextMenu.track && (
+        <TrackContextMenu
+          track={contextMenu.track}
+          position={contextMenu.position}
+          isSelected={false}
+          onClose={closeContextMenu}
+          onPlay={() => {
+            const idx = playlist.tracks.findIndex(t => t.id === contextMenu.track?.id);
+            if (idx !== -1) handlePlay(idx);
+          }}
+          onQueue={() => {
+            if (contextMenu.track) {
+              addToQueue(contextMenu.track);
+            }
+          }}
+          onGoToArtist={() => {
+            if (contextMenu.track?.artist) {
+              setSearchParams({ artist: contextMenu.track.artist });
+              window.location.hash = 'library';
+            }
+          }}
+          onGoToAlbum={() => {
+            if (contextMenu.track?.artist && contextMenu.track?.album) {
+              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
+              window.location.hash = 'library';
+            }
+          }}
+          onToggleSelect={() => {
+            // Not applicable in playlists
+          }}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+            console.log('Add to playlist:', contextMenu.track?.id);
+          }}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+        />
       )}
     </div>
   );

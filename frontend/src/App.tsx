@@ -32,6 +32,7 @@ function LazyLoadSpinner() {
   );
 }
 import { useScrobbling } from './hooks/useScrobbling';
+import { useMetadataEnrichment } from './hooks/useMetadataEnrichment';
 // Listening sessions disabled for v0.1.0
 // import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -103,6 +104,9 @@ function AppContent() {
   // Initialize Last.fm scrobbling
   useScrobbling();
 
+  // Initialize automatic metadata enrichment
+  useMetadataEnrichment();
+
   // Initialize keyboard shortcuts
   useKeyboardShortcuts({
     onToggleFullPlayer: () => setShowFullPlayer((prev) => !prev),
@@ -147,6 +151,21 @@ function AppContent() {
     return () => window.removeEventListener('show-playlist', handleShowPlaylist);
   }, []);
 
+  // Listen for trigger-chat event from context menus (e.g., "Make Playlist From This Track")
+  const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);
+  useEffect(() => {
+    const handleTriggerChat = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.message) {
+        setPendingChatMessage(detail.message);
+        // On mobile, open the chat overlay
+        setShowMobileChat(true);
+      }
+    };
+    window.addEventListener('trigger-chat', handleTriggerChat);
+    return () => window.removeEventListener('trigger-chat', handleTriggerChat);
+  }, []);
+
   // Hydrate player state from IndexedDB
   const hydrate = usePlayerStore((state) => state.hydrate);
   useEffect(() => {
@@ -183,7 +202,10 @@ function AppContent() {
         {/* Left panel - Chat (hidden on mobile, shown via overlay) */}
         <div className={`hidden md:flex w-96 border-r ${resolvedTheme === 'light' ? 'border-zinc-200' : 'border-zinc-800'} flex-col`}>
           <ErrorBoundary name="Chat">
-            <ChatPanel />
+            <ChatPanel
+              pendingMessage={pendingChatMessage}
+              onPendingMessageConsumed={() => setPendingChatMessage(null)}
+            />
           </ErrorBoundary>
         </div>
 
@@ -205,7 +227,10 @@ function AppContent() {
                 <X className="w-5 h-5" />
               </button>
               <ErrorBoundary name="Chat">
-                <ChatPanel />
+                <ChatPanel
+                  pendingMessage={pendingChatMessage}
+                  onPendingMessageConsumed={() => setPendingChatMessage(null)}
+                />
               </ErrorBoundary>
             </div>
           </div>

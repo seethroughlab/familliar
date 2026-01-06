@@ -809,6 +809,21 @@ def run_track_features(track_id: str) -> dict[str, Any]:
         error_msg = str(e)[:500]
         logger.error(f"Feature extraction error for {track_id}: {error_msg}")
         _record_task_failure("extract_features", error_msg, track_info)
+
+        # Mark track as failed in DB so it won't be retried immediately
+        try:
+            with sync_session_maker() as db:
+                result = db.execute(
+                    select(Track).where(Track.id == UUID(track_id))
+                )
+                track = result.scalar_one_or_none()
+                if track:
+                    track.analysis_error = error_msg
+                    track.analysis_failed_at = datetime.utcnow()
+                    db.commit()
+        except Exception as db_error:
+            logger.warning(f"Could not record analysis failure to DB: {db_error}")
+
         return {"error": error_msg, "status": "failed", "permanent": True}
     except StaleDataError:
         logger.info(f"Track {track_id} was deleted during analysis, skipping")
@@ -1810,3 +1825,191 @@ async def run_new_releases_check(
         return {"status": "error", "error": str(e)}
     finally:
         await local_engine.dispose()
+
+
+# ============================================================================
+# Metadata Enrichment
+# ============================================================================
+
+
+async def run_track_enrichment(track_id: str) -> dict[str, Any]:
+    """Enrich a track's metadata from MusicBrainz/AcoustID.
+
+    This runs asynchronously as a background task.
+
+    Actions:
+    1. Look up track via AcoustID fingerprint
+    2. Fetch full metadata from MusicBrainz
+    3. Download album art from Cover Art Archive
+    4. Write metadata to ID3 tags (respecting overwrite setting)
+    5. Embed artwork in file
+    6. Save artwork to data/art/
+    7. Update database
+    """
+    from sqlalchemy import select
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.db.models import Track
+    from app.services.analysis import lookup_acoustid
+    from app.services.app_settings import get_app_settings_service
+    from app.services.artwork import compute_album_hash, save_artwork
+    from app.services.import_service import embed_artwork
+    from app.services.metadata_enrichment import (
+        fetch_cover_art,
+        needs_enrichment,
+        write_metadata_to_file,
+    )
+    from app.services.musicbrainz import enrich_track
+
+    result: dict[str, Any] = {
+        "track_id": track_id,
+        "status": "skipped",
+        "fields_updated": [],
+        "artwork_saved": False,
+        "tags_written": False,
+    }
+
+    # Get settings
+    app_settings = get_app_settings_service().get()
+    overwrite_existing = app_settings.enrich_overwrite_existing
+
+    local_engine = create_async_engine(settings.database_url, echo=False)
+    local_session_maker = async_sessionmaker(
+        local_engine, class_=AsyncSession, expire_on_commit=False
+    )
+
+    try:
+        async with local_session_maker() as db:
+            stmt = select(Track).where(Track.id == UUID(track_id))
+            query_result = await db.execute(stmt)
+            track = query_result.scalar_one_or_none()
+
+            if not track:
+                return {"status": "error", "error": "Track not found", **result}
+
+            file_path = Path(track.file_path)
+            if not file_path.exists():
+                return {"status": "error", "error": "File not found", **result}
+
+            # Check if enrichment is still needed
+            if not needs_enrichment(track):
+                return {"status": "skipped", "reason": "metadata complete", **result}
+
+            logger.info(f"Enriching metadata for: {track.artist} - {track.title}")
+
+            # Step 1: Lookup via AcoustID
+            musicbrainz_id = None
+            try:
+                acoustid_result = lookup_acoustid(file_path)
+                if acoustid_result:
+                    musicbrainz_id = acoustid_result.get("musicbrainz_recording_id")
+            except Exception as e:
+                logger.debug(f"AcoustID lookup failed: {e}")
+
+            # Step 2: Enrich from MusicBrainz
+            mb_metadata = enrich_track(
+                title=track.title,
+                artist=track.artist,
+                musicbrainz_recording_id=musicbrainz_id,
+            )
+
+            if not mb_metadata:
+                return {"status": "no_match", "error": "No MusicBrainz match found", **result}
+
+            # Step 3: Prepare metadata updates
+            updates: dict[str, Any] = {}
+            file_metadata: dict[str, Any] = {}
+
+            def should_update(field: str, db_value: Any) -> bool:
+                if overwrite_existing:
+                    return True
+                return db_value is None or (isinstance(db_value, str) and not db_value.strip())
+
+            if mb_metadata.get("title") and should_update("title", track.title):
+                updates["title"] = mb_metadata["title"]
+                file_metadata["title"] = mb_metadata["title"]
+
+            if mb_metadata.get("artist") and should_update("artist", track.artist):
+                updates["artist"] = mb_metadata["artist"]
+                file_metadata["artist"] = mb_metadata["artist"]
+
+            if mb_metadata.get("album") and should_update("album", track.album):
+                updates["album"] = mb_metadata["album"]
+                file_metadata["album"] = mb_metadata["album"]
+
+            if mb_metadata.get("tags") and should_update("genre", track.genre):
+                genre = mb_metadata["tags"][0] if mb_metadata["tags"] else None
+                if genre:
+                    updates["genre"] = genre
+                    file_metadata["genre"] = genre
+
+            if mb_metadata.get("release_date") and should_update("year", track.year):
+                try:
+                    year = int(mb_metadata["release_date"][:4])
+                    updates["year"] = year
+                    file_metadata["year"] = year
+                except (ValueError, IndexError):
+                    pass
+
+            # Store MusicBrainz IDs (always update these)
+            if mb_metadata.get("musicbrainz_recording_id"):
+                updates["musicbrainz_track_id"] = mb_metadata["musicbrainz_recording_id"]
+            if mb_metadata.get("musicbrainz_release_id"):
+                updates["musicbrainz_album_id"] = mb_metadata["musicbrainz_release_id"]
+            if mb_metadata.get("musicbrainz_artist_ids"):
+                updates["musicbrainz_artist_id"] = mb_metadata["musicbrainz_artist_ids"][0]
+
+            # Step 4: Fetch album art from Cover Art Archive
+            release_id = mb_metadata.get("musicbrainz_release_id")
+            artwork_data = None
+            if release_id:
+                artwork_data = await fetch_cover_art(release_id)
+
+            # Step 5: Write ID3 tags to file
+            if file_metadata:
+                tags_written = write_metadata_to_file(
+                    file_path, file_metadata, overwrite_existing
+                )
+                result["tags_written"] = tags_written
+
+            # Step 6: Embed and save artwork
+            if artwork_data:
+                # Embed in file
+                try:
+                    embed_artwork(file_path, artwork_data)
+                except Exception as e:
+                    logger.warning(f"Failed to embed artwork: {e}")
+
+                # Save to art folder
+                artist_for_hash = updates.get("artist") or track.artist
+                album_for_hash = updates.get("album") or track.album
+                album_hash = compute_album_hash(artist_for_hash, album_for_hash)
+                try:
+                    save_artwork(artwork_data, album_hash)
+                    result["artwork_saved"] = True
+                except Exception as e:
+                    logger.warning(f"Failed to save artwork: {e}")
+
+            # Step 7: Update database
+            if updates:
+                for key, value in updates.items():
+                    setattr(track, key, value)
+                track.updated_at = datetime.utcnow()
+                await db.commit()
+
+            result["status"] = "success"
+            result["fields_updated"] = list(updates.keys())
+
+            logger.info(
+                f"Enriched track {track_id}: updated {list(updates.keys())}, "
+                f"artwork={'yes' if artwork_data else 'no'}"
+            )
+
+    except Exception as e:
+        logger.error(f"Enrichment failed for {track_id}: {e}", exc_info=True)
+        result["status"] = "error"
+        result["error"] = str(e)
+    finally:
+        await local_engine.dispose()
+
+    return result

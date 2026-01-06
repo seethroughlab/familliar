@@ -27,7 +27,7 @@ Settings by Source
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -48,12 +48,16 @@ class AppSettings(BaseModel):
 
     # LLM Settings
     anthropic_api_key: str | None = None
-    llm_provider: str = "claude"  # "claude" or "ollama"
+    llm_provider: Literal["claude", "ollama"] = "claude"
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"  # Default model with tool support
 
     # Audio fingerprinting
     acoustid_api_key: str | None = None  # Get free key at https://acoustid.org/new-application
+
+    # Metadata enrichment
+    auto_enrich_metadata: bool = True  # Auto-fetch missing metadata on playback
+    enrich_overwrite_existing: bool = False  # Overwrite existing tags with MusicBrainz data
 
 
 class AppSettingsService:

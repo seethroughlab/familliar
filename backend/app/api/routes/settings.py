@@ -1,7 +1,7 @@
 """App settings endpoints for user-configurable settings."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -31,6 +31,10 @@ class SettingsResponse(BaseModel):
     ollama_url: str
     ollama_model: str
 
+    # Metadata enrichment
+    auto_enrich_metadata: bool
+    enrich_overwrite_existing: bool
+
     # Computed status fields
     spotify_configured: bool
     lastfm_configured: bool
@@ -52,9 +56,13 @@ class SettingsUpdateRequest(BaseModel):
     acoustid_api_key: str | None = None
 
     # LLM Settings
-    llm_provider: str | None = None
+    llm_provider: Literal["claude", "ollama"] | None = None
     ollama_url: str | None = None
     ollama_model: str | None = None
+
+    # Metadata enrichment
+    auto_enrich_metadata: bool | None = None
+    enrich_overwrite_existing: bool | None = None
 
 
 @router.get("", response_model=SettingsResponse)

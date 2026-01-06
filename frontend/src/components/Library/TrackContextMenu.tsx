@@ -11,6 +11,7 @@ import {
   Disc,
   CheckSquare,
   Square,
+  Sparkles,
 } from 'lucide-react';
 import type { Track } from '../../types';
 
@@ -25,6 +26,7 @@ interface TrackContextMenuProps {
   onGoToAlbum: () => void;
   onToggleSelect: () => void;
   onAddToPlaylist: () => void;
+  onMakePlaylist: () => void;
 }
 
 interface MenuItemProps {
@@ -62,6 +64,7 @@ export function TrackContextMenu({
   onGoToAlbum,
   onToggleSelect,
   onAddToPlaylist,
+  onMakePlaylist,
 }: TrackContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -173,6 +176,15 @@ export function TrackContextMenu({
         icon={<ListPlus className="w-4 h-4" />}
         label="Add to Playlist..."
         onClick={() => handleAction(onAddToPlaylist)}
+      />
+
+      <MenuDivider />
+
+      {/* AI Actions */}
+      <MenuItem
+        icon={<Sparkles className="w-4 h-4" />}
+        label="Make Playlist From This..."
+        onClick={() => handleAction(onMakePlaylist)}
       />
     </div>
   );

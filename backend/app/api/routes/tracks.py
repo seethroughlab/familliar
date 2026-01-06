@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
@@ -535,6 +535,50 @@ async def record_play(
         play_count=play_history.play_count,
         total_play_seconds=play_history.total_play_seconds,
     )
+
+
+class EnrichResponse(BaseModel):
+    """Response for track enrichment request."""
+
+    status: str
+    message: str
+
+
+@router.post("/{track_id}/enrich", response_model=EnrichResponse)
+async def enrich_track_metadata(
+    track_id: UUID,
+    db: DbSession,
+    background_tasks: BackgroundTasks,
+) -> EnrichResponse:
+    """Trigger background metadata enrichment for a track.
+
+    Fire-and-forget endpoint that returns immediately.
+    Enrichment runs in background if track has missing metadata.
+    Fetches data from MusicBrainz/AcoustID, updates ID3 tags, and saves artwork.
+    """
+    from app.services.app_settings import get_app_settings_service
+    from app.services.metadata_enrichment import needs_enrichment
+    from app.services.tasks import run_track_enrichment
+
+    # Check if auto-enrichment is enabled
+    settings_service = get_app_settings_service()
+    app_settings = settings_service.get()
+    if not app_settings.auto_enrich_metadata:
+        return EnrichResponse(status="disabled", message="Auto-enrichment is disabled")
+
+    # Verify track exists
+    track = await db.get(Track, track_id)
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Check if enrichment is needed
+    if not needs_enrichment(track):
+        return EnrichResponse(status="skipped", message="Track metadata is complete")
+
+    # Queue background task (fire-and-forget)
+    background_tasks.add_task(run_track_enrichment, str(track_id))
+
+    return EnrichResponse(status="queued", message="Enrichment started in background")
 
 
 class ProfilePlayStatsResponse(BaseModel):

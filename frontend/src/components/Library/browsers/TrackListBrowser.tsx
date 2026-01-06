@@ -661,6 +661,13 @@ export function TrackListBrowser({
             // TODO: Open playlist picker modal
             console.log('Add to playlist:', contextMenu.track?.id);
           }}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
         />
       )}
     </div>

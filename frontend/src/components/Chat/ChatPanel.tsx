@@ -14,7 +14,14 @@ interface Track {
   album: string;
 }
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  /** Pre-filled message to auto-submit (from context menu actions) */
+  pendingMessage?: string | null;
+  /** Called after pending message is consumed */
+  onPendingMessageConsumed?: () => void;
+}
+
+export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPanelProps = {}) {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
   const [input, setInput] = useState('');
@@ -62,6 +69,23 @@ export function ChatPanel() {
   useEffect(() => {
     scrollToBottom();
   }, [currentSession?.messages]);
+
+  // Handle pending message from context menu (auto-submit)
+  const pendingMessageRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingMessage && pendingMessage !== pendingMessageRef.current && !isLoading && profileId) {
+      pendingMessageRef.current = pendingMessage;
+      setInput(pendingMessage);
+      onPendingMessageConsumed?.();
+      // Auto-submit after a brief delay to allow state to settle
+      setTimeout(() => {
+        const form = document.querySelector('form[data-chat-form]') as HTMLFormElement;
+        if (form) {
+          form.requestSubmit();
+        }
+      }, 100);
+    }
+  }, [pendingMessage, isLoading, profileId, onPendingMessageConsumed]);
 
   const refreshSessions = useCallback(async () => {
     if (!profileId) return;
@@ -472,7 +496,7 @@ export function ChatPanel() {
         </div>
 
         {/* Input */}
-        <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800">
+        <form onSubmit={handleSubmit} data-chat-form className="p-4 border-t border-zinc-800">
           <div className="flex gap-2">
             <input
               ref={inputRef}

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Play,
   Pause,
@@ -19,6 +20,9 @@ import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
+import { TrackContextMenu } from '../Library/TrackContextMenu';
+import type { ContextMenuState } from '../Library/types';
+import { initialContextMenuState } from '../Library/types';
 
 type ViewMode = 'visualizer' | 'video' | 'lyrics';
 
@@ -37,6 +41,8 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   const [viewMode, setViewMode] = useState<ViewMode>('visualizer');
   const [imageError, setImageError] = useState(false);
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+  const [, setSearchParams] = useSearchParams();
 
   const {
     currentTrack,
@@ -54,6 +60,22 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
+  const { addToQueue } = usePlayerStore();
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!currentTrack) return;
+    e.preventDefault();
+    setContextMenu({
+      isOpen: true,
+      track: currentTrack,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }, [currentTrack]);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(initialContextMenuState);
+  }, []);
 
   // Fetch lyrics for visualizer
   useEffect(() => {
@@ -190,8 +212,11 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
 
       {/* Bottom controls */}
       <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black via-black/95 to-transparent p-6 pt-16">
-        {/* Track info */}
-        <div className="text-center mb-6">
+        {/* Track info - right-click for context menu */}
+        <div
+          className="text-center mb-6 cursor-context-menu"
+          onContextMenu={handleContextMenu}
+        >
           <h2 className="text-2xl font-bold truncate">{currentTrack.title || 'Unknown'}</h2>
           <p className="text-lg text-zinc-400">{currentTrack.artist || 'Unknown'}</p>
           <p className="text-sm text-zinc-500">{currentTrack.album || ''}</p>
@@ -294,6 +319,55 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           />
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu.isOpen && contextMenu.track && (
+        <TrackContextMenu
+          track={contextMenu.track}
+          position={contextMenu.position}
+          isSelected={false}
+          onClose={closeContextMenu}
+          onPlay={() => {
+            // Already playing this track
+          }}
+          onQueue={() => {
+            if (contextMenu.track) {
+              addToQueue(contextMenu.track);
+            }
+          }}
+          onGoToArtist={() => {
+            if (contextMenu.track?.artist) {
+              onClose();
+              // Navigate to artist via URL params
+              setSearchParams({ artist: contextMenu.track.artist });
+              window.location.hash = 'library';
+            }
+          }}
+          onGoToAlbum={() => {
+            if (contextMenu.track?.artist && contextMenu.track?.album) {
+              onClose();
+              // Navigate to album via URL params
+              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
+              window.location.hash = 'library';
+            }
+          }}
+          onToggleSelect={() => {
+            // Not applicable in full player
+          }}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+            console.log('Add to playlist:', contextMenu.track?.id);
+          }}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+              onClose();
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { PlaybackSettings } from './PlaybackSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
 import { LibrarySync } from './LibrarySync';
+import { MetadataSettings } from './MetadataSettings';
 import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
@@ -33,6 +34,7 @@ export function SettingsPanel() {
           </h3>
           <div className="space-y-4">
             <LibrarySync />
+            <MetadataSettings />
           </div>
         </section>
 

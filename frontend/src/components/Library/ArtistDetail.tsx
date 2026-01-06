@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Play,
@@ -15,6 +16,10 @@ import {
 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { TrackContextMenu } from './TrackContextMenu';
+import type { ContextMenuState } from './types';
+import { initialContextMenuState } from './types';
+import type { Track } from '../../types';
 
 interface Props {
   artistName: string;
@@ -22,8 +27,25 @@ interface Props {
 }
 
 export function ArtistDetail({ artistName, onBack }: Props) {
-  const { setQueue } = usePlayerStore();
+  const { setQueue, addToQueue } = usePlayerStore();
   const [showFullBio, setShowFullBio] = useState(false);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+  const [, setSearchParams] = useSearchParams();
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      isOpen: true,
+      track,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(initialContextMenuState);
+  }, []);
 
   const {
     data: artist,
@@ -351,10 +373,29 @@ export function ArtistDetail({ artistName, onBack }: Props) {
       <div>
         <h3 className="text-lg font-semibold mb-3">All Tracks</h3>
         <div className="space-y-1">
-          {artist.tracks.map((track, idx) => (
+          {artist.tracks.map((track, idx) => {
+            // Convert to full Track type for context menu
+            const fullTrack: Track = {
+              id: track.id,
+              file_path: '',
+              title: track.title || null,
+              artist: artist.name,
+              album: track.album || null,
+              album_artist: null,
+              album_type: 'album',
+              track_number: track.track_number,
+              disc_number: null,
+              year: track.year,
+              genre: null,
+              duration_seconds: track.duration_seconds || null,
+              format: null,
+              analysis_version: 0,
+            };
+            return (
             <div
               key={track.id}
               onClick={() => handlePlayTrack(idx)}
+              onContextMenu={(e) => handleContextMenu(fullTrack, e)}
               className="group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-colors"
             >
               <div className="w-8 text-center">
@@ -382,7 +423,8 @@ export function ArtistDetail({ artistName, onBack }: Props) {
                 {formatDuration(track.duration_seconds)}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -401,6 +443,49 @@ export function ArtistDetail({ artistName, onBack }: Props) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Context menu */}
+      {contextMenu.isOpen && contextMenu.track && (
+        <TrackContextMenu
+          track={contextMenu.track}
+          position={contextMenu.position}
+          isSelected={false}
+          onClose={closeContextMenu}
+          onPlay={() => {
+            const idx = artist.tracks.findIndex(t => t.id === contextMenu.track?.id);
+            if (idx !== -1) handlePlayTrack(idx);
+          }}
+          onQueue={() => {
+            if (contextMenu.track) {
+              addToQueue(contextMenu.track);
+            }
+          }}
+          onGoToArtist={() => {
+            // Already on this artist's page
+          }}
+          onGoToAlbum={() => {
+            if (contextMenu.track?.album) {
+              setSearchParams({ artist: artistName, album: contextMenu.track.album });
+              window.location.hash = 'library';
+              onBack();
+            }
+          }}
+          onToggleSelect={() => {
+            // Not applicable in artist detail
+          }}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+            console.log('Add to playlist:', contextMenu.track?.id);
+          }}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+        />
       )}
     </div>
   );
