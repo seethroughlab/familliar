@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff } from 'lucide-react';
+import { ArrowLeft, Play, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useFavorites } from '../../hooks/useFavorites';
 import { RecommendationsPanel } from './RecommendationsPanel';
 import * as offlineService from '../../services/offlineService';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
@@ -18,6 +19,7 @@ interface Props {
 
 export function PlaylistDetail({ playlistId, onBack }: Props) {
   const { setQueue, addToQueue } = usePlayerStore();
+  const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
@@ -279,6 +281,22 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                   )}
                 </div>
               </div>
+
+              {/* Favorite button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFavorite(track.id);
+                }}
+                className={`p-1 transition-colors ${
+                  isFavorite(track.id)
+                    ? 'text-pink-500 hover:text-pink-400'
+                    : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+                }`}
+                title={isFavorite(track.id) ? 'Remove from favorites' : 'Add to favorites'}
+              >
+                <Heart className="w-4 h-4" fill={isFavorite(track.id) ? 'currentColor' : 'none'} />
+              </button>
 
               {/* Offline indicator */}
               {offlineTrackIds.has(track.id) && (

@@ -75,7 +75,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes - UMAP is expensive
   });
 
-  // Zoom via native wheel event
+  // Zoom via native wheel event - zooms toward cursor position
   // Re-run when loading completes so we attach to the newly rendered SVG
   useEffect(() => {
     const svg = svgRef.current;
@@ -84,12 +84,25 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
-      setZoom((z) => Math.min(Math.max(z * delta, 0.5), 5));
+      const newZoom = Math.min(Math.max(zoom * delta, 0.5), 5);
+
+      const rect = svg.getBoundingClientRect();
+      // Mouse position relative to SVG center
+      const mouseX = e.clientX - rect.left - dimensions.width / 2;
+      const mouseY = e.clientY - rect.top - dimensions.height / 2;
+      const zoomRatio = newZoom / zoom;
+
+      // Adjust pan to keep the point under cursor stationary
+      setPan({
+        x: mouseX - (mouseX - pan.x) * zoomRatio,
+        y: mouseY - (mouseY - pan.y) * zoomRatio,
+      });
+      setZoom(newZoom);
     };
 
     svg.addEventListener('wheel', handleWheel, { passive: false });
     return () => svg.removeEventListener('wheel', handleWheel);
-  }, [isLoading]);
+  }, [isLoading, zoom, pan, dimensions.width, dimensions.height]);
 
   const handleZoomIn = useCallback(() => {
     setZoom((z) => Math.min(z * 1.3, 5));
@@ -330,7 +343,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
               width={gridSide}
               height={gridSide}
               fill="rgba(39, 39, 42, 0.5)"
-              rx={8}
+              rx={8 / zoom}
             />
 
             {/* Edges (draw first so nodes are on top) */}
@@ -350,7 +363,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
                   x2={end.x}
                   y2={end.y}
                   stroke="rgba(168, 85, 247, 0.2)"
-                  strokeWidth={1 + edge.weight * 2}
+                  strokeWidth={(1 + edge.weight * 2) / zoom}
                 />
               );
             })}
@@ -367,10 +380,10 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
                   <circle
                     cx={pos.x}
                     cy={pos.y}
-                    r={radius}
+                    r={radius / zoom}
                     fill={isHovered ? '#a855f7' : '#7c3aed'}
                     stroke={isHovered ? '#fff' : '#a855f7'}
-                    strokeWidth={isHovered ? 2 : 1}
+                    strokeWidth={(isHovered ? 2 : 1) / zoom}
                     className="cursor-pointer transition-all"
                     onMouseEnter={(e) => {
                       const rect = svgRef.current?.getBoundingClientRect();
@@ -386,14 +399,14 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
                     onClick={() => handleNodeClick(node)}
                   />
 
-                  {/* Label for larger nodes or when hovered */}
-                  {(isHovered || node.track_count > maxTrackCount * 0.3) && (
+                  {/* Label for larger nodes or when hovered - more labels appear at higher zoom */}
+                  {(isHovered || node.track_count > maxTrackCount * (0.3 / zoom)) && (
                     <text
                       x={pos.x}
-                      y={pos.y + radius + 12}
+                      y={pos.y + (radius + 12) / zoom}
                       textAnchor="middle"
                       className="fill-zinc-300 pointer-events-none"
-                      style={{ fontSize: 10 }}
+                      style={{ fontSize: 10 / zoom }}
                     >
                       {node.name.length > 20
                         ? node.name.slice(0, 18) + '...'

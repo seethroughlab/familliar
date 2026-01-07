@@ -7,8 +7,9 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
-import { tracksApi, favoritesApi } from '../../../api/client';
+import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
+import { useFavorites } from '../../../hooks/useFavorites';
 import { useColumnStore, getVisibleColumns } from '../../../stores/columnStore';
 import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from '../columnDefinitions';
 import { useOfflineTrack } from '../../../hooks/useOfflineTrack';
@@ -82,52 +83,23 @@ function OfflineButton({ trackId }: { trackId: string }) {
 }
 
 function FavoriteButton({ trackId }: { trackId: string }) {
-  const [isFavorite, setIsFavorite] = useState<boolean | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Check favorite status on first render
-  const checkStatus = async () => {
-    if (isFavorite !== null) return;
-    try {
-      const status = await favoritesApi.check(trackId);
-      setIsFavorite(status.is_favorite);
-    } catch {
-      // Silently fail - user may not be logged in
-    }
-  };
-
-  // Lazy load the status
-  if (isFavorite === null) {
-    checkStatus();
-  }
-
-  const toggleFavorite = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (isLoading) return;
-
-    setIsLoading(true);
-    try {
-      const result = await favoritesApi.toggle(trackId);
-      setIsFavorite(result.is_favorite);
-    } catch (err) {
-      console.error('Failed to toggle favorite:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const { isFavorite, toggle } = useFavorites();
+  const favorited = isFavorite(trackId);
 
   return (
     <button
-      onClick={toggleFavorite}
-      disabled={isLoading}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle(trackId);
+      }}
       className={`p-1 transition-colors ${
-        isFavorite
+        favorited
           ? 'text-pink-500 hover:text-pink-400'
           : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
-      } ${isLoading ? 'animate-pulse' : ''}`}
-      title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+      }`}
+      title={favorited ? 'Remove from favorites' : 'Add to favorites'}
     >
-      <Heart className="w-4 h-4" fill={isFavorite ? 'currentColor' : 'none'} />
+      <Heart className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
     </button>
   );
 }

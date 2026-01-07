@@ -2,16 +2,18 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Sparkles, Play, MoreVertical, Trash2, Loader2,
-  ChevronDown, ChevronUp, ListMusic
+  ChevronDown, ChevronUp, ListMusic, Heart
 } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import type { Playlist, SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { PlaylistDetail } from './PlaylistDetail';
+import { FavoritesDetail } from './FavoritesDetail';
 import { SmartPlaylistList } from '../SmartPlaylists/SmartPlaylistList';
 import { NewReleasesView } from '../NewReleases';
+import { useFavorites } from '../../hooks/useFavorites';
 
-type ViewMode = 'list' | 'detail';
+type ViewMode = 'list' | 'detail' | 'favorites';
 
 interface SelectedPlaylist {
   type: 'static' | 'smart';
@@ -26,6 +28,7 @@ interface Props {
 export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = {}) {
   const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
+  const { total: favoritesCount } = useFavorites();
 
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedPlaylist, setSelectedPlaylist] = useState<SelectedPlaylist | null>(null);
@@ -110,6 +113,13 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     playMutation.mutate(id);
   };
 
+  // Show favorites view
+  if (viewMode === 'favorites') {
+    return (
+      <FavoritesDetail onBack={handleBack} />
+    );
+  }
+
   // Show detail view if a playlist is selected
   if (viewMode === 'detail' && selectedPlaylist?.type === 'static') {
     return (
@@ -124,6 +134,20 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
 
   return (
     <div className="space-y-6">
+      {/* Favorites Section - Always at top */}
+      <button
+        onClick={() => setViewMode('favorites')}
+        className="w-full flex items-center gap-3 p-3 bg-gradient-to-r from-pink-500/10 to-purple-500/10 hover:from-pink-500/20 hover:to-purple-500/20 rounded-lg border border-pink-500/20 transition-colors"
+      >
+        <div className="p-2 rounded-full bg-pink-500/20">
+          <Heart className="w-5 h-5 text-pink-500" fill="currentColor" />
+        </div>
+        <div className="flex-1 text-left">
+          <div className="font-semibold">Favorites</div>
+          <div className="text-sm text-zinc-400">{favoritesCount} tracks</div>
+        </div>
+      </button>
+
       {/* AI-Generated Playlists Section */}
       {hasAiPlaylists && (
         <div>
