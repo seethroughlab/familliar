@@ -75,12 +75,17 @@ class VideoService:
                     continue
                 try:
                     data = json.loads(line)
+                    # Get thumbnail - try 'thumbnail' first, fall back to 'thumbnails' array
+                    thumbnail_url = data.get('thumbnail') or ''
+                    if not thumbnail_url and data.get('thumbnails'):
+                        # Get the first thumbnail from the array
+                        thumbnail_url = data['thumbnails'][0].get('url', '')
                     results.append(VideoSearchResult(
                         video_id=data.get('id', ''),
                         title=data.get('title', ''),
                         channel=data.get('channel', data.get('uploader', '')),
                         duration=data.get('duration', 0) or 0,
-                        thumbnail_url=data.get('thumbnail', ''),
+                        thumbnail_url=thumbnail_url,
                         url=f"https://www.youtube.com/watch?v={data.get('id', '')}"
                     ))
                 except json.JSONDecodeError:
