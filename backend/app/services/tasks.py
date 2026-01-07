@@ -435,14 +435,13 @@ async def run_library_sync(
                 await asyncio.sleep(2)
 
             # Phase 3b: Embedding generation (if enabled)
-            import os
-            clap_disabled = os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in (
-                "1", "true", "yes"
-            )
+            from app.services.analysis import get_analysis_capabilities
+            caps = get_analysis_capabilities()
+            embeddings_enabled = caps["embeddings_enabled"]
 
             analyzed_count = features_done
 
-            if not clap_disabled:
+            if embeddings_enabled:
                 last_pending_embeddings = -1
                 while True:
                     async with local_session_maker() as db:
@@ -836,6 +835,9 @@ def run_track_features(track_id: str) -> dict[str, Any]:
                 if track:
                     track.analysis_error = error_msg
                     track.analysis_failed_at = datetime.utcnow()
+                    # Mark as "analyzed" so sync loop doesn't block on failed tracks
+                    track.analysis_version = ANALYSIS_VERSION
+                    track.analyzed_at = datetime.utcnow()
                     db.commit()
         except Exception as db_error:
             logger.warning(f"Could not record analysis failure to DB: {db_error}")
@@ -858,6 +860,9 @@ def run_track_features(track_id: str) -> dict[str, Any]:
                 if track:
                     track.analysis_error = error_msg
                     track.analysis_failed_at = datetime.utcnow()
+                    # Mark as "analyzed" so sync loop doesn't block on failed tracks
+                    track.analysis_version = ANALYSIS_VERSION
+                    track.analyzed_at = datetime.utcnow()
                     db.commit()
         except Exception as db_error:
             logger.warning(f"Could not record analysis failure to DB: {db_error}")
@@ -1005,17 +1010,30 @@ async def queue_tracks_for_features(limit: int = 500) -> int:
     async with async_session_maker() as db:
         failure_cutoff = datetime.utcnow() - timedelta(hours=24)
 
+        # Find tracks that need analysis:
+        # 1. Never analyzed (version=0, analyzed_at=NULL)
+        # 2. Outdated analysis version
+        # 3. Previously failed but 24h has passed (retry window open)
         result = await db.execute(
             select(Track.id)
             .where(
-                and_(
-                    or_(
-                        Track.analysis_version == 0,
-                        Track.analysis_version < ANALYSIS_VERSION,
-                        Track.analyzed_at.is_(None),
+                or_(
+                    # Never analyzed or outdated version
+                    and_(
+                        or_(
+                            Track.analysis_version == 0,
+                            Track.analysis_version < ANALYSIS_VERSION,
+                            Track.analyzed_at.is_(None),
+                        ),
+                        or_(
+                            Track.analysis_failed_at.is_(None),
+                            Track.analysis_failed_at < failure_cutoff,
+                        ),
                     ),
-                    or_(
-                        Track.analysis_failed_at.is_(None),
+                    # Previously failed, 24h passed - retry
+                    and_(
+                        Track.analysis_error.is_not(None),
+                        Track.analysis_failed_at.is_not(None),
                         Track.analysis_failed_at < failure_cutoff,
                     ),
                 )
