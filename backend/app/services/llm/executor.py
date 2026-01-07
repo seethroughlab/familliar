@@ -34,11 +34,13 @@ class ToolExecutor:
         self.profile_id = profile_id
         self.user_message = user_message
         self._queued_tracks: list[dict[str, Any]] = []
+        self._clear_queue: bool = True  # Default to clearing queue for new requests
         self._playback_action: str | None = None
         self._auto_saved_playlist: dict[str, Any] | None = None
 
     async def execute(self, tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool and return the result."""
+        logger.info(f"Executing tool: {tool_name}")
         handlers = {
             "search_library": self._search_library,
             "find_similar_tracks": self._find_similar_tracks,
@@ -65,9 +67,12 @@ class ToolExecutor:
             return await handler(**tool_input)  # type: ignore[operator]
         return {"error": f"Unknown tool: {tool_name}"}
 
-    def get_queued_tracks(self) -> list[dict[str, Any]]:
-        """Get tracks that were queued during this conversation turn."""
-        return self._queued_tracks
+    def get_queued_tracks(self) -> tuple[list[dict[str, Any]], bool]:
+        """Get tracks that were queued during this conversation turn.
+
+        Returns (tracks, should_clear_queue).
+        """
+        return self._queued_tracks, self._clear_queue
 
     def get_playback_action(self) -> str | None:
         """Get playback action requested during this conversation turn."""
@@ -82,6 +87,8 @@ class ToolExecutor:
     async def _generate_playlist_name_llm(self, tracks: list[dict[str, Any]]) -> str:
         """Generate a creative playlist name using the LLM."""
         from datetime import datetime
+
+        logger.info(f"Generating playlist name for {len(tracks)} tracks, user_message='{self.user_message}'")
 
         if not tracks:
             return f"AI Playlist - {datetime.now().strftime('%b %d %H:%M')}"
@@ -130,7 +137,7 @@ Respond with ONLY the playlist name, nothing else."""
 
                 anthropic_client = anthropic.Anthropic(api_key=api_key)
                 message = anthropic_client.messages.create(
-                    model="claude-haiku-4-20250815",
+                    model="claude-3-5-haiku-20241022",
                     max_tokens=50,
                     messages=[{"role": "user", "content": prompt}],
                 )
@@ -141,11 +148,14 @@ Respond with ONLY the playlist name, nothing else."""
                         name = first_block.text.strip()
 
             name = name.strip('"\'').strip()
+            logger.info(f"LLM generated playlist name: '{name}'")
             if name and len(name) <= 50 and not any(c in name for c in [":", "\n", '"']):
                 return name
+            else:
+                logger.warning(f"Generated name rejected (empty, too long, or invalid chars): '{name}'")
 
         except Exception as e:
-            logger.debug(f"LLM playlist name generation failed: {e}")
+            logger.warning(f"LLM playlist name generation failed: {e}")
 
         return self._generate_playlist_name_fallback()
 
@@ -483,6 +493,7 @@ Respond with ONLY the playlist name, nothing else."""
         self, track_ids: list[str], clear_existing: bool = False
     ) -> dict[str, Any]:
         """Queue tracks for playback and auto-save as playlist."""
+        logger.info(f"_queue_tracks called with {len(track_ids)} tracks")
         stmt = select(Track).where(Track.id.in_([UUID(tid) for tid in track_ids]))
         result = await self.db.execute(stmt)
         tracks = result.scalars().all()
@@ -802,7 +813,7 @@ Respond with ONLY the playlist name, nothing else."""
             name=name,
             description=description,
             is_auto_generated=True,
-            generation_prompt=name,
+            generation_prompt=self.user_message,
         )
         self.db.add(playlist)
         await self.db.flush()

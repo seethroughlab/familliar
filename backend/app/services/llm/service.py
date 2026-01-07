@@ -1,5 +1,4 @@
 """LLM service for conversational music discovery."""
-
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -84,7 +83,10 @@ class LLMService:
         ]
 
         first_turn = True
-        while True:
+        max_iterations = 8  # Prevent infinite tool loops
+        iteration = 0
+        while iteration < max_iterations:
+            iteration += 1
             try:
                 # Force tool use on first turn to prevent hallucination
                 create_kwargs: dict[str, Any] = {
@@ -131,6 +133,7 @@ class LLMService:
                     }
 
                     result = await tool_executor.execute(block.name, tool_input)
+                    logger.info(f"Tool {block.name} executed, result keys: {list(result.keys()) if isinstance(result, dict) else 'not-dict'}")
 
                     yield {"type": "tool_result", "name": block.name, "result": result}
 
@@ -150,9 +153,9 @@ class LLMService:
                     assistant_content = []
 
             if response.stop_reason == "end_turn":
-                queued = tool_executor.get_queued_tracks()
+                queued, clear_queue = tool_executor.get_queued_tracks()
                 if queued:
-                    yield {"type": "queue", "tracks": queued, "clear": False}
+                    yield {"type": "queue", "tracks": queued, "clear": clear_queue}
 
                 auto_playlist = tool_executor.get_auto_saved_playlist()
                 if auto_playlist and auto_playlist.get("saved"):
@@ -174,6 +177,14 @@ class LLMService:
             else:
                 yield {"type": "done"}
                 break
+        else:
+            # Hit max iterations - force end and queue any tracks found
+            logger.warning(f"Hit max iterations ({max_iterations}), forcing end")
+            queued, clear_queue = tool_executor.get_queued_tracks()
+            if queued:
+                yield {"type": "queue", "tracks": queued, "clear": clear_queue}
+            yield {"type": "text", "content": "I found some tracks for you."}
+            yield {"type": "done"}
 
     async def _chat_ollama(
         self,
@@ -248,9 +259,9 @@ class LLMService:
 
                     continue
 
-                queued = tool_executor.get_queued_tracks()
+                queued, clear_queue = tool_executor.get_queued_tracks()
                 if queued:
-                    yield {"type": "queue", "tracks": queued, "clear": False}
+                    yield {"type": "queue", "tracks": queued, "clear": clear_queue}
 
                 auto_playlist = tool_executor.get_auto_saved_playlist()
                 if auto_playlist and auto_playlist.get("saved"):
