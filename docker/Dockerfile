@@ -46,11 +46,13 @@ COPY backend/README.md ./
 
 # Install dependencies (without dev extras for production, with analysis extras)
 # Install CPU-only PyTorch AFTER uv sync (~200MB vs ~5GB for CUDA version)
-# Note: uv sync removes packages not in lockfile, so torch must come last
+# Install yt-dlp for YouTube video downloads
+# Note: uv sync removes packages not in lockfile, so these must come last
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv venv && \
     uv sync --frozen --no-dev --extra analysis && \
-    uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+    uv pip install torch --index-url https://download.pytorch.org/whl/cpu && \
+    uv pip install yt-dlp
 
 # =============================================================================
 # Stage 4: Production image
