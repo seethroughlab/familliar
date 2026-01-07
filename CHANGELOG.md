@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13] - 2026-01-07
+
+### Added
+
+- **Auto-enrich metadata** when viewing artist detail page - triggers enrichment for all tracks
+
+### Fixed
+
+- **Artist detail URL persistence** - artist selection now stored in URL, survives page reload
+- **YouTube video search** - add yt-dlp to Docker image (was missing, causing empty search results)
+
 ## [0.1.0-alpha.12] - 2026-01-06
 
 ### Fixed
@@ -172,7 +183,8 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.12...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.13...HEAD
+[0.1.0-alpha.13]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.12...v0.1.0-alpha.13
 [0.1.0-alpha.12]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...v0.1.0-alpha.12
 [0.1.0-alpha.11]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
 [0.1.0-alpha.10]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
