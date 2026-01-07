@@ -418,10 +418,10 @@ async def run_library_sync(
                 if pending_features == 0:
                     break
 
-                # Queue more tracks for feature extraction
-                if pending_features > 0 and (
-                    last_pending_features == -1 or pending_features >= last_pending_features
-                ):
+                # Queue more tracks for feature extraction when queue might be low
+                # Always queue if: first iteration OR progress stalled OR making progress
+                # (the queue_tracks_for_features function handles deduplication)
+                if pending_features > 0:
                     await queue_tracks_for_features(limit=100)
 
                 last_pending_features = pending_features
@@ -468,11 +468,8 @@ async def run_library_sync(
                         analyzed_count = embeddings_done
                         break
 
-                    # Queue more tracks for embedding generation
-                    if pending_embeddings > 0 and (
-                        last_pending_embeddings == -1
-                        or pending_embeddings >= last_pending_embeddings
-                    ):
+                    # Queue more tracks for embedding generation when queue might be low
+                    if pending_embeddings > 0:
                         await queue_tracks_for_embeddings(limit=100)
 
                     last_pending_embeddings = pending_embeddings
