@@ -401,7 +401,6 @@ async def run_library_sync(
         try:
             # Phase 3a: Feature extraction
             # Wait for all tracks to have features extracted
-            last_pending_features = -1
             while True:
                 async with local_session_maker() as db:
                     total_result = await db.execute(select(func.count(Track.id)))
@@ -424,7 +423,6 @@ async def run_library_sync(
                 if pending_features > 0:
                     await queue_tracks_for_features(limit=100)
 
-                last_pending_features = pending_features
                 progress.set_features(
                     analyzed=features_done,
                     pending=pending_features,
@@ -442,7 +440,6 @@ async def run_library_sync(
             analyzed_count = features_done
 
             if embeddings_enabled:
-                last_pending_embeddings = -1
                 while True:
                     async with local_session_maker() as db:
                         # Count tracks with embeddings
@@ -471,7 +468,6 @@ async def run_library_sync(
                     if pending_embeddings > 0:
                         await queue_tracks_for_embeddings(limit=100)
 
-                    last_pending_embeddings = pending_embeddings
                     progress.set_embeddings(
                         analyzed=embeddings_done,
                         pending=pending_embeddings,

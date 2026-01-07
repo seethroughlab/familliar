@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
 
@@ -458,8 +459,6 @@ async def get_artist_detail(
 # ============================================================================
 
 
-from fastapi.responses import RedirectResponse, StreamingResponse
-
 @router.get("/artists/{artist_name}/image", response_class=StreamingResponse)
 async def get_artist_image(
     db: DbSession,
@@ -482,7 +481,6 @@ async def get_artist_image(
     Returns:
         Redirect to image URL or streamed image from album artwork
     """
-    from datetime import datetime
     from urllib.parse import unquote
 
     from app.db.models import ArtistInfo
