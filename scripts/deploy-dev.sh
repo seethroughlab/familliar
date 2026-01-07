@@ -36,6 +36,9 @@ if [ "$DEPLOY_FRONTEND" = true ]; then
         --exclude 'node_modules' \
         --exclude '.git' \
         frontend/dist/ root@$NAS_HOST:$REMOTE_PATH/frontend/dist/
+
+    echo "Copying frontend into container..."
+    ssh root@$NAS_HOST "docker cp $REMOTE_PATH/frontend/dist/. familiar-api:/app/static/"
 fi
 
 # Sync backend if needed
