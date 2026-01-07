@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -32,6 +32,9 @@ export function ArtistDetail({ artistName, onBack }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
 
+  // Track which artists we've already triggered enrichment for
+  const enrichedArtistsRef = useRef<Set<string>>(new Set());
+
   // Context menu handlers
   const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
     e.preventDefault();
@@ -56,6 +59,19 @@ export function ArtistDetail({ artistName, onBack }: Props) {
     queryKey: ['artist', artistName],
     queryFn: () => libraryApi.getArtist(artistName),
   });
+
+  // Auto-enrich all tracks when artist detail loads
+  useEffect(() => {
+    if (!artist || enrichedArtistsRef.current.has(artistName)) return;
+    enrichedArtistsRef.current.add(artistName);
+
+    // Fire-and-forget enrichment for all tracks
+    for (const track of artist.tracks) {
+      tracksApi.enrich(track.id).catch(() => {
+        // Ignore errors - enrichment is best-effort
+      });
+    }
+  }, [artist, artistName]);
 
   const handleRefreshLastfm = async () => {
     await libraryApi.getArtist(artistName, true);
