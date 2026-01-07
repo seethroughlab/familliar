@@ -624,6 +624,13 @@ export const libraryApi = {
     });
     return data;
   },
+
+  getArtistImageUrl: (
+    artistName: string,
+    size: 'small' | 'medium' | 'large' | 'extralarge' = 'large'
+  ): string => {
+    return `/api/v1/library/artists/${encodeURIComponent(artistName)}/image?size=${size}`;
+  },
 };
 
 // Smart Playlists

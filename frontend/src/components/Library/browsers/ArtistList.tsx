@@ -1,20 +1,24 @@
 /**
- * ArtistList Browser - Shows artists with track/album counts.
+ * ArtistList Browser - Shows artists in a visual grid with artwork.
  *
- * Clicking an artist filters the library to show their tracks.
+ * Uses infinite scroll to load artists progressively as you scroll.
+ * Clicking an artist opens the artist detail view.
  */
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Users, Music, Disc, ChevronRight, Loader2 } from 'lucide-react';
-import { libraryApi, tracksApi } from '../../../api/client';
+import { useState, useCallback } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
+import { Users, Loader2 } from 'lucide-react';
+import { libraryApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+
+const PAGE_SIZE = 50;
 
 // Register this browser
 registerBrowser(
   {
     id: 'artist-list',
     name: 'Artists',
-    description: 'Browse by artist with track and album counts',
+    description: 'Browse artists in a visual grid with artwork',
     icon: 'Users',
     category: 'traditional',
     requiresFeatures: false,
@@ -29,15 +33,43 @@ export function ArtistList({
 }: BrowserProps) {
   const [sortBy, setSortBy] = useState<'name' | 'track_count' | 'album_count'>('name');
 
-  const { data, isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['library-artists', { search: filters.search, sortBy }],
-    queryFn: () =>
+    queryFn: ({ pageParam = 1 }) =>
       libraryApi.listArtists({
         search: filters.search,
         sort_by: sortBy,
-        page_size: 200,
+        page: pageParam,
+        page_size: PAGE_SIZE,
       }),
+    getNextPageParam: (lastPage) => {
+      const totalPages = Math.ceil(lastPage.total / PAGE_SIZE);
+      return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
+    },
+    initialPageParam: 1,
   });
+
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const sentinelRef = useIntersectionObserver({
+    onIntersect: handleLoadMore,
+    enabled: hasNextPage && !isFetchingNextPage,
+  });
+
+  // Flatten all pages into a single array
+  const allArtists = data?.pages.flatMap((page) => page.items) ?? [];
+  const total = data?.pages[0]?.total ?? 0;
 
   if (isLoading) {
     return (
@@ -55,7 +87,7 @@ export function ArtistList({
     );
   }
 
-  if (!data?.items.length) {
+  if (!allArtists.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
         <Users className="w-12 h-12 mb-4 opacity-50" />
@@ -92,25 +124,35 @@ export function ArtistList({
           ))}
         </div>
         <span className="ml-auto text-sm text-zinc-500">
-          {data.total} artist{data.total !== 1 ? 's' : ''}
+          {allArtists.length} of {total} artist{total !== 1 ? 's' : ''}
         </span>
       </div>
 
-      {/* Artist list */}
-      <div className="space-y-1">
-        {data.items.map((artist) => (
-          <ArtistRow
+      {/* Artist grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+        {allArtists.map((artist) => (
+          <ArtistCard
             key={artist.name}
             artist={artist}
             onClick={() => onGoToArtist(artist.name)}
           />
         ))}
       </div>
+
+      {/* Loading indicator and sentinel for infinite scroll */}
+      {isFetchingNextPage && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        </div>
+      )}
+
+      {/* Invisible sentinel element that triggers loading when scrolled into view */}
+      {hasNextPage && <div ref={sentinelRef} className="h-4" />}
     </div>
   );
 }
 
-interface ArtistRowProps {
+interface ArtistCardProps {
   artist: {
     name: string;
     track_count: number;
@@ -120,45 +162,44 @@ interface ArtistRowProps {
   onClick: () => void;
 }
 
-function ArtistRow({ artist, onClick }: ArtistRowProps) {
+function ArtistCard({ artist, onClick }: ArtistCardProps) {
+  const [imageError, setImageError] = useState(false);
+
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-4 p-3 rounded-lg bg-zinc-800/30 hover:bg-zinc-800 transition-colors text-left group"
+      className="group text-left bg-zinc-800/30 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors"
     >
-      {/* Artist artwork (from first track) */}
-      <div className="w-12 h-12 rounded-lg bg-zinc-700 overflow-hidden flex-shrink-0">
-        <img
-          src={tracksApi.getArtworkUrl(artist.first_track_id, 'thumb')}
-          alt={artist.name}
-          className="w-full h-full object-cover"
-          onError={(e) => {
-            // Hide broken image, show fallback
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-        <div className="w-full h-full flex items-center justify-center">
-          <Users className="w-6 h-6 text-zinc-500" />
+      {/* Artist artwork - square aspect ratio */}
+      <div className="aspect-square bg-zinc-700 relative overflow-hidden">
+        {!imageError ? (
+          <img
+            src={libraryApi.getArtistImageUrl(artist.name, 'large')}
+            alt={artist.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Users className="w-12 h-12 text-zinc-500" />
+          </div>
+        )}
+
+        {/* Track count badge */}
+        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded text-xs text-white">
+          {artist.track_count} track{artist.track_count !== 1 ? 's' : ''}
         </div>
       </div>
 
       {/* Artist info */}
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-white truncate">{artist.name}</div>
-        <div className="flex items-center gap-3 text-sm text-zinc-400 mt-0.5">
-          <span className="flex items-center gap-1">
-            <Music className="w-3.5 h-3.5" />
-            {artist.track_count} track{artist.track_count !== 1 ? 's' : ''}
-          </span>
-          <span className="flex items-center gap-1">
-            <Disc className="w-3.5 h-3.5" />
-            {artist.album_count} album{artist.album_count !== 1 ? 's' : ''}
-          </span>
+      <div className="p-3">
+        <div className="font-medium text-white truncate" title={artist.name}>
+          {artist.name}
+        </div>
+        <div className="text-sm text-zinc-400 truncate">
+          {artist.album_count} album{artist.album_count !== 1 ? 's' : ''}
         </div>
       </div>
-
-      {/* Arrow */}
-      <ChevronRight className="w-5 h-5 text-zinc-500 group-hover:text-white transition-colors" />
     </button>
   );
 }

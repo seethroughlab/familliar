@@ -453,6 +453,223 @@ async def get_artist_detail(
     )
 
 
+# ============================================================================
+# Artist Image
+# ============================================================================
+
+
+from fastapi.responses import RedirectResponse, StreamingResponse
+
+@router.get("/artists/{artist_name}/image", response_class=StreamingResponse)
+async def get_artist_image(
+    db: DbSession,
+    request: Request,
+    artist_name: str,
+    size: str = "large",  # small, medium, large, extralarge
+):
+    """Get artist image with fallback chain.
+
+    Fallback order:
+    1. Cached Last.fm image from ArtistInfo table
+    2. Fetch from Last.fm API and cache
+    3. Fetch from Spotify API (requires profile with Spotify connection)
+    4. Fallback to first album's artwork
+
+    Args:
+        artist_name: The artist name (URL-encoded)
+        size: Image size: small, medium, large, or extralarge
+
+    Returns:
+        Redirect to image URL or streamed image from album artwork
+    """
+    from datetime import datetime
+    from urllib.parse import unquote
+
+    from app.db.models import ArtistInfo
+    from app.services.artwork import compute_album_hash, extract_and_save_artwork, get_artwork_path
+    from app.services.lastfm import get_lastfm_service
+
+    # Validate size
+    if size not in ("small", "medium", "large", "extralarge"):
+        size = "large"
+
+    # URL decode the artist name
+    artist_name = unquote(artist_name)
+    artist_normalized = artist_name.lower().strip()
+
+    # Size mapping for ArtistInfo columns
+    size_field_map = {
+        "small": "image_small",
+        "medium": "image_medium",
+        "large": "image_large",
+        "extralarge": "image_extralarge",
+    }
+
+    # Step 1: Check cached ArtistInfo
+    cached = await db.get(ArtistInfo, artist_normalized)
+    if cached:
+        image_url = getattr(cached, size_field_map[size], None)
+        # Try fallback sizes if requested size not available
+        if not image_url:
+            for fallback in ["extralarge", "large", "medium", "small"]:
+                image_url = getattr(cached, size_field_map[fallback], None)
+                if image_url:
+                    break
+        if image_url:
+            return RedirectResponse(
+                url=image_url,
+                headers={"Cache-Control": "public, max-age=86400"},  # 1 day cache
+            )
+
+    # Step 2: Try Last.fm API
+    lastfm_service = get_lastfm_service()
+    if lastfm_service.is_configured():
+        try:
+            info = await lastfm_service.get_artist_info(artist_name)
+            if info:
+                images = info.get("image", [])
+                image_urls: dict[str, str] = {
+                    img.get("size"): img.get("#text")
+                    for img in images
+                    if img.get("#text")
+                }
+
+                # Get requested size or fallback to available
+                image_url = (
+                    image_urls.get(size)
+                    or image_urls.get("extralarge")
+                    or image_urls.get("large")
+                    or image_urls.get("medium")
+                    or image_urls.get("small")
+                )
+
+                if image_url:
+                    # Cache in ArtistInfo
+                    await _cache_artist_images(db, artist_normalized, artist_name, image_urls)
+                    return RedirectResponse(
+                        url=image_url,
+                        headers={"Cache-Control": "public, max-age=86400"},
+                    )
+        except Exception:
+            pass  # Last.fm lookup failed, continue to fallback
+
+    # Step 3: Try Spotify (requires profile with Spotify connection)
+    profile_id = request.headers.get("X-Profile-ID")
+    if profile_id:
+        try:
+            from uuid import UUID
+
+            from app.services.spotify import SpotifyArtistService
+
+            spotify_service = SpotifyArtistService(db)
+            spotify_artist = await spotify_service.search_artist(
+                UUID(profile_id),
+                artist_name,
+            )
+
+            if spotify_artist and spotify_artist.get("images"):
+                # Spotify returns images sorted by size (largest first)
+                images = spotify_artist["images"]
+                if images:
+                    image_url = images[0]["url"]  # Largest image
+                    # Cache as extralarge
+                    await _cache_artist_images(
+                        db,
+                        artist_normalized,
+                        artist_name,
+                        {"extralarge": image_url, "large": image_url},
+                    )
+                    return RedirectResponse(
+                        url=image_url,
+                        headers={"Cache-Control": "public, max-age=86400"},
+                    )
+        except Exception:
+            pass  # Spotify lookup failed, continue to fallback
+
+    # Step 4: Fallback to first album's artwork
+    track_query = (
+        select(Track)
+        .where(
+            func.lower(Track.artist) == artist_normalized,
+            Track.status == TrackStatus.ACTIVE,
+        )
+        .order_by(Track.album, Track.track_number)
+        .limit(1)
+    )
+    result = await db.execute(track_query)
+    track = result.scalar_one_or_none()
+
+    if track:
+        album_hash = compute_album_hash(track.artist, track.album)
+        artwork_size = "thumb" if size in ("small", "medium") else "full"
+        artwork_path = get_artwork_path(album_hash, artwork_size)
+
+        if artwork_path.exists():
+            def stream_artwork():
+                with open(artwork_path, "rb") as f:
+                    yield f.read()
+
+            return StreamingResponse(
+                stream_artwork(),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "public, max-age=31536000"},
+            )
+
+        # Try extracting from audio file
+        file_path = Path(track.file_path)
+        if file_path.exists():
+            extract_and_save_artwork(file_path, track.artist, track.album)
+            if artwork_path.exists():
+                def stream_artwork():
+                    with open(artwork_path, "rb") as f:
+                        yield f.read()
+
+                return StreamingResponse(
+                    stream_artwork(),
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=31536000"},
+                )
+
+    # No image available
+    raise HTTPException(status_code=404, detail="No artist image available")
+
+
+async def _cache_artist_images(
+    db: DbSession,
+    artist_normalized: str,
+    artist_name: str,
+    image_urls: dict[str, str],
+) -> None:
+    """Cache artist image URLs in ArtistInfo table."""
+    from datetime import datetime
+
+    from app.db.models import ArtistInfo
+
+    cached = await db.get(ArtistInfo, artist_normalized)
+    if cached:
+        if image_urls.get("small"):
+            cached.image_small = image_urls["small"]
+        if image_urls.get("medium"):
+            cached.image_medium = image_urls["medium"]
+        if image_urls.get("large"):
+            cached.image_large = image_urls["large"]
+        if image_urls.get("extralarge"):
+            cached.image_extralarge = image_urls["extralarge"]
+        cached.fetched_at = datetime.utcnow()
+    else:
+        cached = ArtistInfo(
+            artist_name_normalized=artist_normalized,
+            artist_name=artist_name,
+            image_small=image_urls.get("small"),
+            image_medium=image_urls.get("medium"),
+            image_large=image_urls.get("large"),
+            image_extralarge=image_urls.get("extralarge"),
+        )
+        db.add(cached)
+
+    await db.commit()
+
+
 class AlbumSummary(BaseModel):
     """Album with metadata."""
 
@@ -489,12 +706,15 @@ async def list_albums(
     from sqlalchemy import cast, desc, literal_column
     from sqlalchemy.dialects.postgresql import TEXT
 
-    # Base query: group by (artist, album), get year and track count
+    # Base query: group by (album_artist, album), get year and track count
+    # Use album_artist (falls back to artist) to properly group compilations
+    # Note: album_artist is populated during library sync for compilation albums
     # Cast UUID to text for min() since PostgreSQL doesn't support min(uuid)
+    album_artist_col = func.coalesce(func.nullif(Track.album_artist, ""), Track.artist)
     base_query = (
         select(
             Track.album.label("name"),
-            Track.artist.label("artist"),
+            album_artist_col.label("artist"),
             func.max(Track.year).label("year"),  # Use max year in case of inconsistency
             func.count(Track.id).label("track_count"),
             func.min(cast(Track.id, TEXT)).label("first_track_id"),
@@ -504,19 +724,19 @@ async def list_albums(
             Track.album != "",
             Track.status == TrackStatus.ACTIVE,
         )
-        .group_by(Track.artist, Track.album)
+        .group_by(album_artist_col, Track.album)
     )
 
-    # Apply artist filter
+    # Apply artist filter (filter by album_artist to match grouping)
     if artist:
-        base_query = base_query.having(Track.artist == artist)
+        base_query = base_query.having(album_artist_col == artist)
 
-    # Apply search filter
+    # Apply search filter (search both album name and album artist)
     if search:
         search_lower = search.lower()
         base_query = base_query.having(
             func.lower(Track.album).contains(search_lower)
-            | func.lower(Track.artist).contains(search_lower)
+            | func.lower(album_artist_col).contains(search_lower)
         )
 
     # Get total count
@@ -529,7 +749,7 @@ async def list_albums(
     elif sort_by == "track_count":
         base_query = base_query.order_by(desc(literal_column("track_count")), func.lower(Track.album))
     elif sort_by == "artist":
-        base_query = base_query.order_by(func.lower(Track.artist), func.lower(Track.album))
+        base_query = base_query.order_by(func.lower(album_artist_col), func.lower(Track.album))
     else:
         base_query = base_query.order_by(func.lower(Track.album))
 

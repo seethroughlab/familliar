@@ -530,6 +530,8 @@ async def _run_scan_for_sync(
         "still_missing": 0,
         "relocated": 0,
         "recovered": 0,
+        "compilation_albums": 0,
+        "compilation_tracks": 0,
     }
 
     # Pre-scan validation
@@ -589,6 +591,11 @@ async def _run_scan_for_sync(
             # Cleanup orphans
             orphan_results = await scanner.cleanup_orphaned_tracks(valid_paths)
             results["marked_missing"] += orphan_results.get("orphaned", 0)
+
+            # Detect and set album_artist for compilation albums
+            compilation_results = await scanner.detect_compilation_albums()
+            results["compilation_albums"] = compilation_results.get("albums_detected", 0)
+            results["compilation_tracks"] = compilation_results.get("tracks_updated", 0)
 
         # Queue analysis
         await queue_unanalyzed_tracks(limit=500)

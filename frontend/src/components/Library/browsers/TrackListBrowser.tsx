@@ -1,19 +1,23 @@
 /**
  * TrackList Browser - Traditional track list view.
  *
+ * Uses infinite scroll to load tracks progressively as you scroll.
  * Wraps TrackList with BrowserProps interface for the pluggable browser system.
  */
 import { useState, useMemo, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
 import { tracksApi, favoritesApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
 import { useColumnStore, getVisibleColumns } from '../../../stores/columnStore';
 import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from '../columnDefinitions';
 import { useOfflineTrack } from '../../../hooks/useOfflineTrack';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import { registerBrowser, type BrowserProps, type ContextMenuState, initialContextMenuState } from '../types';
 import { TrackContextMenu } from '../TrackContextMenu';
 import type { Track } from '../../../types';
+
+const PAGE_SIZE = 50;
 
 // Register this browser
 registerBrowser(
@@ -412,7 +416,14 @@ export function TrackListBrowser({
     setDropTargetId(null);
   };
 
-  const { data, isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: [
       'tracks',
       {
@@ -428,7 +439,7 @@ export function TrackListBrowser({
         include_features: needsFeatures,
       },
     ],
-    queryFn: () =>
+    queryFn: ({ pageParam = 1 }) =>
       tracksApi.list({
         search: filters.search,
         artist: filters.artist,
@@ -439,20 +450,44 @@ export function TrackListBrowser({
         energy_max: filters.energyMax,
         valence_min: filters.valenceMin,
         valence_max: filters.valenceMax,
-        page_size: 100,
+        page: pageParam,
+        page_size: PAGE_SIZE,
         include_features: needsFeatures,
       }),
+    getNextPageParam: (lastPage) => {
+      const totalPages = Math.ceil(lastPage.total / PAGE_SIZE);
+      return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
+    },
+    initialPageParam: 1,
   });
+
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const sentinelRef = useIntersectionObserver({
+    onIntersect: handleLoadMore,
+    enabled: hasNextPage && !isFetchingNextPage,
+  });
+
+  // Flatten all pages into a single array
+  const allTracks = useMemo(
+    () => data?.pages.flatMap((page) => page.items) ?? [],
+    [data]
+  );
+  const total = data?.pages[0]?.total ?? 0;
 
   const handlePlayTrack = useCallback(
     (track: Track, index: number) => {
       if (currentTrack?.id === track.id) {
         setIsPlaying(!isPlaying);
-      } else if (data) {
-        setQueue(data.items, index);
+      } else if (allTracks.length > 0) {
+        setQueue(allTracks, index);
       }
     },
-    [currentTrack, isPlaying, setIsPlaying, data, setQueue]
+    [currentTrack, isPlaying, setIsPlaying, allTracks, setQueue]
   );
 
   const handleRowClick = useCallback(
@@ -505,7 +540,7 @@ export function TrackListBrowser({
     );
   }
 
-  if (!data?.items.length) {
+  if (!allTracks.length) {
     const hasFilters = filters.search || filters.artist || filters.album;
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
@@ -530,7 +565,7 @@ export function TrackListBrowser({
     <div>
       {/* Mobile view - card layout (visible below md breakpoint) */}
       <div className="md:hidden">
-        {data.items.map((track, index) => (
+        {allTracks.map((track, index) => (
           <MobileTrackCard
             key={track.id}
             track={track}
@@ -549,8 +584,18 @@ export function TrackListBrowser({
             onContextMenu={(e) => handleContextMenu(track, e)}
           />
         ))}
+        {/* Loading indicator for infinite scroll */}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+          </div>
+        )}
+        {/* Sentinel for infinite scroll */}
+        {hasNextPage && <div ref={sentinelRef} className="h-4" />}
         {/* Mobile footer */}
-        <div className="px-4 py-4 text-sm text-zinc-500">{data.total} tracks</div>
+        <div className="px-4 py-4 text-sm text-zinc-500">
+          {allTracks.length} of {total} tracks
+        </div>
       </div>
 
       {/* Desktop view - grid layout (visible at md and above) */}
@@ -597,7 +642,7 @@ export function TrackListBrowser({
 
         {/* Tracks */}
         <div className="mt-2">
-          {data.items.map((track, index) => (
+          {allTracks.map((track, index) => (
             <TrackRow
               key={track.id}
               track={track}
@@ -620,8 +665,20 @@ export function TrackListBrowser({
           ))}
         </div>
 
+        {/* Loading indicator for infinite scroll */}
+        {isFetchingNextPage && (
+          <div className="flex items-center justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
+          </div>
+        )}
+
+        {/* Sentinel for infinite scroll */}
+        {hasNextPage && <div ref={sentinelRef} className="h-4" />}
+
         {/* Desktop footer */}
-        <div className="px-4 py-4 text-sm text-zinc-500">{data.total} tracks</div>
+        <div className="px-4 py-4 text-sm text-zinc-500">
+          {allTracks.length} of {total} tracks
+        </div>
       </div>
 
       {/* Context menu */}
@@ -632,7 +689,7 @@ export function TrackListBrowser({
           isSelected={selectedTrackIds.has(contextMenu.track.id)}
           onClose={closeContextMenu}
           onPlay={() => {
-            const index = data.items.findIndex((t) => t.id === contextMenu.track?.id);
+            const index = allTracks.findIndex((t) => t.id === contextMenu.track?.id);
             if (contextMenu.track && index !== -1) {
               handlePlayTrack(contextMenu.track, index);
             }

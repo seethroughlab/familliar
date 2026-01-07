@@ -140,7 +140,7 @@ export function getBrowsersByCategory(
 /**
  * Default browser ID.
  */
-export const DEFAULT_BROWSER_ID = 'track-list';
+export const DEFAULT_BROWSER_ID = 'artist-list';
 
 /**
  * State for context menu management.

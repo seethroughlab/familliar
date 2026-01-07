@@ -1,13 +1,17 @@
 /**
  * AlbumGrid Browser - Shows albums in a responsive grid with artwork.
  *
+ * Uses infinite scroll to load albums progressively as you scroll.
  * Clicking an album filters the library to show its tracks.
  */
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Grid3X3, Music, Loader2 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
+import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+
+const PAGE_SIZE = 50;
 
 // Register this browser
 registerBrowser(
@@ -29,16 +33,44 @@ export function AlbumGrid({
 }: BrowserProps) {
   const [sortBy, setSortBy] = useState<'name' | 'year' | 'artist' | 'track_count'>('name');
 
-  const { data, isLoading, error } = useQuery({
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['library-albums', { search: filters.search, artist: filters.artist, sortBy }],
-    queryFn: () =>
+    queryFn: ({ pageParam = 1 }) =>
       libraryApi.listAlbums({
         search: filters.search,
         artist: filters.artist,
         sort_by: sortBy,
-        page_size: 200,
+        page: pageParam,
+        page_size: PAGE_SIZE,
       }),
+    getNextPageParam: (lastPage) => {
+      const totalPages = Math.ceil(lastPage.total / PAGE_SIZE);
+      return lastPage.page < totalPages ? lastPage.page + 1 : undefined;
+    },
+    initialPageParam: 1,
   });
+
+  const handleLoadMore = useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  const sentinelRef = useIntersectionObserver({
+    onIntersect: handleLoadMore,
+    enabled: hasNextPage && !isFetchingNextPage,
+  });
+
+  // Flatten all pages into a single array
+  const allAlbums = data?.pages.flatMap((page) => page.items) ?? [];
+  const total = data?.pages[0]?.total ?? 0;
 
   if (isLoading) {
     return (
@@ -56,7 +88,7 @@ export function AlbumGrid({
     );
   }
 
-  if (!data?.items.length) {
+  if (!allAlbums.length) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-zinc-500">
         <Grid3X3 className="w-12 h-12 mb-4 opacity-50" />
@@ -94,13 +126,13 @@ export function AlbumGrid({
           ))}
         </div>
         <span className="ml-auto text-sm text-zinc-500">
-          {data.total} album{data.total !== 1 ? 's' : ''}
+          {allAlbums.length} of {total} album{total !== 1 ? 's' : ''}
         </span>
       </div>
 
       {/* Album grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-        {data.items.map((album) => (
+        {allAlbums.map((album) => (
           <AlbumCard
             key={`${album.artist}-${album.name}`}
             album={album}
@@ -108,6 +140,16 @@ export function AlbumGrid({
           />
         ))}
       </div>
+
+      {/* Loading indicator and sentinel for infinite scroll */}
+      {isFetchingNextPage && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+        </div>
+      )}
+
+      {/* Invisible sentinel element that triggers loading when scrolled into view */}
+      {hasNextPage && <div ref={sentinelRef} className="h-4" />}
     </div>
   );
 }

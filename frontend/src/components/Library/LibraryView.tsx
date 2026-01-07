@@ -8,6 +8,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useLibraryViewStore } from '../../stores/libraryViewStore';
 import { BrowserPicker } from './BrowserPicker';
 import { SelectionToolbar } from './SelectionToolbar';
 import { ArtistDetail } from './ArtistDetail';
@@ -29,13 +30,18 @@ interface LibraryViewProps {
 
 export function LibraryView({ initialSearch }: LibraryViewProps) {
   const { setQueue } = usePlayerStore();
+  const { selectedBrowserId, setSelectedBrowserId } = useLibraryViewStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Browser selection - read from URL, default to track list
-  const currentBrowserId = searchParams.get('view') || DEFAULT_BROWSER_ID;
+  // Browser selection - read from URL, fall back to persisted preference
+  const currentBrowserId = searchParams.get('view') || selectedBrowserId;
 
   const setCurrentBrowserId = useCallback(
     (browserId: string) => {
+      // Persist the selection to localStorage
+      setSelectedBrowserId(browserId);
+
+      // Also update the URL
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         if (browserId === DEFAULT_BROWSER_ID) {
@@ -46,7 +52,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         return next;
       });
     },
-    [setSearchParams]
+    [setSearchParams, setSelectedBrowserId]
   );
 
   // Filters - read from URL

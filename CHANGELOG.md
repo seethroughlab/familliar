@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.11] - 2026-01-06
+
+### Added
+
+- **Artist images** in library browser with fallback chain (Last.fm → Spotify → album artwork)
+- **Infinite scroll** for all library views (Artists, Albums, Tracks)
+- **View persistence** - app remembers your selected library view
+
+### Changed
+
+- **Default library view** changed from Tracks to Artists
+- **Artists view** redesigned as visual grid with artwork (matches Albums view)
+
+### Fixed
+
+- **Compilation album duplication** - Albums like "80's Wave" no longer appear multiple times
+  - Sync now auto-detects compilation albums (multiple artists, no album_artist set)
+  - Sets `album_artist = "Various Artists"` for tracks in detected compilations
+
 ## [0.1.0-alpha.10] - 2026-01-05
 
 ### Fixed
@@ -147,7 +166,8 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...HEAD
+[0.1.0-alpha.11]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
 [0.1.0-alpha.10]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
 [0.1.0-alpha.9]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...v0.1.0-alpha.8

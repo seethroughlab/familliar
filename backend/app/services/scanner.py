@@ -552,6 +552,63 @@ class LibraryScanner:
         # Note: Analysis is queued by the caller after commit
         return track
 
+    async def detect_compilation_albums(self) -> dict[str, int]:
+        """Detect compilation albums and set album_artist for tracks.
+
+        Finds albums where:
+        - album_artist is not already set
+        - Multiple different artists exist for the same album
+
+        Sets album_artist = "Various Artists" for all tracks in those albums.
+        Returns dict with albums_detected and tracks_updated counts.
+        """
+        from sqlalchemy import func, update
+
+        # Find albums with multiple artists (compilation candidates)
+        # Only consider tracks where album_artist is not already set
+        compilation_query = (
+            select(Track.album)
+            .where(
+                Track.album.isnot(None),
+                Track.album != "",
+                Track.status == TrackStatus.ACTIVE,
+                (Track.album_artist.is_(None) | (Track.album_artist == "")),
+            )
+            .group_by(Track.album)
+            .having(func.count(func.distinct(Track.artist)) > 1)
+        )
+
+        result = await self.db.execute(compilation_query)
+        compilation_albums = [row[0] for row in result.fetchall()]
+
+        if not compilation_albums:
+            logger.info("No compilation albums detected")
+            return {"albums_detected": 0, "tracks_updated": 0}
+
+        logger.info(f"Detected {len(compilation_albums)} compilation albums: {compilation_albums[:5]}...")
+
+        # Update all tracks in those albums to have album_artist = "Various Artists"
+        update_stmt = (
+            update(Track)
+            .where(
+                Track.album.in_(compilation_albums),
+                (Track.album_artist.is_(None) | (Track.album_artist == "")),
+            )
+            .values(album_artist="Various Artists")
+        )
+
+        result = await self.db.execute(update_stmt)
+        tracks_updated = result.rowcount
+
+        await self.db.commit()
+
+        logger.info(
+            f"Compilation detection complete: {len(compilation_albums)} albums, "
+            f"{tracks_updated} tracks updated"
+        )
+
+        return {"albums_detected": len(compilation_albums), "tracks_updated": tracks_updated}
+
     async def _update_track(
         self,
         track: Track,
