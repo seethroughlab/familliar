@@ -103,8 +103,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
   const [tracksCache] = useState<Map<string, import('../../types').Track>>(new Map());
 
-  // Artist detail view state
-  const [selectedArtist, setSelectedArtist] = useState<string | null>(null);
+  // Artist detail view state - read from URL
+  const selectedArtist = searchParams.get('artistDetail');
 
   const selectTrack = useCallback((trackId: string, multi: boolean) => {
     setSelectedTrackIds((prev) => {
@@ -149,14 +149,25 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   // Navigation handlers - switch to track list and apply filter
   // Note: Must update both filters AND view in a single setSearchParams call
   // to avoid React batching issues where one overwrites the other
-  const handleGoToArtist = useCallback((artistName: string) => {
-    // Open artist detail view instead of filtering
-    setSelectedArtist(artistName);
-  }, []);
+  const handleGoToArtist = useCallback(
+    (artistName: string) => {
+      // Open artist detail view - persist in URL
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('artistDetail', artistName);
+        return next;
+      });
+    },
+    [setSearchParams]
+  );
 
   const handleBackFromArtist = useCallback(() => {
-    setSelectedArtist(null);
-  }, []);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('artistDetail');
+      return next;
+    });
+  }, [setSearchParams]);
 
   const handleGoToAlbum = useCallback(
     (artistName: string, albumName: string) => {
