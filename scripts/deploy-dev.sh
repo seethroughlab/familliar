@@ -49,6 +49,9 @@ if [ "$DEPLOY_BACKEND" = true ]; then
         --exclude '.venv' \
         --exclude '*.pyc' \
         backend/app/ root@$NAS_HOST:$REMOTE_PATH/backend/app/
+
+    echo "Copying backend into container..."
+    ssh root@$NAS_HOST "docker cp $REMOTE_PATH/backend/app/. familiar-api:/app/app/"
 fi
 
 echo "Restarting container..."

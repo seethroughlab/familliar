@@ -767,16 +767,19 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             log_memory("after_metadata")
 
             # Create or update analysis record (without embedding - that comes in phase 2)
+            # Query by track_id only - NOT by version, to avoid creating duplicates
+            # when ANALYSIS_VERSION is bumped
             existing = db.execute(
                 select(TrackAnalysis)
                 .where(TrackAnalysis.track_id == track.id)
-                .where(TrackAnalysis.version == ANALYSIS_VERSION)
+                .order_by(TrackAnalysis.version.desc())  # Get newest version if multiple
             )
             existing_analysis = existing.scalar_one_or_none()
 
             if existing_analysis:
                 existing_analysis.features = features
                 existing_analysis.acoustid = acoustid_fingerprint
+                existing_analysis.version = ANALYSIS_VERSION  # Update version
                 # Keep existing embedding if present
             else:
                 analysis = TrackAnalysis(
@@ -921,15 +924,17 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
                 }
 
             # Update the existing analysis record with embedding
+            # Query by track_id only - NOT by version, to find any existing record
             existing = db.execute(
                 select(TrackAnalysis)
                 .where(TrackAnalysis.track_id == track.id)
-                .where(TrackAnalysis.version == ANALYSIS_VERSION)
+                .order_by(TrackAnalysis.version.desc())  # Get newest version if multiple
             )
             existing_analysis = existing.scalar_one_or_none()
 
             if existing_analysis:
                 existing_analysis.embedding = embedding
+                existing_analysis.version = ANALYSIS_VERSION  # Ensure version is current
                 db.commit()
                 logger.info(f"Embedding saved for {track.title}")
             else:
@@ -1163,15 +1168,12 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
                     f"Found {len(missing_embedding_ids)} tracks with missing embeddings "
                     "(embeddings now enabled)"
                 )
-                # Reset analysis version so they get re-analyzed
+                # Queue embedding-only tasks instead of resetting to re-analyze everything
+                # This preserves existing features and just adds embeddings
                 for track_id in missing_embedding_ids:
-                    await db.execute(
-                        update(Track)
-                        .where(Track.id == track_id)
-                        .values(analysis_version=0, analyzed_at=None)
-                    )
-                await db.commit()
-                track_ids.update(missing_embedding_ids)
+                    await bg.run_analysis(track_id, phase="embedding")
+                    queued += 1
+                # Don't add to track_ids - we already queued them for embedding-only
 
         if not track_ids:
             logger.info("No tracks need analysis")
