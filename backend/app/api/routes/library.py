@@ -1647,6 +1647,57 @@ class AnalysisStartResponse(BaseModel):
     message: str
 
 
+class ExecutorStatus(BaseModel):
+    """Process pool executor status."""
+
+    disabled: bool
+    consecutive_failures: int
+    max_failures: int
+    crashed_track_ids: list[str]
+    last_reset_ago: float | None
+
+
+class ExecutorResetResponse(BaseModel):
+    """Response from resetting the executor."""
+
+    status: str
+    was_disabled: bool
+    previous_failure_count: int
+    crashed_track_ids: list[str]
+
+
+@router.get("/analysis/executor", response_model=ExecutorStatus)
+async def get_executor_status() -> ExecutorStatus:
+    """Get process pool executor status.
+
+    Returns whether the executor is disabled (circuit breaker tripped),
+    the number of consecutive failures, and which tracks caused crashes.
+    """
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+    status = bg.get_executor_status()
+
+    return ExecutorStatus(**status)
+
+
+@router.post("/analysis/executor/reset", response_model=ExecutorResetResponse)
+async def reset_executor() -> ExecutorResetResponse:
+    """Reset the process pool executor circuit breaker.
+
+    Use this to recover from a disabled executor without restarting the container.
+    The circuit breaker trips after 5 consecutive worker crashes.
+
+    Returns info about what was reset, including which tracks caused crashes.
+    """
+    from app.services.background import get_background_manager
+
+    bg = get_background_manager()
+    result = bg.reset_executor_circuit_breaker()
+
+    return ExecutorResetResponse(**result)
+
+
 @router.post("/analysis/start", response_model=AnalysisStartResponse)
 async def start_analysis(limit: int = 500) -> AnalysisStartResponse:
     """Manually trigger analysis for unanalyzed tracks.

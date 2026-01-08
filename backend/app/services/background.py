@@ -66,6 +66,9 @@ class BackgroundManager:
         self._last_executor_reset: float = 0.0
         self._consecutive_executor_failures: int = 0
         self._executor_disabled: bool = False
+        # Track current work for crash diagnostics
+        self._current_track_id: str | None = None
+        self._crashed_track_ids: set[str] = set()  # Tracks that have caused crashes
 
     @property
     def redis(self) -> redis.Redis:
@@ -131,11 +134,69 @@ class BackgroundManager:
 
         self._create_executor()
         self._last_executor_reset = now
-        logger.warning(
-            f"ProcessPoolExecutor was reset after crash "
-            f"(failure {self._consecutive_executor_failures}/{EXECUTOR_MAX_CONSECUTIVE_FAILURES})"
-        )
+        # Log which track was being processed when the crash occurred
+        if self._current_track_id:
+            self._crashed_track_ids.add(self._current_track_id)
+            logger.warning(
+                f"ProcessPoolExecutor was reset after crash "
+                f"(failure {self._consecutive_executor_failures}/{EXECUTOR_MAX_CONSECUTIVE_FAILURES}). "
+                f"Track being processed: {self._current_track_id}"
+            )
+        else:
+            logger.warning(
+                f"ProcessPoolExecutor was reset after crash "
+                f"(failure {self._consecutive_executor_failures}/{EXECUTOR_MAX_CONSECUTIVE_FAILURES})"
+            )
         return True
+
+    def reset_executor_circuit_breaker(self) -> dict[str, Any]:
+        """Manually reset the executor circuit breaker.
+
+        Use this to recover from a disabled executor without restarting.
+        Returns status info about what was reset.
+        """
+        was_disabled = self._executor_disabled
+        old_failure_count = self._consecutive_executor_failures
+        crashed_tracks = list(self._crashed_track_ids)
+
+        # Reset state
+        self._executor_disabled = False
+        self._consecutive_executor_failures = 0
+        self._last_executor_reset = 0.0
+        self._crashed_track_ids.clear()
+
+        # Shutdown old executor if exists
+        if self._executor is not None:
+            try:
+                self._executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+            self._executor = None
+
+        # Create fresh executor
+        self._create_executor()
+
+        logger.info(
+            f"Executor circuit breaker manually reset. Was disabled: {was_disabled}, "
+            f"failures: {old_failure_count}, crashed tracks: {len(crashed_tracks)}"
+        )
+
+        return {
+            "status": "reset",
+            "was_disabled": was_disabled,
+            "previous_failure_count": old_failure_count,
+            "crashed_track_ids": crashed_tracks,
+        }
+
+    def get_executor_status(self) -> dict[str, Any]:
+        """Get current executor circuit breaker status."""
+        return {
+            "disabled": self._executor_disabled,
+            "consecutive_failures": self._consecutive_executor_failures,
+            "max_failures": EXECUTOR_MAX_CONSECUTIVE_FAILURES,
+            "crashed_track_ids": list(self._crashed_track_ids),
+            "last_reset_ago": time.monotonic() - self._last_executor_reset if self._last_executor_reset else None,
+        }
 
     def _cleanup_stale_redis_state(self) -> None:
         """Clean up stale Redis state from previous runs.
@@ -143,34 +204,27 @@ class BackgroundManager:
         This handles the case where the container was restarted while a sync
         was running - the Redis state would still show "running" with a stale
         heartbeat, blocking new syncs from starting.
-        """
-        from datetime import datetime, timedelta
 
+        On startup, we ALWAYS clear any "running" sync state because:
+        1. We just started - there's no sync running in memory
+        2. Any "running" state in Redis is leftover from a previous process
+        3. Waiting for heartbeat timeout causes unnecessary delays
+        """
         try:
-            # Check sync progress for stale "running" state
+            # Check sync progress for "running" state
             data: bytes | None = self.redis.get("familiar:sync:progress")  # type: ignore[assignment]
             if data:
                 progress = json.loads(data)
                 if progress.get("status") == "running":
-                    heartbeat = progress.get("last_heartbeat")
-                    if heartbeat:
-                        try:
-                            hb_time = datetime.fromisoformat(heartbeat)
-                            age = datetime.utcnow() - hb_time
-                            # If heartbeat is older than 2 minutes, it's stale
-                            if age > timedelta(minutes=2):
-                                logger.info(
-                                    f"Clearing stale sync state (heartbeat was {age.total_seconds():.0f}s ago)"
-                                )
-                                self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
-                        except (ValueError, TypeError):
-                            # Invalid timestamp, clear it
-                            logger.info("Clearing sync state with invalid heartbeat")
-                            self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
-                    else:
-                        # No heartbeat but status is running - stale
-                        logger.info("Clearing sync state with missing heartbeat")
-                        self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
+                    # On startup, always clear running state - we know nothing is running
+                    # because we just started up
+                    heartbeat = progress.get("last_heartbeat", "unknown")
+                    phase = progress.get("phase", "unknown")
+                    logger.info(
+                        f"Clearing orphaned sync state on startup "
+                        f"(was in phase '{phase}', last heartbeat: {heartbeat})"
+                    )
+                    self.redis.delete("familiar:sync:lock", "familiar:sync:progress")
         except Exception as e:
             logger.warning(f"Failed to cleanup stale Redis state: {e}")
 
@@ -436,12 +490,14 @@ class BackgroundManager:
 
         task_key = f"{track_id}:features"
         try:
+            self._current_track_id = track_id
             result = await self.run_cpu_bound(run_track_features, track_id)
             return result
         except Exception as e:
             logger.error(f"Feature extraction failed for {track_id}: {e}")
             return {"status": "error", "error": str(e)}
         finally:
+            self._current_track_id = None
             self._analysis_tasks.pop(task_key, None)
 
     async def _do_embedding(self, track_id: str) -> dict[str, Any]:
@@ -463,12 +519,14 @@ class BackgroundManager:
             if clap_disabled:
                 return {"status": "skipped", "embedding_generated": False}
 
+            self._current_track_id = track_id
             result = await self.run_cpu_bound(run_track_embedding, track_id)
             return result
         except Exception as e:
             logger.error(f"Embedding generation failed for {track_id}: {e}")
             return {"status": "error", "error": str(e)}
         finally:
+            self._current_track_id = None
             self._analysis_tasks.pop(task_key, None)
 
     async def _do_analysis(self, track_id: str) -> dict[str, Any]:
@@ -488,6 +546,8 @@ class BackgroundManager:
 
         task_key = f"{track_id}:full"
         try:
+            self._current_track_id = track_id
+
             # Phase 1: Extract features (librosa, artwork, fingerprint)
             features_result = await self.run_cpu_bound(run_track_features, track_id)
 
@@ -518,6 +578,7 @@ class BackgroundManager:
             logger.error(f"Analysis failed for {track_id}: {e}")
             return {"status": "error", "error": str(e)}
         finally:
+            self._current_track_id = None
             self._analysis_tasks.pop(task_key, None)
 
     async def run_spotify_sync(

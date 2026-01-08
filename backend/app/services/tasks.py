@@ -589,8 +589,8 @@ async def _run_scan_for_sync(
             results["compilation_albums"] = compilation_results.get("albums_detected", 0)
             results["compilation_tracks"] = compilation_results.get("tracks_updated", 0)
 
-        # Queue analysis
-        await queue_unanalyzed_tracks(limit=500)
+        # Analysis is queued by the sync loop via queue_tracks_for_features()
+        # and queue_tracks_for_embeddings() - no need to call deprecated function here
 
         return {"status": "success", **results}
 
@@ -1145,6 +1145,7 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
                 .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
                 .where(
                     and_(
+                        TrackAnalysis.version >= ANALYSIS_VERSION,  # Must check analysis record version!
                         TrackAnalysis.embedding.is_(None),
                         Track.analysis_version >= ANALYSIS_VERSION,
                         or_(
