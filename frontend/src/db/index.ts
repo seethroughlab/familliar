@@ -76,6 +76,8 @@ export interface PersistedPlayerState {
   queueTrackIds: string[]; // Just store track IDs, not full objects
   queueIndex: number;
   currentTrackId: string | null;
+  shuffleOrder: number[]; // Randomized queue indices when shuffle is on
+  shuffleIndex: number; // Current position in shuffleOrder (-1 when off)
   updatedAt: Date;
 }
 

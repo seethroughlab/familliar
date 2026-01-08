@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useFavorites } from '../../hooks/useFavorites';
@@ -18,7 +18,7 @@ interface Props {
 }
 
 export function PlaylistDetail({ playlistId, onBack }: Props) {
-  const { setQueue, addToQueue } = usePlayerStore();
+  const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
@@ -99,6 +99,13 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
 
   const handlePlay = (startIndex = 0) => {
     if (!playlist || playlist.tracks.length === 0) return;
+
+    // If clicking on the currently playing track, toggle play/pause
+    const clickedTrack = playlist.tracks[startIndex];
+    if (clickedTrack && currentTrack?.id === clickedTrack.id) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
 
     const queueTracks = playlist.tracks.map(t => ({
       id: t.id,
@@ -256,22 +263,46 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               key={track.id}
               onClick={() => handlePlay(idx)}
               onContextMenu={(e) => handleContextMenu(fullTrack, e)}
-              className="group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-colors"
+              className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-colors ${
+                currentTrack?.id === track.id ? 'bg-zinc-800/30' : ''
+              }`}
             >
               {/* Track number / Play button */}
               <div className="w-8 text-center">
-                <span className="group-hover:hidden text-sm text-zinc-500">
-                  {idx + 1}
-                </span>
-                <Play
-                  className="hidden group-hover:block w-4 h-4 mx-auto text-white"
-                  fill="currentColor"
-                />
+                {currentTrack?.id === track.id && isPlaying ? (
+                  <>
+                    <div className="group-hover:hidden flex justify-center gap-0.5">
+                      <div className="w-0.5 h-3 bg-green-500 animate-pulse" />
+                      <div className="w-0.5 h-3 bg-green-500 animate-pulse [animation-delay:0.2s]" />
+                      <div className="w-0.5 h-3 bg-green-500 animate-pulse [animation-delay:0.4s]" />
+                    </div>
+                    <Pause
+                      className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                      fill="currentColor"
+                    />
+                  </>
+                ) : currentTrack?.id === track.id ? (
+                  <>
+                    <span className="group-hover:hidden text-sm text-green-500">{idx + 1}</span>
+                    <Play
+                      className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                      fill="currentColor"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <span className="group-hover:hidden text-sm text-zinc-500">{idx + 1}</span>
+                    <Play
+                      className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                      fill="currentColor"
+                    />
+                  </>
+                )}
               </div>
 
               {/* Track info */}
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">
+                <div className={`font-medium truncate ${currentTrack?.id === track.id ? 'text-green-500' : ''}`}>
                   {track.title || 'Unknown Title'}
                 </div>
                 <div className="text-sm text-zinc-400 truncate">

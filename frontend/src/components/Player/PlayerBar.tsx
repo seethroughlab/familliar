@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2 } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2, Shuffle, Repeat } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { tracksApi } from '../../api/client';
@@ -57,6 +57,10 @@ export function PlayerBar({
     setVolume,
     playNext,
     playPrevious,
+    shuffle,
+    toggleShuffle,
+    repeat,
+    toggleRepeat,
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
@@ -102,6 +106,16 @@ export function PlayerBar({
         <div className="flex-1 flex flex-col items-center gap-1">
           <div className="flex items-center gap-4">
             <button
+              onClick={toggleShuffle}
+              className={`p-2 rounded-full transition-colors ${
+                shuffle ? 'text-green-500' : 'text-zinc-400 hover:text-white'
+              }`}
+              aria-label={shuffle ? 'Disable shuffle' : 'Enable shuffle'}
+              aria-pressed={shuffle}
+            >
+              <Shuffle className="w-4 h-4" />
+            </button>
+            <button
               data-testid="prev-track"
               onClick={playPrevious}
               className="p-2 hover:bg-zinc-800 rounded-full transition-colors"
@@ -128,6 +142,19 @@ export function PlayerBar({
               aria-label="Next track"
             >
               <SkipForward className="w-5 h-5" />
+            </button>
+            <button
+              onClick={toggleRepeat}
+              className={`p-2 rounded-full transition-colors relative ${
+                repeat !== 'off' ? 'text-green-500' : 'text-zinc-400 hover:text-white'
+              }`}
+              aria-label={`Repeat: ${repeat}`}
+              aria-pressed={repeat !== 'off'}
+            >
+              <Repeat className="w-4 h-4" />
+              {repeat === 'one' && (
+                <span className="absolute -top-0.5 -right-0.5 text-[8px] font-bold">1</span>
+              )}
             </button>
           </div>
 

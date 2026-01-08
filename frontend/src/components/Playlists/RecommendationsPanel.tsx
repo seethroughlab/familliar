@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ChevronDown, ChevronUp, ExternalLink, Play, Disc3, User, Loader2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, ExternalLink, Play, Pause, Disc3, User, Loader2 } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import type { RecommendedArtist, RecommendedTrack } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -168,10 +168,15 @@ function ArtistsList({ artists }: { artists: RecommendedArtist[] }) {
 }
 
 function TracksList({ tracks }: { tracks: RecommendedTrack[] }) {
-  const { setQueue } = usePlayerStore();
+  const { currentTrack, isPlaying, setQueue, setIsPlaying } = usePlayerStore();
 
   const handlePlay = (track: RecommendedTrack) => {
     if (track.local_track_id) {
+      // If clicking on the currently playing track, toggle play/pause
+      if (currentTrack?.id === track.local_track_id) {
+        setIsPlaying(!isPlaying);
+        return;
+      }
       // Play the local track
       setQueue([{
         id: track.local_track_id,
@@ -194,18 +199,30 @@ function TracksList({ tracks }: { tracks: RecommendedTrack[] }) {
 
   return (
     <div className="space-y-2">
-      {tracks.map((track, idx) => (
+      {tracks.map((track, idx) => {
+        const isCurrentTrack = track.local_track_id && currentTrack?.id === track.local_track_id;
+        return (
         <div
           key={`${track.artist}-${track.title}-${idx}`}
-          className="group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors"
+          className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors ${
+            isCurrentTrack ? 'bg-zinc-800/30' : ''
+          }`}
         >
           {/* Play button or placeholder */}
           {track.local_track_id ? (
             <button
               onClick={() => handlePlay(track)}
-              className="p-2 bg-green-600 hover:bg-green-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+              className={`p-2 rounded-full transition-opacity ${
+                isCurrentTrack
+                  ? 'bg-green-600 opacity-100'
+                  : 'bg-green-600 hover:bg-green-500 opacity-0 group-hover:opacity-100'
+              }`}
             >
-              <Play className="w-3 h-3" fill="currentColor" />
+              {isCurrentTrack && isPlaying ? (
+                <Pause className="w-3 h-3" fill="currentColor" />
+              ) : (
+                <Play className="w-3 h-3" fill="currentColor" />
+              )}
             </button>
           ) : (
             <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center">
@@ -215,7 +232,7 @@ function TracksList({ tracks }: { tracks: RecommendedTrack[] }) {
 
           {/* Info */}
           <div className="flex-1 min-w-0">
-            <div className="font-medium truncate">{track.title}</div>
+            <div className={`font-medium truncate ${isCurrentTrack ? 'text-green-500' : ''}`}>{track.title}</div>
             <div className="text-sm text-zinc-400 truncate">{track.artist}</div>
           </div>
 
@@ -241,7 +258,8 @@ function TracksList({ tracks }: { tracks: RecommendedTrack[] }) {
             )}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

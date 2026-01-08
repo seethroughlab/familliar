@@ -282,21 +282,51 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     vocal_ratio = vocal_energy / (total_energy + 1e-6)
     features["instrumentalness"] = float(max(0, 1 - vocal_ratio))
 
-    # Valence: approximation based on mode (major/minor) and brightness
-    # Rotate chroma to detected key so we compare the correct intervals
-    # key_idx was computed above for the "key" feature
+    # Valence: Multi-feature approach for musical positivity/happiness
+    # Uses mode (major/minor), brightness, tempo, spectral contrast, and dynamics
+
+    # 1. Mode (major/minor) via chroma analysis
     chroma_rotated = np.roll(chroma, -key_idx, axis=0)
-    # Now index 0 is the tonic - compare major vs minor third intervals
-    # Major: tonic(0), major 3rd(4), 5th(7) - sounds "happier"
-    # Minor: tonic(0), minor 3rd(3), 5th(7) - sounds "sadder"
     major_thirds = chroma_rotated[[0, 4, 7], :]
     minor_thirds = chroma_rotated[[0, 3, 7], :]
     major_energy = np.mean(major_thirds)
     minor_energy = np.mean(minor_thirds)
     mode_indicator = (major_energy - minor_energy) / (major_energy + minor_energy + 1e-6)
-    # Combine with brightness (higher rolloff = brighter = happier)
-    brightness = np.mean(spectral_rolloff) / (sr / 2)
-    features["valence"] = float(max(0, min(1, 0.5 + mode_indicator * 0.3 + brightness * 0.2)))
+    # Scale from [-1, 1] to [0, 1]
+    mode_score = (mode_indicator + 1) / 2
+
+    # 2. Brightness via spectral centroid (brighter = generally happier)
+    centroid_norm = np.mean(spectral_centroid) / (sr / 2)
+    brightness_score = np.clip(centroid_norm * 2, 0, 1)  # Typical range 0.1-0.4, scale up
+
+    # 3. Tempo factor (faster tempos tend toward positive affect)
+    # Map 60-180 BPM to 0-1, with 120 BPM at 0.5
+    bpm = features["bpm"]
+    tempo_score = np.clip((bpm - 60) / 120, 0, 1) if bpm else 0.5
+
+    # 4. Spectral contrast (higher contrast = more "vibrant/dynamic" sound)
+    contrast = librosa.feature.spectral_contrast(S=spec, sr=sr)
+    contrast_mean = np.mean(contrast)
+    contrast_score = np.clip(contrast_mean / 25, 0, 1)
+
+    # 5. Dynamic variation (more expressive dynamics = more emotional range)
+    rms_std = np.std(rms)
+    dynamics_score = np.clip(rms_std / 0.08, 0, 1)
+
+    # Combine features with weights
+    raw_valence = (
+        mode_score * 0.30 +       # Major/minor is primary indicator
+        brightness_score * 0.25 + # Brightness correlates with positivity
+        tempo_score * 0.20 +      # Tempo affects perceived energy/mood
+        contrast_score * 0.15 +   # Spectral vibrancy
+        dynamics_score * 0.10     # Dynamic expressiveness
+    )
+
+    # Apply power transformation to spread the distribution
+    # This pushes values away from 0.5 toward the extremes
+    centered = raw_valence - 0.5
+    spread = np.sign(centered) * (np.abs(centered) ** 0.6) * 1.8
+    features["valence"] = float(np.clip(spread + 0.5, 0, 1))
 
     # Speechiness: based on zero crossing rate and spectral flatness
     _flatness = librosa.feature.spectral_flatness(y=y)[0]

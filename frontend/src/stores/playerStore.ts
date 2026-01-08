@@ -27,6 +27,10 @@ interface PlayerState {
   queueIndex: number;
   history: Track[];
 
+  // Shuffle state
+  shuffleOrder: number[];  // Randomized queue indices when shuffle is on
+  shuffleIndex: number;    // Current position in shuffleOrder (-1 when off)
+
   // Crossfade state
   crossfadeState: CrossfadeState;
   nextTrackPreloaded: boolean;
@@ -66,6 +70,23 @@ interface PlayerState {
 let queueIdCounter = 0;
 const generateQueueId = () => `queue-${++queueIdCounter}`;
 
+// Generate a shuffled order of queue indices, with current track first
+function generateShuffleOrder(queueLength: number, currentIndex: number): number[] {
+  if (queueLength <= 1) return queueLength === 1 ? [0] : [];
+
+  const indices = Array.from({ length: queueLength }, (_, i) => i);
+  const rest = indices.filter(i => i !== currentIndex);
+
+  // Fisher-Yates shuffle
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+
+  // Current track first, then shuffled rest
+  return currentIndex >= 0 ? [currentIndex, ...rest] : rest;
+}
+
 // Helper to persist state after changes
 const persistState = () => {
   const state = usePlayerStore.getState();
@@ -76,6 +97,8 @@ const persistState = () => {
     queue: state.queue,
     queueIndex: state.queueIndex,
     currentTrack: state.currentTrack,
+    shuffleOrder: state.shuffleOrder,
+    shuffleIndex: state.shuffleIndex,
   });
 };
 
@@ -91,6 +114,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   queue: [],
   queueIndex: -1,
   history: [],
+  shuffleOrder: [],
+  shuffleIndex: -1,
   crossfadeState: 'idle',
   nextTrackPreloaded: false,
   isHydrated: false,
@@ -108,7 +133,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     persistState();
   },
   toggleShuffle: () => {
-    set((state) => ({ shuffle: !state.shuffle }));
+    const { shuffle, queue, queueIndex } = get();
+    if (!shuffle && queue.length > 1) {
+      // Enabling shuffle: generate order starting from current track
+      const shuffleOrder = generateShuffleOrder(queue.length, queueIndex);
+      set({ shuffle: true, shuffleOrder, shuffleIndex: 0 });
+    } else {
+      // Disabling shuffle: clear shuffle state, keep current track playing
+      set({ shuffle: false, shuffleOrder: [], shuffleIndex: -1 });
+    }
     persistState();
   },
   toggleRepeat: () => {
@@ -120,8 +153,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
 
   // Queue actions
   addToQueue: (track) => {
+    const { queue, shuffle, shuffleOrder } = get();
+    const newIndex = queue.length; // Index of new track in queue
+
     set((state) => ({
       queue: [...state.queue, { track, queueId: generateQueueId() }],
+      // Append new track to shuffle order if shuffle is on
+      shuffleOrder: shuffle ? [...shuffleOrder, newIndex] : state.shuffleOrder,
     }));
     persistState();
   },
@@ -155,30 +193,62 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   playNext: () => {
-    const state = get();
-    if (state.queue.length === 0) {
+    const { queue, queueIndex, shuffle, shuffleOrder, shuffleIndex, repeat, currentTrack } = get();
+    if (queue.length === 0) {
       set({ isPlaying: false });
       return;
     }
 
-    const nextIndex = state.queueIndex + 1;
-    if (nextIndex < state.queue.length) {
-      const nextItem = state.queue[nextIndex];
-      if (state.currentTrack) {
-        set((s) => ({
-          history: [...s.history.slice(-49), s.currentTrack!],
-        }));
-      }
-      set({
-        currentTrack: nextItem.track,
-        queueIndex: nextIndex,
-        isPlaying: true,
-        currentTime: 0,
-      });
-      persistState();
-    } else {
-      set({ isPlaying: false });
+    // Add current track to history
+    if (currentTrack) {
+      set((s) => ({
+        history: [...s.history.slice(-49), s.currentTrack!],
+      }));
     }
+
+    let nextQueueIndex: number;
+    let newShuffleIndex = shuffleIndex;
+    let newShuffleOrder = shuffleOrder;
+
+    if (shuffle && shuffleOrder.length > 0) {
+      // Shuffle mode: advance through shuffleOrder
+      newShuffleIndex = shuffleIndex + 1;
+      if (newShuffleIndex >= shuffleOrder.length) {
+        // End of shuffled list
+        if (repeat === 'all') {
+          // Reshuffle and start over (keep current track position for reference)
+          newShuffleOrder = generateShuffleOrder(queue.length, queueIndex);
+          newShuffleIndex = 0;
+          nextQueueIndex = newShuffleOrder[0];
+        } else {
+          set({ isPlaying: false });
+          return;
+        }
+      } else {
+        nextQueueIndex = shuffleOrder[newShuffleIndex];
+      }
+    } else {
+      // Normal mode: sequential
+      nextQueueIndex = queueIndex + 1;
+      if (nextQueueIndex >= queue.length) {
+        if (repeat === 'all') {
+          nextQueueIndex = 0;
+        } else {
+          set({ isPlaying: false });
+          return;
+        }
+      }
+    }
+
+    set({
+      queueIndex: nextQueueIndex,
+      currentTrack: queue[nextQueueIndex].track,
+      isPlaying: true,
+      currentTime: 0,
+      shuffleIndex: newShuffleIndex,
+      shuffleOrder: newShuffleOrder,
+    });
+    persistState();
   },
 
   playPrevious: () => {
@@ -204,16 +274,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   setQueue: (tracks, startIndex = 0) => {
+    const { shuffle } = get();
     const queueItems = tracks.map((track) => ({
       track,
       queueId: generateQueueId(),
     }));
+
+    // Generate shuffle order if shuffle is enabled
+    let shuffleOrder: number[] = [];
+    let shuffleIndex = -1;
+    if (shuffle && tracks.length > 1) {
+      shuffleOrder = generateShuffleOrder(tracks.length, startIndex);
+      shuffleIndex = 0;
+    }
+
     set({
       queue: queueItems,
       queueIndex: startIndex,
       currentTrack: tracks[startIndex] || null,
       isPlaying: tracks.length > 0,
       currentTime: 0,
+      shuffleOrder,
+      shuffleIndex,
     });
     persistState();
   },
@@ -224,28 +306,57 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setNextTrackPreloaded: (nextTrackPreloaded) => set({ nextTrackPreloaded }),
 
   getNextTrack: () => {
-    const state = get();
-    const nextIndex = state.queueIndex + 1;
-    if (nextIndex < state.queue.length) {
-      return state.queue[nextIndex].track;
+    const { queue, queueIndex, shuffle, shuffleOrder, shuffleIndex, repeat } = get();
+    if (queue.length === 0) return null;
+
+    let nextQueueIndex: number;
+
+    if (shuffle && shuffleOrder.length > 0) {
+      const nextShuffleIndex = shuffleIndex + 1;
+      if (nextShuffleIndex >= shuffleOrder.length) {
+        // End of shuffled list - if repeat is on, we'd reshuffle but can't predict
+        // Just return null for preloading purposes
+        if (repeat === 'all') {
+          return queue[0]?.track || null; // Approximate - actual will reshuffle
+        }
+        return null;
+      }
+      nextQueueIndex = shuffleOrder[nextShuffleIndex];
+    } else {
+      nextQueueIndex = queueIndex + 1;
+      if (nextQueueIndex >= queue.length) {
+        if (repeat === 'all') {
+          nextQueueIndex = 0;
+        } else {
+          return null;
+        }
+      }
     }
-    return null;
+
+    return queue[nextQueueIndex]?.track || null;
   },
 
   advanceToNextTrack: (track) => {
-    const state = get();
+    const { queueIndex, shuffle, shuffleIndex, currentTrack, queue } = get();
+
     // Add current track to history
-    if (state.currentTrack) {
+    if (currentTrack) {
       set((s) => ({
         history: [...s.history.slice(-49), s.currentTrack!],
       }));
     }
+
+    // Find the queue index for the advanced track
+    const trackIndex = queue.findIndex(item => item.track.id === track.id);
+    const newQueueIndex = trackIndex >= 0 ? trackIndex : queueIndex + 1;
+
     set({
       currentTrack: track,
-      queueIndex: state.queueIndex + 1,
+      queueIndex: newQueueIndex,
       currentTime: 0,
       crossfadeState: 'idle',
       nextTrackPreloaded: false,
+      shuffleIndex: shuffle ? shuffleIndex + 1 : shuffleIndex,
     });
     persistState();
   },
@@ -288,6 +399,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         currentTrack,
         isPlaying: false, // Don't auto-play on hydration
         isHydrated: true,
+        shuffleOrder: persisted.shuffleOrder || [],
+        shuffleIndex: persisted.shuffleIndex ?? -1,
       });
     } catch (error) {
       console.error('Failed to hydrate player state:', error);
@@ -308,6 +421,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       queue: [],
       queueIndex: -1,
       history: [],
+      shuffleOrder: [],
+      shuffleIndex: -1,
       crossfadeState: 'idle',
       nextTrackPreloaded: false,
       isHydrated: false,

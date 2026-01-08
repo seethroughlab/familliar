@@ -16,6 +16,8 @@ export async function savePlayerState(state: {
   queue: QueueItem[];
   queueIndex: number;
   currentTrack: Track | null;
+  shuffleOrder: number[];
+  shuffleIndex: number;
 }): Promise<void> {
   const profileId = await getSelectedProfileId();
   if (!profileId) {
@@ -30,6 +32,8 @@ export async function savePlayerState(state: {
     queueTrackIds: state.queue.map((item) => item.track.id),
     queueIndex: state.queueIndex,
     currentTrackId: state.currentTrack?.id || null,
+    shuffleOrder: state.shuffleOrder,
+    shuffleIndex: state.shuffleIndex,
     updatedAt: new Date(),
   };
 
@@ -134,6 +138,8 @@ export function debouncedSavePlayerState(state: {
   queue: QueueItem[];
   queueIndex: number;
   currentTrack: Track | null;
+  shuffleOrder: number[];
+  shuffleIndex: number;
 }): void {
   if (saveTimeout) {
     clearTimeout(saveTimeout);

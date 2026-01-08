@@ -95,7 +95,8 @@ class Settings(BaseSettings):
 # v1: Placeholder features only
 # v2: Real CLAP embeddings + librosa features
 # v3: Fixed energy normalization (dB scale) and valence (key-aware chroma)
-ANALYSIS_VERSION = 3
+# v4: Improved valence with multi-feature approach (mode, brightness, tempo, contrast, dynamics)
+ANALYSIS_VERSION = 4
 
 # Supported audio formats
 AUDIO_EXTENSIONS = {".mp3", ".flac", ".m4a", ".aac", ".ogg", ".wav", ".aiff", ".aif"}

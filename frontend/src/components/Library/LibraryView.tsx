@@ -181,7 +181,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
-        next.delete('view');
+        // Explicitly switch to track-list to show album tracks
+        next.set('view', 'track-list');
         next.set('artist', artistName);
         next.set('album', albumName);
         return next;
@@ -202,7 +203,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
-        next.delete('view');
+        // Explicitly switch to track-list to show filtered tracks
+        next.set('view', 'track-list');
         next.set('yearFrom', String(year));
         next.set('yearTo', String(year));
         return next;
@@ -223,7 +225,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
-        next.delete('view');
+        // Explicitly switch to track-list to show filtered tracks
+        next.set('view', 'track-list');
         next.set('yearFrom', String(yearFrom));
         next.set('yearTo', String(yearTo));
         return next;
@@ -236,7 +239,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     (energyMin: number, energyMax: number, valenceMin: number, valenceMax: number) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        // Clear old filter params and view
+        // Clear old filter params
         next.delete('artist');
         next.delete('album');
         next.delete('yearFrom');
@@ -245,7 +248,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
-        next.delete('view'); // Switch to track list (default)
+        // Explicitly switch to track-list to show filtered tracks
+        next.set('view', 'track-list');
         // Set mood filters
         next.set('energyMin', String(energyMin));
         next.set('energyMax', String(energyMax));
