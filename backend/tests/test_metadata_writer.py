@@ -10,15 +10,14 @@ from pathlib import Path
 
 import pytest
 from mutagen.flac import FLAC
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TCON, TDRC, TRCK, USLT
-from mutagen.mp3 import MP3
+from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 from mutagen.oggvorbis import OggVorbis
 
 from app.services.metadata_writer import (
-    write_metadata,
-    write_lyrics,
     remove_artwork,
+    write_lyrics,
+    write_metadata,
 )
 
 # Path to test audio fixtures
