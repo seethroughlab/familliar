@@ -257,7 +257,8 @@ jobs:
           SPOTIFY_CLIENT_SECRET: ${{ secrets.SPOTIFY_CLIENT_SECRET }}
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
-        run: npm run test:e2e
+        # Exclude screenshot specs - they're for README docs, not CI testing
+        run: npx playwright test --ignore="**/screenshots.spec.ts" --ignore="**/mobile-screenshots.spec.ts"
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
