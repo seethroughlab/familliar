@@ -2,6 +2,7 @@
  * Vitest setup file.
  * Runs before each test file.
  */
+import { vi } from 'vitest'
 import '@testing-library/jest-dom'
 
 // Mock localStorage
@@ -35,7 +36,7 @@ Object.defineProperty(window, 'Audio', { value: AudioMock })
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation((query) => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,

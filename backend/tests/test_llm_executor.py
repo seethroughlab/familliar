@@ -5,7 +5,7 @@ Uses mocked database sessions to test logic in isolation.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 

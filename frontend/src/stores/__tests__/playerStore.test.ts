@@ -19,8 +19,16 @@ const createMockTrack = (id: string, title = 'Test Track'): Track => ({
   title,
   artist: 'Test Artist',
   album: 'Test Album',
+  album_artist: null,
+  album_type: 'album',
+  track_number: 1,
+  disc_number: 1,
+  year: 2024,
+  genre: 'Test',
   duration_seconds: 180,
+  format: 'mp3',
   file_path: `/music/${id}.mp3`,
+  analysis_version: 1,
 })
 
 describe('playerStore', () => {
