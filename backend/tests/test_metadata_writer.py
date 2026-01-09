@@ -68,11 +68,14 @@ def flac_file():
 
         # Use ffmpeg if available, otherwise skip
         import subprocess
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "flac", str(flac_path)],
-            capture_output=True,
-        )
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "flac", str(flac_path)],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                pytest.skip("ffmpeg failed for FLAC conversion")
+        except FileNotFoundError:
             pytest.skip("ffmpeg not available for FLAC conversion")
 
         yield flac_path
@@ -90,11 +93,14 @@ def m4a_file():
             pytest.skip("MP3 fixture not available for M4A conversion")
 
         import subprocess
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "aac", "-b:a", "128k", str(m4a_path)],
-            capture_output=True,
-        )
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "aac", "-b:a", "128k", str(m4a_path)],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                pytest.skip("ffmpeg failed for M4A conversion")
+        except FileNotFoundError:
             pytest.skip("ffmpeg not available for M4A conversion")
 
         yield m4a_path
@@ -112,11 +118,14 @@ def ogg_file():
             pytest.skip("MP3 fixture not available for OGG conversion")
 
         import subprocess
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "libvorbis", "-q:a", "4", str(ogg_path)],
-            capture_output=True,
-        )
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "libvorbis", "-q:a", "4", str(ogg_path)],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                pytest.skip("ffmpeg failed for OGG conversion")
+        except FileNotFoundError:
             pytest.skip("ffmpeg not available for OGG conversion")
 
         yield ogg_path
@@ -134,11 +143,14 @@ def aiff_file():
             pytest.skip("MP3 fixture not available for AIFF conversion")
 
         import subprocess
-        result = subprocess.run(
-            ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "pcm_s16be", str(aiff_path)],
-            capture_output=True,
-        )
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                ["ffmpeg", "-y", "-i", str(mp3_src), "-c:a", "pcm_s16be", str(aiff_path)],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                pytest.skip("ffmpeg failed for AIFF conversion")
+        except FileNotFoundError:
             pytest.skip("ffmpeg not available for AIFF conversion")
 
         yield aiff_path
