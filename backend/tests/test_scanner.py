@@ -521,11 +521,11 @@ class TestConcurrentSyncPrevention:
             lock_acquired = r.set("familiar:sync:lock", "1", nx=True, ex=60)
             assert lock_acquired, "Should acquire fresh lock"
 
-            # Set progress with recent heartbeat
+            # Set progress with recent heartbeat (must use UTC to match background.py)
             progress = {
                 "status": "running",
                 "phase": "reading",
-                "last_heartbeat": datetime.now().isoformat(),
+                "last_heartbeat": datetime.utcnow().isoformat(),
             }
             r.set("familiar:sync:progress", json.dumps(progress), ex=60)
 
