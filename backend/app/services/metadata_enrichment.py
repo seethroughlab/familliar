@@ -211,25 +211,27 @@ def _write_mp4_tags(file_path: Path, metadata: dict[str, Any], overwrite: bool) 
 
         if audio.tags is None:
             audio.add_tags()
+        tags = audio.tags
+        assert tags is not None
 
         def should_update(key: str) -> bool:
             if overwrite:
                 return True
-            existing = audio.tags.get(key)
+            existing = tags.get(key)
             return not existing or (isinstance(existing, list) and not existing[0])
 
         if metadata.get("title") and should_update("\xa9nam"):
-            audio.tags["\xa9nam"] = [metadata["title"]]
+            tags["\xa9nam"] = [metadata["title"]]
         if metadata.get("artist") and should_update("\xa9ART"):
-            audio.tags["\xa9ART"] = [metadata["artist"]]
+            tags["\xa9ART"] = [metadata["artist"]]
         if metadata.get("album") and should_update("\xa9alb"):
-            audio.tags["\xa9alb"] = [metadata["album"]]
+            tags["\xa9alb"] = [metadata["album"]]
         if metadata.get("genre") and should_update("\xa9gen"):
-            audio.tags["\xa9gen"] = [metadata["genre"]]
+            tags["\xa9gen"] = [metadata["genre"]]
         if metadata.get("year") and should_update("\xa9day"):
-            audio.tags["\xa9day"] = [str(metadata["year"])]
+            tags["\xa9day"] = [str(metadata["year"])]
         if metadata.get("track_number") and should_update("trkn"):
-            audio.tags["trkn"] = [(metadata["track_number"], 0)]
+            tags["trkn"] = [(metadata["track_number"], 0)]
 
         audio.save()
         return True

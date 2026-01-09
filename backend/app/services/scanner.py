@@ -598,7 +598,7 @@ class LibraryScanner:
         )
 
         result = await self.db.execute(update_stmt)
-        tracks_updated = result.rowcount
+        tracks_updated = result.rowcount  # type: ignore[attr-defined]
 
         await self.db.commit()
 

@@ -303,13 +303,15 @@ def _write_flac_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
 
 def _write_mp4_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
     """Write MP4 atoms to M4A/AAC file."""
-    fields_written = []
-    unsupported = []
+    fields_written: list[str] = []
+    unsupported: list[str] = []
 
     try:
         audio = MP4(file_path)
         if audio.tags is None:
             audio.add_tags()
+        tags = audio.tags
+        assert tags is not None
 
         for field_name, value in metadata.items():
             atom_name = MP4_FIELD_MAP.get(field_name)
@@ -320,15 +322,15 @@ def _write_mp4_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
             # Handle special cases for track/disc numbers (stored as tuples)
             if field_name == "track_number":
                 # Get existing total if present
-                existing = audio.tags.get("trkn", [(0, 0)])
+                existing = tags.get("trkn", [(0, 0)])
                 total = existing[0][1] if existing else 0
-                audio.tags["trkn"] = [(int(value), total)]
+                tags["trkn"] = [(int(value), total)]
             elif field_name == "disc_number":
-                existing = audio.tags.get("disk", [(0, 0)])
+                existing = tags.get("disk", [(0, 0)])
                 total = existing[0][1] if existing else 0
-                audio.tags["disk"] = [(int(value), total)]
+                tags["disk"] = [(int(value), total)]
             else:
-                audio.tags[atom_name] = [str(value)]
+                tags[atom_name] = [str(value)]
 
             fields_written.append(field_name)
 
@@ -387,8 +389,8 @@ def _write_ogg_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
 
 def _write_aiff_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
     """Write ID3 tags to AIFF file."""
-    fields_written = []
-    unsupported = []
+    fields_written: list[str] = []
+    unsupported: list[str] = []
 
     try:
         audio = AIFF(file_path)
@@ -396,8 +398,8 @@ def _write_aiff_tags(file_path: Path, metadata: dict[str, Any]) -> WriteResult:
         # AIFF uses ID3 tags, but through the AIFF wrapper
         if audio.tags is None:
             audio.add_tags()
-
         tags = audio.tags
+        assert tags is not None
 
         for field_name, value in metadata.items():
             frame_name = ID3_FIELD_MAP.get(field_name)
@@ -620,6 +622,8 @@ def _write_mp4_artwork(
         audio = MP4(file_path)
         if audio.tags is None:
             audio.add_tags()
+        tags = audio.tags
+        assert tags is not None
 
         # Determine image format
         if mime_type == "image/png":
@@ -628,7 +632,7 @@ def _write_mp4_artwork(
             image_format = MP4Cover.FORMAT_JPEG
 
         # Set cover art
-        audio.tags["covr"] = [MP4Cover(image_data, imageformat=image_format)]
+        tags["covr"] = [MP4Cover(image_data, imageformat=image_format)]
         audio.save()
 
         return WriteResult(
@@ -653,8 +657,8 @@ def _write_aiff_artwork(
         audio = AIFF(file_path)
         if audio.tags is None:
             audio.add_tags()
-
         tags = audio.tags
+        assert tags is not None
 
         # Remove existing artwork
         tags.delall("APIC")
@@ -706,23 +710,23 @@ def remove_artwork(file_path: Path) -> WriteResult:
 
     try:
         if suffix == ".mp3":
-            tags = ID3(file_path)
-            tags.delall("APIC")
-            tags.save(file_path)
+            mp3_tags = ID3(file_path)
+            mp3_tags.delall("APIC")
+            mp3_tags.save(file_path)
         elif suffix == ".flac":
-            audio = FLAC(file_path)
-            audio.clear_pictures()
-            audio.save()
+            flac_audio = FLAC(file_path)
+            flac_audio.clear_pictures()
+            flac_audio.save()
         elif suffix in {".m4a", ".aac", ".mp4"}:
-            audio = MP4(file_path)
-            if audio.tags and "covr" in audio.tags:
-                del audio.tags["covr"]
-                audio.save()
+            mp4_audio = MP4(file_path)
+            if mp4_audio.tags and "covr" in mp4_audio.tags:
+                del mp4_audio.tags["covr"]
+                mp4_audio.save()
         elif suffix in {".aiff", ".aif"}:
-            audio = AIFF(file_path)
-            if audio.tags:
-                audio.tags.delall("APIC")
-                audio.save()
+            aiff_audio = AIFF(file_path)
+            if aiff_audio.tags:
+                aiff_audio.tags.delall("APIC")
+                aiff_audio.save()
         else:
             return WriteResult(
                 success=False,
@@ -854,9 +858,11 @@ def _write_mp4_lyrics(file_path: Path, lyrics: str) -> WriteResult:
         audio = MP4(file_path)
         if audio.tags is None:
             audio.add_tags()
+        tags = audio.tags
+        assert tags is not None
 
         # MP4 lyrics atom
-        audio.tags["\xa9lyr"] = [lyrics]
+        tags["\xa9lyr"] = [lyrics]
         audio.save()
 
         return WriteResult(
@@ -900,8 +906,9 @@ def _write_aiff_lyrics(file_path: Path, lyrics: str) -> WriteResult:
         audio = AIFF(file_path)
         if audio.tags is None:
             audio.add_tags()
-
         tags = audio.tags
+        assert tags is not None
+
         tags.delall("USLT")
         tags.add(
             USLT(
