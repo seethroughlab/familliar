@@ -148,7 +148,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
                 } else if (eventType === 'error') {
                   throw new Error(eventData.error || 'Unknown error');
                 }
-              } catch (parseError) {
+              } catch {
                 // Ignore JSON parse errors for incomplete data
                 if (eventType === 'error') {
                   throw new Error(dataStr);

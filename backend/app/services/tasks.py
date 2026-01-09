@@ -16,7 +16,7 @@ from typing import Any
 from uuid import UUID
 
 import redis
-from sqlalchemy import and_, update
+from sqlalchemy import and_
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.config import ANALYSIS_VERSION, settings
@@ -1171,6 +1171,7 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
                 )
                 # Queue embedding-only tasks instead of resetting to re-analyze everything
                 # This preserves existing features and just adds embeddings
+                bg = get_background_manager()
                 for track_id in missing_embedding_ids:
                     await bg.run_analysis(track_id, phase="embedding")
                     queued += 1
@@ -1178,7 +1179,7 @@ async def queue_unanalyzed_tracks(limit: int = 500) -> int:
 
         if not track_ids:
             logger.info("No tracks need analysis")
-            return 0
+            return queued
 
         # Queue each track for analysis
         bg = get_background_manager()

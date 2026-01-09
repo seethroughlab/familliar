@@ -786,13 +786,13 @@ async def update_track_metadata(
 
     # Optionally write to audio file
     if request.write_to_file and updated_fields:
-        from app.services.metadata_writer import write_metadata, write_lyrics
+        from app.services.metadata_writer import write_lyrics, write_metadata
 
         file_path = Path(track.file_path)
 
         # Separate lyrics from other metadata (needs special handling)
         lyrics_value = updated_fields.pop("lyrics", None)
-        user_overrides = updated_fields.pop("user_overrides", None)  # Don't write to file
+        updated_fields.pop("user_overrides", None)  # Don't write to file
 
         # Write standard metadata
         if updated_fields:

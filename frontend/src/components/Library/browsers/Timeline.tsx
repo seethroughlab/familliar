@@ -34,22 +34,21 @@ export function Timeline({ onGoToYear, onGoToYearRange }: BrowserProps) {
     queryFn: () => libraryApi.getYearDistribution(),
   });
 
-  // Year data is already aggregated by the backend
-  const yearData: YearCount[] = data?.years ?? [];
-
   // Calculate timeline range
-  const { minYear, maxYear, maxCount, totalTracks } = useMemo(() => {
-    if (yearData.length === 0) {
-      return { minYear: 1960, maxYear: 2025, maxCount: 1, totalTracks: 0 };
+  const { yearData, minYear, maxYear, maxCount, totalTracks } = useMemo(() => {
+    const years: YearCount[] = data?.years ?? [];
+    if (years.length === 0) {
+      return { yearData: years, minYear: 1960, maxYear: 2025, maxCount: 1, totalTracks: 0 };
     }
-    const counts = yearData.map((d) => d.track_count);
+    const counts = years.map((d) => d.track_count);
     return {
-      minYear: data?.min_year ?? yearData[0].year,
-      maxYear: data?.max_year ?? yearData[yearData.length - 1].year,
+      yearData: years,
+      minYear: data?.min_year ?? years[0].year,
+      maxYear: data?.max_year ?? years[years.length - 1].year,
       maxCount: Math.max(...counts),
-      totalTracks: yearData.reduce((sum, d) => sum + d.track_count, 0),
+      totalTracks: years.reduce((sum, d) => sum + d.track_count, 0),
     };
-  }, [yearData, data]);
+  }, [data]);
 
   // Generate decade markers
   const decades = useMemo(() => {

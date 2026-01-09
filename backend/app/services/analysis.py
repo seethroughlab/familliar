@@ -256,8 +256,7 @@ def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     features["energy"] = float(np.clip((rms_db + 60) / 54, 0, 1))
 
     # Spectral features for danceability approximation
-    spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]
-    spectral_rolloff = librosa.feature.spectral_rolloff(y=y, sr=sr)[0]
+    spectral_centroid = librosa.feature.spectral_centroid(y=y, sr=sr)[0]  # noqa: F841
 
     # Danceability: combination of tempo regularity and beat strength
     # Reuse onset_env computed earlier for BPM detection

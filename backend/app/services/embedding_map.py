@@ -7,8 +7,9 @@ using UMAP dimensionality reduction on CLAP embeddings.
 import json
 import logging
 from collections import defaultdict
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import AsyncGenerator, Literal
+from typing import Literal
 
 import numpy as np
 from sqlalchemy import select

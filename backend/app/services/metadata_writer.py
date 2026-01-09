@@ -6,18 +6,35 @@ Mirrors the structure of metadata.py for consistency.
 
 import logging
 from dataclasses import dataclass, field
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import mutagen
+from mutagen.aiff import AIFF
 from mutagen.flac import FLAC, Picture
-from mutagen.id3 import ID3, ID3NoHeaderError
-from mutagen.id3 import APIC, COMM, TALB, TCOM, TCON, TDRC, TIT1, TIT2, TEXT
-from mutagen.id3 import TPOS, TPE1, TPE2, TPE3, TRCK, TSOA, TSOP, TSOT, USLT
+from mutagen.id3 import (
+    APIC,
+    COMM,
+    ID3,
+    TALB,
+    TCOM,
+    TCON,
+    TDRC,
+    TEXT,
+    TIT1,
+    TIT2,
+    TPE1,
+    TPE2,
+    TPE3,
+    TPOS,
+    TRCK,
+    TSOA,
+    TSOP,
+    TSOT,
+    USLT,
+    ID3NoHeaderError,
+)
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggvorbis import OggVorbis
-from mutagen.aiff import AIFF
 
 logger = logging.getLogger(__name__)
 

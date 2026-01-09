@@ -137,7 +137,7 @@ function AppContent() {
     };
     window.addEventListener('navigate-to-settings', handleNavigateToSettings);
     return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings);
-  }, []);
+  }, [setRightPanelTab]);
 
   // Listen for show-playlist event from ChatPanel when LLM creates a playlist
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
@@ -151,7 +151,7 @@ function AppContent() {
     };
     window.addEventListener('show-playlist', handleShowPlaylist);
     return () => window.removeEventListener('show-playlist', handleShowPlaylist);
-  }, []);
+  }, [setRightPanelTab]);
 
   // Listen for trigger-chat event from context menus (e.g., "Make Playlist From This Track")
   const [pendingChatMessage, setPendingChatMessage] = useState<string | null>(null);

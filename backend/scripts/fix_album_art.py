@@ -39,12 +39,11 @@ if not os.environ.get("DATABASE_URL"):
 
 async def fix_album_art(artist: str, album: str) -> None:
     """Fix album artwork for a specific artist/album."""
-    from sqlalchemy import select, update
+    from sqlalchemy import select
 
-    from app.config import settings
     from app.db.models import Track, TrackAnalysis, TrackStatus
     from app.db.session import async_session_maker
-    from app.services.artwork import compute_album_hash, get_artwork_path, ARTWORK_SIZES
+    from app.services.artwork import ARTWORK_SIZES, compute_album_hash, get_artwork_path
     from app.services.tasks import run_track_enrichment
 
     print(f"Fixing album art for: {artist} - {album}")

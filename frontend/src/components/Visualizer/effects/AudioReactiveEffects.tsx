@@ -99,7 +99,7 @@ export function AudioReactiveEffects({
     effectComposer.addPass(outputPass);
 
     return effectComposer;
-  }, [gl, scene, camera, enableBloom, enableVignette]);
+  }, [gl, scene, camera, enableBloom, enableVignette, size.width, size.height, bloomIntensity, bloomRadius, bloomThreshold, vignetteIntensity]);
 
   // Update refs after composer creation (must be in useEffect, not during render)
   useEffect(() => {
