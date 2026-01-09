@@ -1,0 +1,452 @@
+/**
+ * Tests for playerStore - Zustand store for audio player state.
+ */
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { usePlayerStore } from '../playerStore'
+import type { Track } from '../../types'
+
+// Mock the persistence functions
+vi.mock('../../services/playerPersistence', () => ({
+  debouncedSavePlayerState: vi.fn(),
+  loadPlayerState: vi.fn(() => Promise.resolve(null)),
+  fetchTracksByIds: vi.fn(() => Promise.resolve([])),
+  migrateOldPlayerState: vi.fn(() => Promise.resolve()),
+}))
+
+// Helper to create mock tracks
+const createMockTrack = (id: string, title = 'Test Track'): Track => ({
+  id,
+  title,
+  artist: 'Test Artist',
+  album: 'Test Album',
+  duration_seconds: 180,
+  file_path: `/music/${id}.mp3`,
+})
+
+describe('playerStore', () => {
+  beforeEach(() => {
+    // Reset store to initial state before each test
+    usePlayerStore.setState({
+      currentTrack: null,
+      isPlaying: false,
+      currentTime: 0,
+      duration: 0,
+      volume: 1,
+      shuffle: false,
+      repeat: 'off',
+      queue: [],
+      queueIndex: -1,
+      history: [],
+      shuffleOrder: [],
+      shuffleIndex: -1,
+      crossfadeState: 'idle',
+      nextTrackPreloaded: false,
+      isHydrated: true,
+    })
+  })
+
+  describe('volume control', () => {
+    it('should set volume within bounds', () => {
+      const { setVolume } = usePlayerStore.getState()
+
+      setVolume(0.5)
+      expect(usePlayerStore.getState().volume).toBe(0.5)
+    })
+
+    it('should clamp volume at minimum 0', () => {
+      const { setVolume } = usePlayerStore.getState()
+
+      setVolume(-0.5)
+      expect(usePlayerStore.getState().volume).toBe(0)
+    })
+
+    it('should clamp volume at maximum 1', () => {
+      const { setVolume } = usePlayerStore.getState()
+
+      setVolume(1.5)
+      expect(usePlayerStore.getState().volume).toBe(1)
+    })
+  })
+
+  describe('toggleRepeat', () => {
+    it('should cycle off -> all -> one -> off', () => {
+      const { toggleRepeat } = usePlayerStore.getState()
+
+      expect(usePlayerStore.getState().repeat).toBe('off')
+
+      toggleRepeat()
+      expect(usePlayerStore.getState().repeat).toBe('all')
+
+      toggleRepeat()
+      expect(usePlayerStore.getState().repeat).toBe('one')
+
+      toggleRepeat()
+      expect(usePlayerStore.getState().repeat).toBe('off')
+    })
+  })
+
+  describe('toggleShuffle', () => {
+    it('should enable shuffle and generate shuffle order', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+      const track3 = createMockTrack('3')
+
+      // Set up a queue with 3 tracks
+      const { setQueue, toggleShuffle } = usePlayerStore.getState()
+      setQueue([track1, track2, track3], 0)
+
+      // Enable shuffle
+      toggleShuffle()
+
+      const state = usePlayerStore.getState()
+      expect(state.shuffle).toBe(true)
+      expect(state.shuffleOrder).toHaveLength(3)
+      expect(state.shuffleIndex).toBe(0)
+      // Current track should be first in shuffle order
+      expect(state.shuffleOrder[0]).toBe(0)
+    })
+
+    it('should disable shuffle and clear shuffle state', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, toggleShuffle } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+
+      // Enable then disable shuffle
+      toggleShuffle()
+      toggleShuffle()
+
+      const state = usePlayerStore.getState()
+      expect(state.shuffle).toBe(false)
+      expect(state.shuffleOrder).toEqual([])
+      expect(state.shuffleIndex).toBe(-1)
+    })
+
+    it('should include all tracks in shuffle order', () => {
+      const tracks = Array.from({ length: 10 }, (_, i) =>
+        createMockTrack(`${i}`, `Track ${i}`)
+      )
+
+      const { setQueue, toggleShuffle } = usePlayerStore.getState()
+      setQueue(tracks, 0)
+      toggleShuffle()
+
+      const { shuffleOrder } = usePlayerStore.getState()
+
+      // Should contain all indices
+      const sortedOrder = [...shuffleOrder].sort((a, b) => a - b)
+      expect(sortedOrder).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    })
+  })
+
+  describe('setQueue', () => {
+    it('should set queue and start playing first track', () => {
+      const track1 = createMockTrack('1', 'First')
+      const track2 = createMockTrack('2', 'Second')
+
+      const { setQueue } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+
+      const state = usePlayerStore.getState()
+      expect(state.queue).toHaveLength(2)
+      expect(state.queueIndex).toBe(0)
+      expect(state.currentTrack?.id).toBe('1')
+      expect(state.isPlaying).toBe(true)
+    })
+
+    it('should start at specified index', () => {
+      const track1 = createMockTrack('1', 'First')
+      const track2 = createMockTrack('2', 'Second')
+      const track3 = createMockTrack('3', 'Third')
+
+      const { setQueue } = usePlayerStore.getState()
+      setQueue([track1, track2, track3], 1)
+
+      const state = usePlayerStore.getState()
+      expect(state.queueIndex).toBe(1)
+      expect(state.currentTrack?.id).toBe('2')
+    })
+
+    it('should generate shuffle order when shuffle is enabled', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+      const track3 = createMockTrack('3')
+
+      // Enable shuffle first
+      usePlayerStore.setState({ shuffle: true })
+
+      const { setQueue } = usePlayerStore.getState()
+      setQueue([track1, track2, track3], 0)
+
+      const state = usePlayerStore.getState()
+      expect(state.shuffleOrder).toHaveLength(3)
+      expect(state.shuffleIndex).toBe(0)
+    })
+  })
+
+  describe('addToQueue', () => {
+    it('should add track to end of queue', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, addToQueue } = usePlayerStore.getState()
+      setQueue([track1], 0)
+      addToQueue(track2)
+
+      const state = usePlayerStore.getState()
+      expect(state.queue).toHaveLength(2)
+      expect(state.queue[1].track.id).toBe('2')
+    })
+
+    it('should update shuffle order when shuffle is on', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+      const track3 = createMockTrack('3')
+
+      // Need at least 2 tracks for shuffle order to be generated
+      const { setQueue, toggleShuffle, addToQueue } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+      toggleShuffle()
+
+      // Verify shuffle is on and order exists
+      expect(usePlayerStore.getState().shuffle).toBe(true)
+      expect(usePlayerStore.getState().shuffleOrder).toHaveLength(2)
+
+      // Add a third track
+      addToQueue(track3)
+
+      const { shuffleOrder } = usePlayerStore.getState()
+      expect(shuffleOrder).toHaveLength(3)
+      expect(shuffleOrder).toContain(2) // New track index should be in order
+    })
+  })
+
+  describe('clearQueue', () => {
+    it('should clear queue and reset index', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, clearQueue } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+      clearQueue()
+
+      const state = usePlayerStore.getState()
+      expect(state.queue).toEqual([])
+      expect(state.queueIndex).toBe(-1)
+    })
+  })
+
+  describe('playNext', () => {
+    it('should advance to next track in sequential mode', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+      const track3 = createMockTrack('3')
+
+      const { setQueue, playNext } = usePlayerStore.getState()
+      setQueue([track1, track2, track3], 0)
+      playNext()
+
+      const state = usePlayerStore.getState()
+      expect(state.queueIndex).toBe(1)
+      expect(state.currentTrack?.id).toBe('2')
+    })
+
+    it('should stop playing at end of queue without repeat', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, playNext } = usePlayerStore.getState()
+      setQueue([track1, track2], 1) // Start at last track
+      playNext()
+
+      const state = usePlayerStore.getState()
+      expect(state.isPlaying).toBe(false)
+    })
+
+    it('should wrap to start with repeat all', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, toggleRepeat, playNext } = usePlayerStore.getState()
+      setQueue([track1, track2], 1)
+      toggleRepeat() // Set to 'all'
+      playNext()
+
+      const state = usePlayerStore.getState()
+      expect(state.queueIndex).toBe(0)
+      expect(state.currentTrack?.id).toBe('1')
+      expect(state.isPlaying).toBe(true)
+    })
+
+    it('should add current track to history', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, playNext } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+      playNext()
+
+      const state = usePlayerStore.getState()
+      expect(state.history).toHaveLength(1)
+      expect(state.history[0].id).toBe('1')
+    })
+
+    it('should follow shuffle order when shuffle is on', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+      const track3 = createMockTrack('3')
+
+      const { setQueue, toggleShuffle, playNext } = usePlayerStore.getState()
+      setQueue([track1, track2, track3], 0)
+      toggleShuffle()
+
+      // Get shuffle order before advancing
+      const { shuffleOrder } = usePlayerStore.getState()
+      playNext()
+
+      const state = usePlayerStore.getState()
+      // Should be at the track in shuffleOrder[1]
+      expect(state.queueIndex).toBe(shuffleOrder[1])
+      expect(state.shuffleIndex).toBe(1)
+    })
+  })
+
+  describe('playPrevious', () => {
+    it('should restart track if more than 3 seconds in', () => {
+      const track1 = createMockTrack('1')
+
+      const { setQueue } = usePlayerStore.getState()
+      setQueue([track1], 0)
+
+      // Simulate being 5 seconds into the track
+      usePlayerStore.setState({ currentTime: 5 })
+
+      const { playPrevious } = usePlayerStore.getState()
+      playPrevious()
+
+      const state = usePlayerStore.getState()
+      expect(state.currentTime).toBe(0)
+      expect(state.currentTrack?.id).toBe('1') // Same track
+    })
+
+    it('should go to previous track from history', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, playNext, playPrevious } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+      playNext() // Now on track2, track1 in history
+
+      // Set current time to 0 so we go to previous track
+      usePlayerStore.setState({ currentTime: 0 })
+      playPrevious()
+
+      const state = usePlayerStore.getState()
+      expect(state.currentTrack?.id).toBe('1')
+      expect(state.history).toHaveLength(0)
+    })
+  })
+
+  describe('playTrack', () => {
+    it('should set current track and start playing', () => {
+      const track = createMockTrack('1')
+
+      const { playTrack } = usePlayerStore.getState()
+      playTrack(track)
+
+      const state = usePlayerStore.getState()
+      expect(state.currentTrack?.id).toBe('1')
+      expect(state.isPlaying).toBe(true)
+      expect(state.currentTime).toBe(0)
+    })
+
+    it('should add previous track to history', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { playTrack } = usePlayerStore.getState()
+      playTrack(track1)
+      playTrack(track2)
+
+      const state = usePlayerStore.getState()
+      expect(state.history).toHaveLength(1)
+      expect(state.history[0].id).toBe('1')
+    })
+  })
+
+  describe('getNextTrack', () => {
+    it('should return next track in sequential mode', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, getNextTrack } = usePlayerStore.getState()
+      setQueue([track1, track2], 0)
+
+      const next = getNextTrack()
+      expect(next?.id).toBe('2')
+    })
+
+    it('should return null at end without repeat', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, getNextTrack } = usePlayerStore.getState()
+      setQueue([track1, track2], 1)
+
+      const next = getNextTrack()
+      expect(next).toBeNull()
+    })
+
+    it('should return first track at end with repeat all', () => {
+      const track1 = createMockTrack('1')
+      const track2 = createMockTrack('2')
+
+      const { setQueue, toggleRepeat, getNextTrack } = usePlayerStore.getState()
+      setQueue([track1, track2], 1)
+      toggleRepeat() // 'all'
+
+      const next = getNextTrack()
+      expect(next?.id).toBe('1')
+    })
+  })
+
+  describe('resetForProfileSwitch', () => {
+    it('should reset all player state', () => {
+      const track = createMockTrack('1')
+
+      const { setQueue, toggleShuffle, resetForProfileSwitch } = usePlayerStore.getState()
+      setQueue([track], 0)
+      toggleShuffle()
+
+      resetForProfileSwitch()
+
+      const state = usePlayerStore.getState()
+      expect(state.currentTrack).toBeNull()
+      expect(state.isPlaying).toBe(false)
+      expect(state.queue).toEqual([])
+      expect(state.shuffle).toBe(false)
+      expect(state.repeat).toBe('off')
+      expect(state.history).toEqual([])
+      expect(state.shuffleOrder).toEqual([])
+      expect(state.isHydrated).toBe(false)
+    })
+  })
+
+  describe('history management', () => {
+    it('should limit history to 50 tracks', () => {
+      const { playTrack } = usePlayerStore.getState()
+
+      // Play 60 tracks
+      for (let i = 0; i < 60; i++) {
+        playTrack(createMockTrack(`${i}`))
+      }
+
+      const state = usePlayerStore.getState()
+      expect(state.history).toHaveLength(50)
+      // Should have the most recent 50, not the first 50
+      expect(state.history[0].id).toBe('9')
+      expect(state.history[49].id).toBe('58')
+    })
+  })
+})
