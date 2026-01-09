@@ -56,14 +56,10 @@ def upgrade() -> None:
                type_=sa.Text(),
                existing_nullable=True)
 
-    # Add ix_tracks_status index (other indexes already exist from add_performance_indexes migration)
-    op.create_index(op.f('ix_tracks_status'), 'tracks', ['status'], unique=False)
+    # Note: ix_tracks_status already created by baseline migration (model has index=True)
 
 
 def downgrade() -> None:
-    # Drop ix_tracks_status index (only index added by this migration)
-    op.drop_index(op.f('ix_tracks_status'), table_name='tracks')
-
     # Revert acoustid column type
     op.alter_column('track_analysis', 'acoustid',
                existing_type=sa.Text(),
