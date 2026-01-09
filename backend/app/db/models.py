@@ -194,6 +194,25 @@ class Track(Base):
     musicbrainz_album_id: Mapped[str | None] = mapped_column(String(36))
     isrc: Mapped[str | None] = mapped_column(String(12))
 
+    # Extended metadata (for editing)
+    composer: Mapped[str | None] = mapped_column(String(500))
+    conductor: Mapped[str | None] = mapped_column(String(500))
+    lyricist: Mapped[str | None] = mapped_column(String(500))
+    grouping: Mapped[str | None] = mapped_column(String(255))
+    comment: Mapped[str | None] = mapped_column(Text)
+
+    # Sort fields (for proper alphabetization)
+    sort_artist: Mapped[str | None] = mapped_column(String(500))
+    sort_album: Mapped[str | None] = mapped_column(String(500))
+    sort_title: Mapped[str | None] = mapped_column(String(500))
+
+    # Embedded lyrics
+    lyrics: Mapped[str | None] = mapped_column(Text)
+
+    # User overrides for auto-detected analysis values
+    # Example: {"bpm": 124.0, "key": "Am"} - overrides analysis.features values
+    user_overrides: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
     # Analysis status
     analysis_version: Mapped[int] = mapped_column(Integer, default=0)
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime)

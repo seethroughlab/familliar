@@ -36,6 +36,18 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
         "bit_depth": None,
         "bitrate": None,
         "format": None,
+        # Extended metadata
+        "composer": None,
+        "conductor": None,
+        "lyricist": None,
+        "grouping": None,
+        "comment": None,
+        # Sort fields
+        "sort_artist": None,
+        "sort_album": None,
+        "sort_title": None,
+        # Lyrics
+        "lyrics": None,
     }
 
     try:
@@ -109,6 +121,18 @@ def _extract_easy_tags(audio: Any) -> dict[str, Any]:
     if date_str:
         tags["year"] = _parse_year(date_str)
 
+    # Extended metadata
+    tags["composer"] = get_first("composer")
+    tags["conductor"] = get_first("conductor")
+    tags["lyricist"] = get_first("lyricist")
+    tags["grouping"] = get_first("grouping")
+    tags["comment"] = get_first("comment")
+
+    # Sort fields
+    tags["sort_artist"] = get_first("artistsort") or get_first("sortartist")
+    tags["sort_album"] = get_first("albumsort") or get_first("sortalbum")
+    tags["sort_title"] = get_first("titlesort") or get_first("sorttitle")
+
     return tags
 
 
@@ -118,12 +142,26 @@ def _extract_id3_tags(file_path: Path) -> dict[str, Any]:
 
     try:
         audio = EasyID3(file_path)  # type: ignore[no-untyped-call]
-        return _extract_easy_tags(audio)
+        tags = _extract_easy_tags(audio)
     except Exception:
         # Fall back to mutagen.File
         audio = mutagen.File(file_path, easy=True)  # type: ignore[attr-defined]
         if audio:
-            return _extract_easy_tags(audio)
+            tags = _extract_easy_tags(audio)
+
+    # Also try to extract lyrics from raw ID3 (not available in EasyID3)
+    try:
+        from mutagen.id3 import ID3
+        id3 = ID3(file_path)
+        # Look for USLT (unsynchronized lyrics) frames
+        for key in id3.keys():
+            if key.startswith("USLT"):
+                frame = id3[key]
+                if hasattr(frame, "text") and frame.text:
+                    tags["lyrics"] = str(frame.text)
+                    break
+    except Exception:
+        pass
 
     return tags
 
@@ -158,6 +196,21 @@ def _extract_flac_tags(file_path: Path) -> dict[str, Any]:
         date_str = get_first("date") or get_first("year")
         if date_str:
             tags["year"] = _parse_year(date_str)
+
+        # Extended metadata
+        tags["composer"] = get_first("composer")
+        tags["conductor"] = get_first("conductor")
+        tags["lyricist"] = get_first("lyricist")
+        tags["grouping"] = get_first("grouping")
+        tags["comment"] = get_first("comment") or get_first("description")
+
+        # Sort fields
+        tags["sort_artist"] = get_first("artistsort")
+        tags["sort_album"] = get_first("albumsort")
+        tags["sort_title"] = get_first("titlesort")
+
+        # Lyrics
+        tags["lyrics"] = get_first("lyrics") or get_first("unsyncedlyrics")
 
         # FLAC-specific: bit depth from audio info
         if audio.info:
@@ -202,6 +255,19 @@ def _extract_mp4_tags(file_path: Path) -> dict[str, Any]:
         date_str = get_first("\xa9day")
         if date_str:
             tags["year"] = _parse_year(date_str)
+
+        # Extended metadata
+        tags["composer"] = get_first("\xa9wrt")
+        tags["comment"] = get_first("\xa9cmt")
+        tags["grouping"] = get_first("\xa9grp")
+
+        # Sort fields
+        tags["sort_artist"] = get_first("soar")
+        tags["sort_album"] = get_first("soal")
+        tags["sort_title"] = get_first("sonm")
+
+        # Lyrics
+        tags["lyrics"] = get_first("\xa9lyr")
 
     except Exception as e:
         logger.warning(f"Error reading MP4 tags: {e}")
@@ -262,6 +328,33 @@ def _extract_aiff_tags(file_path: Path) -> dict[str, Any]:
             date_text = get_text("TDRC") or get_text("TYER")
             if date_text:
                 tags["year"] = _parse_year(date_text)
+
+            # Extended metadata
+            tags["composer"] = get_text("TCOM")
+            tags["conductor"] = get_text("TPE3")
+            tags["lyricist"] = get_text("TEXT")
+            tags["grouping"] = get_text("TIT1")
+
+            # Comment (COMM frame is special - need to find any COMM frame)
+            for key in audio.tags.keys():
+                if key.startswith("COMM"):
+                    frame = audio.tags[key]
+                    if hasattr(frame, 'text') and frame.text:
+                        tags["comment"] = str(frame.text[0])
+                        break
+
+            # Sort fields
+            tags["sort_artist"] = get_text("TSOP")
+            tags["sort_album"] = get_text("TSOA")
+            tags["sort_title"] = get_text("TSOT")
+
+            # Lyrics (USLT frame)
+            for key in audio.tags.keys():
+                if key.startswith("USLT"):
+                    frame = audio.tags[key]
+                    if hasattr(frame, 'text') and frame.text:
+                        tags["lyrics"] = str(frame.text)
+                        break
 
         # Audio info
         if audio.info:

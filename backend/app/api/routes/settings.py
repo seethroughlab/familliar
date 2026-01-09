@@ -11,6 +11,17 @@ from app.services.app_settings import get_app_settings_service
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
+class ClapStatus(BaseModel):
+    """CLAP embeddings status details."""
+
+    enabled: bool
+    reason: str
+    ram_gb: float | None
+    ram_sufficient: bool
+    env_override: bool
+    explicit_setting: bool | None
+
+
 class SettingsResponse(BaseModel):
     """Settings response with masked secrets."""
 
@@ -34,6 +45,10 @@ class SettingsResponse(BaseModel):
     # Metadata enrichment
     auto_enrich_metadata: bool
     enrich_overwrite_existing: bool
+
+    # Analysis settings
+    clap_embeddings_enabled: bool | None  # None = auto-detect
+    clap_status: ClapStatus
 
     # Computed status fields
     spotify_configured: bool
@@ -64,6 +79,9 @@ class SettingsUpdateRequest(BaseModel):
     auto_enrich_metadata: bool | None = None
     enrich_overwrite_existing: bool | None = None
 
+    # Analysis settings
+    clap_embeddings_enabled: bool | None = None
+
 
 @router.get("", response_model=SettingsResponse)
 async def get_settings() -> SettingsResponse:
@@ -75,9 +93,13 @@ async def get_settings() -> SettingsResponse:
     paths = masked.get("music_library_paths", [])
     paths_valid = [Path(p).exists() and Path(p).is_dir() for p in paths]
 
+    # Get CLAP status
+    clap_status_data = service.get_clap_status()
+
     return SettingsResponse(
         **masked,
         music_library_paths_valid=paths_valid,
+        clap_status=ClapStatus(**clap_status_data),
         spotify_configured=service.has_spotify_credentials(),
         lastfm_configured=service.has_lastfm_credentials(),
         music_library_configured=service.has_music_library_configured(),
@@ -90,7 +112,16 @@ async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     service = get_app_settings_service()
 
     # Filter out None values (only update provided fields)
-    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    # Note: clap_embeddings_enabled can be explicitly set to None to reset to auto
+    updates = {}
+    for k, v in request.model_dump().items():
+        if k == "clap_embeddings_enabled":
+            # Allow explicit None to reset to auto-detect
+            if request.clap_embeddings_enabled is not None or "clap_embeddings_enabled" in request.model_fields_set:
+                updates[k] = v
+        elif v is not None:
+            updates[k] = v
+
     service.update(**updates)
 
     masked = service.get_masked()
@@ -99,9 +130,13 @@ async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
     paths = masked.get("music_library_paths", [])
     paths_valid = [Path(p).exists() and Path(p).is_dir() for p in paths]
 
+    # Get CLAP status
+    clap_status_data = service.get_clap_status()
+
     return SettingsResponse(
         **masked,
         music_library_paths_valid=paths_valid,
+        clap_status=ClapStatus(**clap_status_data),
         spotify_configured=service.has_spotify_credentials(),
         lastfm_configured=service.has_lastfm_credentials(),
         music_library_configured=service.has_music_library_configured(),

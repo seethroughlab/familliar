@@ -12,6 +12,7 @@ import {
   CheckSquare,
   Square,
   Sparkles,
+  Edit3,
 } from 'lucide-react';
 import type { Track } from '../../types';
 
@@ -27,6 +28,7 @@ interface TrackContextMenuProps {
   onToggleSelect: () => void;
   onAddToPlaylist: () => void;
   onMakePlaylist: () => void;
+  onEditMetadata?: () => void;
 }
 
 interface MenuItemProps {
@@ -65,6 +67,7 @@ export function TrackContextMenu({
   onToggleSelect,
   onAddToPlaylist,
   onMakePlaylist,
+  onEditMetadata,
 }: TrackContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -170,6 +173,15 @@ export function TrackContextMenu({
         label={isSelected ? 'Deselect' : 'Select'}
         onClick={() => handleAction(onToggleSelect)}
       />
+
+      {/* Edit Metadata */}
+      {onEditMetadata && (
+        <MenuItem
+          icon={<Edit3 className="w-4 h-4" />}
+          label="Edit Metadata..."
+          onClick={() => handleAction(onEditMetadata)}
+        />
+      )}
 
       {/* Playlist */}
       <MenuItem

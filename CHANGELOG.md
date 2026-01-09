@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.15] - 2026-01-09
+
+### Added
+
+- **Track metadata editing** - right-click any track and select "Edit Metadata..."
+  - Tabbed modal with Basic, Extended, Sort, Lyrics, and Analysis tabs
+  - Edit core fields: title, artist, album, album artist, track/disc number, year, genre
+  - Edit extended fields: composer, conductor, lyricist, grouping, comment
+  - Edit sort fields for proper alphabetization (e.g., "Beatles, The")
+  - Edit embedded lyrics
+  - Override detected BPM and key values
+  - Option to write changes back to audio file tags (MP3, FLAC, M4A, OGG, AIFF)
+- **Context menu everywhere** - full context menu now available on:
+  - Player bar (currently playing track)
+  - Full player overlay
+  - Artist detail page
+  - Favorites list
+  - Playlist detail
+  - All library browser views
+
+### Changed
+
+- Extended Track database model with new metadata fields
+- Improved MusicBrainz release selection (prefers original albums over compilations)
+
 ## [0.1.0-alpha.13] - 2026-01-07
 
 ### Added
@@ -183,7 +208,8 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.13...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.15...HEAD
+[0.1.0-alpha.15]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.13...v0.1.0-alpha.15
 [0.1.0-alpha.13]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.12...v0.1.0-alpha.13
 [0.1.0-alpha.12]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...v0.1.0-alpha.12
 [0.1.0-alpha.11]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...v0.1.0-alpha.11

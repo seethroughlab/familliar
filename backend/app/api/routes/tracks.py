@@ -628,3 +628,235 @@ async def get_play_stats(
         unique_tracks=unique_tracks,
         top_tracks=top_tracks,
     )
+
+
+# ============================================================================
+# Track Metadata Editing
+# ============================================================================
+
+
+class TrackMetadataUpdateRequest(BaseModel):
+    """Request to update track metadata.
+
+    All fields are optional - only provided fields are updated.
+    """
+
+    # Core metadata
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    album_artist: str | None = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    year: int | None = None
+    genre: str | None = None
+
+    # Extended metadata
+    composer: str | None = None
+    conductor: str | None = None
+    lyricist: str | None = None
+    grouping: str | None = None
+    comment: str | None = None
+
+    # Sort fields
+    sort_artist: str | None = None
+    sort_album: str | None = None
+    sort_title: str | None = None
+
+    # Lyrics
+    lyrics: str | None = None
+
+    # User overrides for analysis values (bpm, key, etc.)
+    user_overrides: dict[str, Any] | None = None
+
+    # Whether to write changes to the audio file tags
+    write_to_file: bool = False
+
+
+class TrackMetadataResponse(BaseModel):
+    """Extended track response with all metadata fields."""
+
+    id: UUID
+    file_path: str
+
+    # Core metadata
+    title: str | None
+    artist: str | None
+    album: str | None
+    album_artist: str | None
+    track_number: int | None
+    disc_number: int | None
+    year: int | None
+    genre: str | None
+
+    # Extended metadata
+    composer: str | None = None
+    conductor: str | None = None
+    lyricist: str | None = None
+    grouping: str | None = None
+    comment: str | None = None
+
+    # Sort fields
+    sort_artist: str | None = None
+    sort_album: str | None = None
+    sort_title: str | None = None
+
+    # Lyrics
+    lyrics: str | None = None
+
+    # User overrides
+    user_overrides: dict[str, Any] = {}
+
+    # Audio info
+    duration_seconds: float | None
+    format: str | None
+
+    # Analysis
+    features: TrackFeaturesResponse | None = None
+
+    # Write status (only set after update)
+    file_write_status: str | None = None
+    file_write_error: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.patch("/{track_id}/metadata", response_model=TrackMetadataResponse)
+async def update_track_metadata(
+    db: DbSession,
+    track_id: UUID,
+    request: TrackMetadataUpdateRequest,
+) -> TrackMetadataResponse:
+    """Update track metadata in the database and optionally write to audio file.
+
+    Only provided fields are updated. Set write_to_file=true to also update
+    the audio file's embedded tags.
+
+    Returns the updated track with all metadata fields.
+    """
+    from pathlib import Path
+
+    # Get track
+    query = select(Track).options(selectinload(Track.analyses)).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Track which fields were updated for file writing
+    updated_fields: dict[str, Any] = {}
+
+    # Update only provided fields
+    update_data = request.model_dump(exclude_unset=True, exclude={"write_to_file"})
+
+    for field, value in update_data.items():
+        if hasattr(track, field):
+            setattr(track, field, value)
+            updated_fields[field] = value
+
+    # Commit database changes
+    await db.commit()
+    await db.refresh(track)
+
+    # Prepare response
+    response = TrackMetadataResponse.model_validate(track)
+
+    # Get latest analysis features
+    if track.analyses:
+        latest = max(track.analyses, key=lambda a: a.version)
+        if latest.features:
+            # Merge user overrides with analysis features
+            features_data = {
+                "bpm": latest.features.get("bpm"),
+                "key": latest.features.get("key"),
+                "energy": latest.features.get("energy"),
+                "danceability": latest.features.get("danceability"),
+                "valence": latest.features.get("valence"),
+                "acousticness": latest.features.get("acousticness"),
+                "instrumentalness": latest.features.get("instrumentalness"),
+                "speechiness": latest.features.get("speechiness"),
+            }
+            # Apply user overrides
+            if track.user_overrides:
+                for key, val in track.user_overrides.items():
+                    if key in features_data:
+                        features_data[key] = val
+            response.features = TrackFeaturesResponse(**features_data)
+
+    # Optionally write to audio file
+    if request.write_to_file and updated_fields:
+        from app.services.metadata_writer import write_metadata, write_lyrics
+
+        file_path = Path(track.file_path)
+
+        # Separate lyrics from other metadata (needs special handling)
+        lyrics_value = updated_fields.pop("lyrics", None)
+        user_overrides = updated_fields.pop("user_overrides", None)  # Don't write to file
+
+        # Write standard metadata
+        if updated_fields:
+            write_result = write_metadata(file_path, updated_fields)
+            if write_result.success:
+                response.file_write_status = "success"
+            else:
+                response.file_write_status = "partial"
+                response.file_write_error = write_result.error
+
+        # Write lyrics separately if provided
+        if lyrics_value is not None:
+            lyrics_result = write_lyrics(file_path, lyrics_value)
+            if not lyrics_result.success:
+                if response.file_write_status == "success":
+                    response.file_write_status = "partial"
+                response.file_write_error = (
+                    f"{response.file_write_error or ''} Lyrics: {lyrics_result.error}".strip()
+                )
+
+        if response.file_write_status is None:
+            response.file_write_status = "success"
+
+    return response
+
+
+@router.get("/{track_id}/metadata", response_model=TrackMetadataResponse)
+async def get_track_metadata(
+    db: DbSession,
+    track_id: UUID,
+) -> TrackMetadataResponse:
+    """Get full track metadata including extended fields.
+
+    Returns all metadata fields including composer, conductor, lyrics, etc.
+    User overrides are merged with analysis features.
+    """
+    query = select(Track).options(selectinload(Track.analyses)).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    response = TrackMetadataResponse.model_validate(track)
+
+    # Get latest analysis features with user overrides applied
+    if track.analyses:
+        latest = max(track.analyses, key=lambda a: a.version)
+        if latest.features:
+            features_data = {
+                "bpm": latest.features.get("bpm"),
+                "key": latest.features.get("key"),
+                "energy": latest.features.get("energy"),
+                "danceability": latest.features.get("danceability"),
+                "valence": latest.features.get("valence"),
+                "acousticness": latest.features.get("acousticness"),
+                "instrumentalness": latest.features.get("instrumentalness"),
+                "speechiness": latest.features.get("speechiness"),
+            }
+            # Apply user overrides
+            if track.user_overrides:
+                for key, val in track.user_overrides.items():
+                    if key in features_data:
+                        features_data[key] = val
+            response.features = TrackFeaturesResponse(**features_data)
+
+    return response

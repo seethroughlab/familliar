@@ -86,6 +86,9 @@ export interface BrowserProps {
   onPlayTrackAt: (trackId: string, index: number) => void;
   onQueueTrack: (trackId: string) => void;
 
+  // Editing
+  onEditTrack: (trackId: string) => void;
+
   // Filters
   filters: LibraryFilters;
   onFilterChange: (filters: Partial<LibraryFilters>) => void;

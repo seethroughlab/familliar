@@ -1039,6 +1039,84 @@ async def get_music_map(
     )
 
 
+@router.get("/map/stream")
+async def get_music_map_stream(
+    db: DbSession,
+    entity_type: Literal["artists", "albums"] = "artists",
+    limit: int = 200,
+) -> StreamingResponse:
+    """Stream music map computation progress via Server-Sent Events.
+
+    Sends progress events during computation, then the complete map data.
+
+    Event types:
+    - progress: {"phase": "...", "progress": 0.5, "message": "..."}
+    - complete: Full MusicMapResponse JSON
+    - error: {"error": "..."}
+    """
+    import json
+
+    from app.services.embedding_map import (
+        MapData,
+        MapProgress,
+        get_embedding_map_service,
+    )
+
+    limit = min(limit, 500)  # Cap at 500 for performance
+
+    async def event_stream():
+        service = get_embedding_map_service()
+
+        try:
+            async for item in service.compute_map_with_progress(
+                db, entity_type=entity_type, limit=limit
+            ):
+                if isinstance(item, MapProgress):
+                    # Send progress event
+                    data = {
+                        "phase": item.phase,
+                        "progress": item.progress,
+                        "message": item.message,
+                    }
+                    yield f"event: progress\ndata: {json.dumps(data)}\n\n"
+                elif isinstance(item, MapData):
+                    # Send complete event with full map data
+                    response = {
+                        "nodes": [
+                            {
+                                "id": n.id,
+                                "name": n.name,
+                                "x": n.x,
+                                "y": n.y,
+                                "track_count": n.track_count,
+                                "first_track_id": n.first_track_id,
+                            }
+                            for n in item.nodes
+                        ],
+                        "edges": [
+                            {"source": e.source, "target": e.target, "weight": e.weight}
+                            for e in item.edges
+                        ],
+                        "entity_type": entity_type,
+                        "total_entities": len(item.nodes),
+                    }
+                    yield f"event: complete\ndata: {json.dumps(response)}\n\n"
+        except ImportError as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': f'Map computation failed: {e}'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
 # ============================================================================
 # Library Stats
 # ============================================================================

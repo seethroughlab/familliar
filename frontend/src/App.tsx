@@ -38,7 +38,9 @@ import { useMetadataEnrichment } from './hooks/useMetadataEnrichment';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
 import { usePlayerStore } from './stores/playerStore';
+import { useSelectionStore } from './stores/selectionStore';
 import { useThemeStore } from './stores/themeStore';
+import { TrackEditModal } from './components/TrackEdit';
 import { initializeProfile, type Profile } from './services/profileService';
 
 const queryClient = new QueryClient({
@@ -193,6 +195,9 @@ function AppContent() {
 
   // Get resolved theme for conditional styling
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
+
+  // Track edit modal state
+  const editingTrackId = useSelectionStore((state) => state.editingTrackId);
 
   return (
     <GlobalDropZone onFilesDropped={setImportFiles}>
@@ -391,6 +396,9 @@ function AppContent() {
       {showShortcutsHelp && (
         <ShortcutsHelp onClose={() => setShowShortcutsHelp(false)} />
       )}
+
+      {/* Track edit modal */}
+      {editingTrackId && <TrackEditModal />}
 
       {/* Import modal */}
       {importFiles && (

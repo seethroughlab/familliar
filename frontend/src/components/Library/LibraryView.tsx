@@ -9,6 +9,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useLibraryViewStore } from '../../stores/libraryViewStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { BrowserPicker } from './BrowserPicker';
 import { SelectionToolbar } from './SelectionToolbar';
 import { ArtistDetail } from './ArtistDetail';
@@ -31,6 +32,7 @@ interface LibraryViewProps {
 export function LibraryView({ initialSearch }: LibraryViewProps) {
   const { setQueue } = usePlayerStore();
   const { selectedBrowserId, setSelectedBrowserId } = useLibraryViewStore();
+  const { setEditingTrackId } = useSelectionStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Browser selection - read from URL, fall back to persisted preference
@@ -284,6 +286,10 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     console.log('Queue track:', trackId);
   }, []);
 
+  const handleEditTrack = useCallback((trackId: string) => {
+    setEditingTrackId(trackId);
+  }, [setEditingTrackId]);
+
   const handlePlaySelected = useCallback(() => {
     const tracks = getSelectedTracks();
     if (tracks.length > 0) {
@@ -395,6 +401,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
             onPlayTrack={handlePlayTrack}
             onPlayTrackAt={handlePlayTrackAt}
             onQueueTrack={handleQueueTrack}
+            onEditTrack={handleEditTrack}
             filters={filters}
             onFilterChange={handleFilterChange}
           />

@@ -758,6 +758,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             musicbrainz_metadata = enrich_track(
                 title=track.title,
                 artist=track.artist,
+                album=track.album,
                 musicbrainz_recording_id=musicbrainz_recording_id,
             )
 
@@ -1058,16 +1059,16 @@ async def queue_tracks_for_embeddings(limit: int = 500) -> int:
     This includes tracks with features extracted but no embedding.
     Returns the number of tracks queued.
     """
-    import os
-
     from sqlalchemy import and_, or_, select
 
     from app.db.models import Track, TrackAnalysis
     from app.db.session import async_session_maker
+    from app.services.app_settings import get_app_settings_service
     from app.services.background import get_background_manager
 
-    # Skip if CLAP is disabled
-    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
+    # Skip if CLAP is disabled via settings or env var
+    clap_enabled, _ = get_app_settings_service().is_clap_embeddings_enabled()
+    if not clap_enabled:
         return 0
 
     queued = 0
@@ -1943,6 +1944,7 @@ async def run_track_enrichment(track_id: str) -> dict[str, Any]:
             mb_metadata = enrich_track(
                 title=track.title,
                 artist=track.artist,
+                album=track.album,
                 musicbrainz_recording_id=musicbrainz_id,
             )
 

@@ -4,10 +4,11 @@ Computes 2D positions for artists/albums based on audio similarity
 using UMAP dimensionality reduction on CLAP embeddings.
 """
 
+import json
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Literal
+from typing import AsyncGenerator, Literal
 
 import numpy as np
 from sqlalchemy import select
@@ -17,6 +18,10 @@ from sqlalchemy.orm import selectinload
 from app.db.models import Track, TrackStatus
 
 logger = logging.getLogger(__name__)
+
+# Redis cache settings
+MAP_CACHE_KEY_PREFIX = "music_map"
+MAP_CACHE_TTL = 1800  # 30 minutes
 
 # Minimum tracks needed to include an entity in the map
 MIN_TRACKS_PER_ENTITY = 1
@@ -54,6 +59,15 @@ class MapData:
     edges: list[MapEdge]
 
 
+@dataclass
+class MapProgress:
+    """Progress update for map computation."""
+
+    phase: str
+    progress: float  # 0.0 to 1.0
+    message: str
+
+
 class EmbeddingMapService:
     """Service for computing embedding-based music maps."""
 
@@ -78,6 +92,186 @@ class EmbeddingMapService:
                 raise ImportError("umap-learn is required for music map visualization")
         return self._umap
 
+    def _get_cache_key(self, entity_type: str, limit: int) -> str:
+        """Generate Redis cache key for map data."""
+        return f"{MAP_CACHE_KEY_PREFIX}:{entity_type}:{limit}"
+
+    def _get_cached_map(self, entity_type: str, limit: int) -> MapData | None:
+        """Try to get cached map from Redis."""
+        try:
+            from app.services.tasks import get_redis
+
+            r = get_redis()
+            key = self._get_cache_key(entity_type, limit)
+            data: bytes | None = r.get(key)  # type: ignore[assignment]
+            if data:
+                cached = json.loads(data)
+                logger.info(f"Cache hit for music map {entity_type}:{limit}")
+                return MapData(
+                    nodes=[MapNode(**n) for n in cached["nodes"]],
+                    edges=[MapEdge(**e) for e in cached["edges"]],
+                )
+        except Exception as e:
+            logger.warning(f"Failed to get cached map: {e}")
+        return None
+
+    def _cache_map(self, entity_type: str, limit: int, map_data: MapData) -> None:
+        """Cache computed map to Redis."""
+        try:
+            from app.services.tasks import get_redis
+
+            r = get_redis()
+            key = self._get_cache_key(entity_type, limit)
+            data = {
+                "nodes": [
+                    {
+                        "id": n.id,
+                        "name": n.name,
+                        "x": n.x,
+                        "y": n.y,
+                        "track_count": n.track_count,
+                        "first_track_id": n.first_track_id,
+                    }
+                    for n in map_data.nodes
+                ],
+                "edges": [
+                    {"source": e.source, "target": e.target, "weight": e.weight}
+                    for e in map_data.edges
+                ],
+            }
+            r.set(key, json.dumps(data), ex=MAP_CACHE_TTL)
+            logger.info(f"Cached music map {entity_type}:{limit} for {MAP_CACHE_TTL}s")
+        except Exception as e:
+            logger.warning(f"Failed to cache map: {e}")
+
+    def invalidate_cache(self) -> None:
+        """Invalidate all cached maps (call after library changes)."""
+        try:
+            from app.services.tasks import get_redis
+
+            r = get_redis()
+            # Delete all music map cache keys
+            for key in r.scan_iter(f"{MAP_CACHE_KEY_PREFIX}:*"):
+                r.delete(key)
+            logger.info("Invalidated music map cache")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate map cache: {e}")
+
+    async def compute_map_with_progress(
+        self,
+        db: AsyncSession,
+        entity_type: Literal["artists", "albums"] = "artists",
+        limit: int = MAX_ENTITIES,
+    ) -> AsyncGenerator[MapProgress | MapData, None]:
+        """Compute map with progress updates for SSE streaming.
+
+        Yields MapProgress updates during computation, then MapData at the end.
+        """
+        # Check cache first
+        yield MapProgress(phase="checking_cache", progress=0.0, message="Checking cache...")
+        cached = self._get_cached_map(entity_type, limit)
+        if cached:
+            yield MapProgress(phase="complete", progress=1.0, message="Loaded from cache")
+            yield cached
+            return
+
+        # Phase 1: Database query
+        yield MapProgress(phase="db_query", progress=0.1, message="Loading embeddings from database...")
+
+        if entity_type == "artists":
+            embeddings = await self._aggregate_by_artist(db)
+        else:
+            embeddings = await self._aggregate_by_album(db)
+
+        if len(embeddings) < 3:
+            logger.warning(f"Not enough entities with embeddings: {len(embeddings)}")
+            yield MapProgress(phase="complete", progress=1.0, message="Not enough data")
+            yield MapData(nodes=[], edges=[])
+            return
+
+        yield MapProgress(
+            phase="db_query",
+            progress=0.3,
+            message=f"Found {len(embeddings)} {entity_type} with embeddings",
+        )
+
+        # Phase 2: Aggregation
+        yield MapProgress(phase="aggregating", progress=0.35, message="Sorting and filtering...")
+
+        sorted_entities = sorted(
+            embeddings.items(), key=lambda x: x[1]["track_count"], reverse=True
+        )[:limit]
+
+        if len(sorted_entities) < 3:
+            yield MapProgress(phase="complete", progress=1.0, message="Not enough entities")
+            yield MapData(nodes=[], edges=[])
+            return
+
+        names = [name for name, _ in sorted_entities]
+        matrix = np.array([embeddings[name]["mean_embedding"] for name in names])
+
+        yield MapProgress(
+            phase="aggregating",
+            progress=0.5,
+            message=f"Processing {len(names)} {entity_type}...",
+        )
+
+        # Phase 3: UMAP
+        yield MapProgress(
+            phase="umap",
+            progress=0.55,
+            message=f"Computing 2D positions for {len(names)} entities...",
+        )
+
+        try:
+            umap = self._get_umap()
+            positions_2d = umap.fit_transform(matrix)
+        except Exception as e:
+            logger.error(f"UMAP failed: {e}")
+            raise
+
+        yield MapProgress(phase="umap", progress=0.8, message="Normalizing positions...")
+
+        # Normalize to [0, 1] range
+        min_vals = positions_2d.min(axis=0)
+        max_vals = positions_2d.max(axis=0)
+        range_vals = max_vals - min_vals
+        range_vals[range_vals == 0] = 1
+        positions_2d = (positions_2d - min_vals) / range_vals
+
+        # Phase 4: Build nodes and edges
+        yield MapProgress(phase="edges", progress=0.85, message="Computing similarity connections...")
+
+        nodes = []
+        for i, name in enumerate(names):
+            entity_data = embeddings[name]
+            nodes.append(
+                MapNode(
+                    id=name,
+                    name=name,
+                    x=float(positions_2d[i][0]),
+                    y=float(positions_2d[i][1]),
+                    track_count=entity_data["track_count"],
+                    first_track_id=entity_data["first_track_id"],
+                )
+            )
+
+        edges = self._compute_knn_edges(matrix, names, k=5)
+
+        yield MapProgress(phase="edges", progress=0.95, message="Finalizing...")
+
+        map_data = MapData(nodes=nodes, edges=edges)
+
+        # Cache the result
+        self._cache_map(entity_type, limit, map_data)
+
+        yield MapProgress(
+            phase="complete",
+            progress=1.0,
+            message=f"Complete: {len(nodes)} nodes, {len(edges)} edges",
+        )
+        yield map_data
+
     async def compute_map(
         self,
         db: AsyncSession,
@@ -94,6 +288,11 @@ class EmbeddingMapService:
         Returns:
             MapData with nodes and edges
         """
+        # Check cache first
+        cached = self._get_cached_map(entity_type, limit)
+        if cached:
+            return cached
+
         # Get aggregated embeddings
         if entity_type == "artists":
             embeddings = await self._aggregate_by_artist(db)
@@ -152,8 +351,13 @@ class EmbeddingMapService:
         # Compute k-NN edges (k=5)
         edges = self._compute_knn_edges(matrix, names, k=5)
 
+        map_data = MapData(nodes=nodes, edges=edges)
+
+        # Cache result
+        self._cache_map(entity_type, limit, map_data)
+
         logger.info(f"Map computed: {len(nodes)} nodes, {len(edges)} edges")
-        return MapData(nodes=nodes, edges=edges)
+        return map_data
 
     async def _aggregate_by_artist(
         self, db: AsyncSession

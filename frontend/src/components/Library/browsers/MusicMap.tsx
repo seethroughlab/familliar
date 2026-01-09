@@ -9,10 +9,15 @@
  * - Click a node to filter library to that artist
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { Map as MapIcon, Loader2, ZoomIn, ZoomOut, Maximize2, Users, Disc } from 'lucide-react';
-import { libraryApi, tracksApi, type MapNode } from '../../../api/client';
+import { tracksApi, type MapNode, type MusicMapResponse } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
+
+interface MapProgress {
+  phase: string;
+  progress: number;
+  message: string;
+}
 
 // Register this browser
 registerBrowser(
@@ -50,6 +55,15 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const didPanRef = useRef(false); // Track if actual panning occurred (ref for sync updates)
 
+  // Map data and loading state
+  const [data, setData] = useState<MusicMapResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<MapProgress | null>(null);
+
+  // Cache to avoid re-fetching
+  const cacheRef = useRef<Map<EntityType, MusicMapResponse>>(new Map());
+
   // Measure container size
   useEffect(() => {
     const container = containerRef.current;
@@ -68,12 +82,94 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
     return () => resizeObserver.disconnect();
   }, []);
 
-  // Fetch map data
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['library-music-map', entityType],
-    queryFn: () => libraryApi.getMusicMap({ entity_type: entityType, limit: 200 }),
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes - UMAP is expensive
-  });
+  // Fetch map data via SSE with progress updates
+  useEffect(() => {
+    // Check cache first
+    const cached = cacheRef.current.get(entityType);
+    if (cached) {
+      setData(cached);
+      setIsLoading(false);
+      setProgress(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setProgress({ phase: 'connecting', progress: 0, message: 'Connecting...' });
+
+    const abortController = new AbortController();
+
+    const fetchWithSSE = async () => {
+      try {
+        const response = await fetch(
+          `/api/v1/library/map/stream?entity_type=${entityType}&limit=200`,
+          { signal: abortController.signal }
+        );
+
+        if (!response.ok) {
+          throw new Error(`HTTP error: ${response.status}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response body');
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Process complete events in buffer
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          let eventType = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              try {
+                const eventData = JSON.parse(dataStr);
+
+                if (eventType === 'progress') {
+                  setProgress(eventData as MapProgress);
+                } else if (eventType === 'complete') {
+                  const mapData = eventData as MusicMapResponse;
+                  cacheRef.current.set(entityType, mapData);
+                  setData(mapData);
+                  setIsLoading(false);
+                  setProgress(null);
+                } else if (eventType === 'error') {
+                  throw new Error(eventData.error || 'Unknown error');
+                }
+              } catch (parseError) {
+                // Ignore JSON parse errors for incomplete data
+                if (eventType === 'error') {
+                  throw new Error(dataStr);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        console.error('MusicMap SSE error:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load map');
+        setIsLoading(false);
+        setProgress(null);
+      }
+    };
+
+    fetchWithSSE();
+
+    return () => abortController.abort();
+  }, [entityType]);
 
   // Zoom via native wheel event - zooms toward cursor position
   // Re-run when loading completes so we attach to the newly rendered SVG
@@ -203,9 +299,36 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   if (isLoading) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <Loader2 className="w-8 h-8 animate-spin text-zinc-400 mb-4" />
-        <p className="text-zinc-500">Computing music map...</p>
-        <p className="text-sm text-zinc-600 mt-1">This may take a few seconds</p>
+        <Loader2 className="w-8 h-8 animate-spin text-purple-400 mb-4" />
+
+        {/* Progress message */}
+        <p className="text-zinc-300 mb-2">
+          {progress?.message || 'Computing music map...'}
+        </p>
+
+        {/* Progress bar */}
+        {progress && (
+          <div className="w-64 mt-2">
+            <div className="flex justify-between text-xs text-zinc-500 mb-1">
+              <span className="capitalize">{progress.phase.replace('_', ' ')}</span>
+              <span>{Math.round(progress.progress * 100)}%</span>
+            </div>
+            <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-purple-500 rounded-full transition-all duration-300"
+                style={{ width: `${progress.progress * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        <p className="text-sm text-zinc-600 mt-3">
+          {progress?.phase === 'checking_cache'
+            ? 'Checking cache...'
+            : progress?.phase === 'complete'
+            ? 'Finalizing...'
+            : 'Large libraries may take longer'}
+        </p>
       </div>
     );
   }
@@ -214,9 +337,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
     return (
       <div className="flex flex-col items-center justify-center py-20">
         <div className="text-red-500 mb-2">Error loading music map</div>
-        <p className="text-sm text-zinc-500">
-          {error instanceof Error ? error.message : 'Unknown error'}
-        </p>
+        <p className="text-sm text-zinc-500">{error}</p>
       </div>
     );
   }

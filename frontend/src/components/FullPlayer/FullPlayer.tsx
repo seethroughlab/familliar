@@ -15,6 +15,7 @@ import {
   Type,
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
@@ -364,6 +365,11 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
               const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
               window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
               onClose();
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
             }
           }}
         />

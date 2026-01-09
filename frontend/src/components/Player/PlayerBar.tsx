@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2, Shuffle, Repeat } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
 import { tracksApi } from '../../api/client';
+import { TrackContextMenu } from '../Library/TrackContextMenu';
+import type { ContextMenuState } from '../Library/types';
+import { initialContextMenuState } from '../Library/types';
 
 interface PlayerBarProps {
   onExpandClick?: () => void;
@@ -61,9 +66,29 @@ export function PlayerBar({
     toggleShuffle,
     repeat,
     toggleRepeat,
+    addToQueue,
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
+  const [, setSearchParams] = useSearchParams();
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    if (currentTrack) {
+      setContextMenu({
+        isOpen: true,
+        track: currentTrack,
+        position: { x: e.clientX, y: e.clientY },
+      });
+    }
+  }, [currentTrack]);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(initialContextMenuState);
+  }, []);
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -88,9 +113,10 @@ export function PlayerBar({
   return (
     <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800">
       <div className="h-full max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
-        {/* Track info - clickable to expand */}
+        {/* Track info - clickable to expand, right-click for context menu */}
         <button
           onClick={onExpandClick}
+          onContextMenu={handleContextMenu}
           className="flex items-center gap-3 w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
           aria-label="Expand player"
         >
@@ -208,6 +234,59 @@ export function PlayerBar({
           />
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu.isOpen && contextMenu.track && (
+        <TrackContextMenu
+          track={contextMenu.track}
+          position={contextMenu.position}
+          isSelected={false}
+          onClose={closeContextMenu}
+          onPlay={() => {
+            // Already playing this track
+          }}
+          onQueue={() => {
+            if (contextMenu.track) {
+              addToQueue(contextMenu.track);
+            }
+          }}
+          onGoToArtist={() => {
+            if (contextMenu.track?.artist) {
+              setSearchParams({ artistDetail: contextMenu.track.artist });
+              window.location.hash = 'library';
+            }
+          }}
+          onGoToAlbum={() => {
+            if (contextMenu.track?.artist && contextMenu.track?.album) {
+              setSearchParams({
+                view: 'track-list',
+                artist: contextMenu.track.artist,
+                album: contextMenu.track.album,
+              });
+              window.location.hash = 'library';
+            }
+          }}
+          onToggleSelect={() => {
+            // Not applicable in player bar
+          }}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+            console.log('Add to playlist:', contextMenu.track?.id);
+          }}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

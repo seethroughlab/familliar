@@ -59,6 +59,9 @@ class AppSettings(BaseModel):
     auto_enrich_metadata: bool = True  # Auto-fetch missing metadata on playback
     enrich_overwrite_existing: bool = False  # Overwrite existing tags with MusicBrainz data
 
+    # Analysis settings
+    clap_embeddings_enabled: bool | None = None  # None = auto-detect based on RAM (6GB+ required)
+
 
 class AppSettingsService:
     """Service for managing user-configurable app settings."""
@@ -97,9 +100,18 @@ class AppSettingsService:
         current = self.get()
         updated_data = current.model_dump()
 
+        # Settings that accept None as a valid value (to reset to auto-detect)
+        nullable_settings = {"clap_embeddings_enabled"}
+
         # Only update non-None values (allow explicit empty string to clear)
+        # Exception: nullable_settings can be explicitly set to None
         for key, value in kwargs.items():
-            if hasattr(current, key) and value is not None:
+            if not hasattr(current, key):
+                continue
+            if key in nullable_settings:
+                # Allow explicit None for these settings
+                updated_data[key] = value if value != "" else None
+            elif value is not None:
                 updated_data[key] = value if value != "" else None
 
         self._settings = AppSettings(**updated_data)
@@ -207,6 +219,69 @@ class AppSettingsService:
         result["frontend_url"] = env_settings.frontend_url
 
         return result
+
+    def is_clap_embeddings_enabled(self) -> tuple[bool, str]:
+        """Get effective CLAP embeddings enabled status.
+
+        Returns:
+            Tuple of (enabled: bool, reason: str)
+
+        Precedence:
+        1. DISABLE_CLAP_EMBEDDINGS env var (if set, overrides everything)
+        2. AppSettings clap_embeddings_enabled (if explicitly set)
+        3. Auto-detect based on RAM (6GB minimum)
+        """
+        import os
+
+        # Check environment variable override first (backwards compat)
+        env_disabled = os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes")
+        if env_disabled:
+            return (False, "Disabled via DISABLE_CLAP_EMBEDDINGS environment variable")
+
+        # Check explicit setting
+        settings = self.get()
+        if settings.clap_embeddings_enabled is not None:
+            if settings.clap_embeddings_enabled:
+                return (True, "Enabled via settings")
+            else:
+                return (False, "Disabled via settings")
+
+        # Auto-detect based on RAM
+        ram_gb = get_system_ram_gb()
+        if ram_gb is None:
+            return (False, "RAM detection unavailable - defaulting to disabled")
+
+        if ram_gb >= 6.0:
+            return (True, f"Auto-enabled ({ram_gb:.1f}GB RAM detected, 6GB+ required)")
+        else:
+            return (False, f"Auto-disabled (only {ram_gb:.1f}GB RAM, 6GB+ required)")
+
+    def get_clap_status(self) -> dict[str, Any]:
+        """Get detailed CLAP embeddings status for UI."""
+        import os
+
+        enabled, reason = self.is_clap_embeddings_enabled()
+        ram_gb = get_system_ram_gb()
+
+        return {
+            "enabled": enabled,
+            "reason": reason,
+            "ram_gb": ram_gb,
+            "ram_sufficient": ram_gb is not None and ram_gb >= 6.0,
+            "env_override": os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"),
+            "explicit_setting": self.get().clap_embeddings_enabled,
+        }
+
+
+def get_system_ram_gb() -> float | None:
+    """Get total system RAM in GB. Returns None if unable to detect."""
+    try:
+        import psutil
+        return psutil.virtual_memory().total / (1024**3)
+    except ImportError:
+        return None
+    except Exception:
+        return None
 
 
 # Singleton instance

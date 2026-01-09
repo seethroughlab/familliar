@@ -315,6 +315,7 @@ export function TrackListBrowser({
   onQueueTrack,
   onGoToArtist,
   onGoToAlbum,
+  onEditTrack,
 }: BrowserProps) {
   const { currentTrack, isPlaying, setIsPlaying, setQueue } = usePlayerStore();
   const columns = useColumnStore((state) => state.columns);
@@ -695,6 +696,11 @@ export function TrackListBrowser({
               const track = contextMenu.track;
               const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
               window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              onEditTrack(contextMenu.track.id);
             }
           }}
         />

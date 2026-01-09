@@ -10,16 +10,15 @@ import acoustid
 import librosa
 import numpy as np
 
-# Conditionally import torch - skip if DISABLE_CLAP_EMBEDDINGS is set
-# This allows the module to be imported on systems without torch
+# Conditionally import torch - try to import, but handle gracefully if unavailable
+# The actual decision to use CLAP is made at runtime via AppSettingsService
 _torch_available = False
 _torch_import_error: str | None = None
-if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() not in ("1", "true", "yes"):
-    try:
-        import torch
-        _torch_available = True
-    except ImportError as e:
-        _torch_import_error = str(e)
+try:
+    import torch
+    _torch_available = True
+except ImportError as e:
+    _torch_import_error = str(e)
 
 if TYPE_CHECKING:
     import torch  # For type hints only
@@ -105,21 +104,25 @@ def get_analysis_capabilities() -> dict:
         - embeddings_enabled: bool - whether CLAP embeddings can be generated
         - embeddings_disabled_reason: str | None - why embeddings are disabled
         - features_enabled: bool - whether audio features can be extracted
+        - clap_status: dict - detailed CLAP status for UI
     """
-    embeddings_enabled = True
+    from app.services.app_settings import get_app_settings_service
+
+    clap_status = get_app_settings_service().get_clap_status()
+
+    embeddings_enabled = clap_status["enabled"] and _torch_available
     embeddings_disabled_reason = None
 
-    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
-        embeddings_enabled = False
-        embeddings_disabled_reason = "Disabled via DISABLE_CLAP_EMBEDDINGS environment variable"
+    if not clap_status["enabled"]:
+        embeddings_disabled_reason = clap_status["reason"]
     elif not _torch_available:
-        embeddings_enabled = False
         embeddings_disabled_reason = f"PyTorch not available: {_torch_import_error or 'import failed'}"
 
     return {
         "embeddings_enabled": embeddings_enabled,
         "embeddings_disabled_reason": embeddings_disabled_reason,
         "features_enabled": True,  # librosa is always available
+        "clap_status": clap_status,
     }
 
 
@@ -149,14 +152,16 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
     Returns:
         512-dimensional embedding as list of floats, or None on error
     """
-    # Skip CLAP if torch isn't available or disabled
+    # Skip CLAP if torch isn't available
     if not _torch_available:
         logger.debug("CLAP embeddings disabled (torch not available)")
         return None
 
-    # Skip CLAP if disabled (useful for systems where torch crashes)
-    if os.environ.get("DISABLE_CLAP_EMBEDDINGS", "").lower() in ("1", "true", "yes"):
-        logger.debug("CLAP embeddings disabled via DISABLE_CLAP_EMBEDDINGS")
+    # Skip CLAP if disabled via settings or env var
+    from app.services.app_settings import get_app_settings_service
+    clap_enabled, reason = get_app_settings_service().is_clap_embeddings_enabled()
+    if not clap_enabled:
+        logger.debug(f"CLAP embeddings disabled: {reason}")
         return None
 
     try:

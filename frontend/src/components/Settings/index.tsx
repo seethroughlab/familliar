@@ -7,6 +7,7 @@ import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
 import { LibrarySync } from './LibrarySync';
 import { MetadataSettings } from './MetadataSettings';
+import { AnalysisSettings } from './AnalysisSettings';
 import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
@@ -35,6 +36,7 @@ export function SettingsPanel() {
           <div className="space-y-4">
             <LibrarySync />
             <MetadataSettings />
+            <AnalysisSettings />
           </div>
         </section>
 

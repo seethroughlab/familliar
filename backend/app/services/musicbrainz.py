@@ -18,11 +18,112 @@ musicbrainzngs.set_useragent(
 musicbrainzngs.set_rate_limit(limit_or_interval=1.0)
 
 
-def get_recording_by_id(recording_id: str) -> dict[str, Any] | None:
+def _normalize_for_comparison(s: str | None) -> str:
+    """Normalize a string for comparison (lowercase, stripped)."""
+    if not s:
+        return ""
+    return s.lower().strip()
+
+
+def _select_best_release(
+    releases: list[dict[str, Any]],
+    local_album: str | None = None,
+) -> dict[str, Any] | None:
+    """Select the best release from a list of releases.
+
+    Scoring criteria (in order of priority):
+    1. Exact match on local album name (+100 points)
+    2. Release type "Album" (+20), "EP" (+15), "Single" (+10), others (+0)
+    3. Official status (+10 points)
+    4. Has a release date (+5 points)
+    5. Earlier release date (tiebreaker)
+
+    This prevents soundtracks/compilations from being selected over
+    the original album when a track appears on multiple releases.
+
+    Args:
+        releases: List of release dicts from MusicBrainz
+        local_album: The album name from the user's local files (if available)
+
+    Returns:
+        Best matching release dict, or None if no releases
+    """
+    if not releases:
+        return None
+
+    if len(releases) == 1:
+        return releases[0]
+
+    local_album_normalized = _normalize_for_comparison(local_album)
+
+    def score_release(release: dict[str, Any]) -> tuple[int, str]:
+        """Score a release. Returns (score, date) for sorting."""
+        score = 0
+        release_title = release.get("title", "")
+
+        # Priority 1: Exact match on local album name (+100)
+        if local_album_normalized and _normalize_for_comparison(release_title) == local_album_normalized:
+            score += 100
+
+        # Priority 2: Release type preference
+        # Release type is in release-group if present
+        release_group = release.get("release-group", {})
+        primary_type = release_group.get("primary-type", "").lower()
+        secondary_types = [t.lower() for t in release_group.get("secondary-type-list", [])]
+
+        # Penalize compilations, soundtracks, and other secondary types
+        if "compilation" in secondary_types or "soundtrack" in secondary_types:
+            score -= 30  # Strong penalty for compilations/soundtracks
+        elif primary_type == "album":
+            score += 20
+        elif primary_type == "ep":
+            score += 15
+        elif primary_type == "single":
+            score += 10
+
+        # Priority 3: Official status (+10)
+        status = release.get("status", "").lower()
+        if status == "official":
+            score += 10
+
+        # Priority 4: Has a release date (+5)
+        release_date = release.get("date", "")
+        if release_date:
+            score += 5
+
+        # Use date as secondary sort key (earlier = better)
+        # Pad with "9999" so missing dates sort last
+        date_key = release_date if release_date else "9999"
+
+        return (score, date_key)
+
+    # Sort by score descending, then by date ascending
+    scored_releases = [(release, score_release(release)) for release in releases]
+    scored_releases.sort(key=lambda x: (-x[1][0], x[1][1]))
+
+    best_release = scored_releases[0][0]
+    best_score = scored_releases[0][1]
+
+    # Log when we're making a non-trivial choice
+    if len(releases) > 1:
+        logger.debug(
+            f"Selected release '{best_release.get('title')}' (score={best_score[0]}) "
+            f"from {len(releases)} candidates"
+            + (f" (local album: '{local_album}')" if local_album else "")
+        )
+
+    return best_release
+
+
+def get_recording_by_id(
+    recording_id: str,
+    local_album: str | None = None,
+) -> dict[str, Any] | None:
     """Get detailed recording info from MusicBrainz by recording ID.
 
     Args:
         recording_id: MusicBrainz recording UUID
+        local_album: The album name from the user's local files (for better release selection)
 
     Returns:
         Dict with recording metadata or None on error
@@ -57,15 +158,15 @@ def get_recording_by_id(recording_id: str) -> dict[str, Any] | None:
             metadata["artist"] = ", ".join(artist_names)
             metadata["musicbrainz_artist_ids"] = artist_ids
 
-        # Extract first release info
+        # Select the best release (not just the first one)
         releases = recording.get("release-list", [])
-        if releases:
-            release = releases[0]
+        release = _select_best_release(releases, local_album)
+        if release:
             metadata["album"] = release.get("title")
             metadata["musicbrainz_release_id"] = release.get("id")
             metadata["release_date"] = release.get("date")
 
-            # Get label from release group if available
+            # Get release group info if available
             if "release-group" in release:
                 rg = release["release-group"]
                 metadata["musicbrainz_release_group_id"] = rg.get("id")
@@ -93,12 +194,17 @@ def get_recording_by_id(recording_id: str) -> dict[str, Any] | None:
         return None
 
 
-def search_recording(title: str, artist: str | None = None) -> dict[str, Any] | None:
+def search_recording(
+    title: str,
+    artist: str | None = None,
+    local_album: str | None = None,
+) -> dict[str, Any] | None:
     """Search for a recording on MusicBrainz.
 
     Args:
         title: Track title
         artist: Artist name (optional but recommended)
+        local_album: The album name from the user's local files (for better release selection)
 
     Returns:
         Best matching recording metadata or None
@@ -121,7 +227,7 @@ def search_recording(title: str, artist: str | None = None) -> dict[str, Any] | 
         best_match = recordings[0]
 
         # Fetch full details using the recording ID
-        return get_recording_by_id(best_match.get("id"))
+        return get_recording_by_id(best_match.get("id"), local_album=local_album)
 
     except musicbrainzngs.WebServiceError as e:
         logger.error(f"MusicBrainz search error for '{title}': {e}")
@@ -261,6 +367,7 @@ def get_release_by_id(release_id: str) -> dict[str, Any] | None:
 def enrich_track(
     title: str | None = None,
     artist: str | None = None,
+    album: str | None = None,
     musicbrainz_recording_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Enrich track metadata from MusicBrainz.
@@ -270,6 +377,7 @@ def enrich_track(
     Args:
         title: Track title (for search fallback)
         artist: Artist name (for search fallback)
+        album: Album name from local files (for better release selection)
         musicbrainz_recording_id: MusicBrainz recording ID (preferred)
 
     Returns:
@@ -277,14 +385,14 @@ def enrich_track(
     """
     # Try by ID first (most reliable)
     if musicbrainz_recording_id:
-        result = get_recording_by_id(musicbrainz_recording_id)
+        result = get_recording_by_id(musicbrainz_recording_id, local_album=album)
         if result:
             logger.info(f"Enriched via MusicBrainz ID: {result.get('title')} by {result.get('artist')}")
             return result
 
     # Fall back to search
     if title:
-        result = search_recording(title, artist)
+        result = search_recording(title, artist, local_album=album)
         if result:
             logger.info(f"Enriched via MusicBrainz search: {result.get('title')} by {result.get('artist')}")
             return result

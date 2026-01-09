@@ -94,7 +94,108 @@ export const tracksApi = {
     const { data } = await api.post(`/tracks/${id}/enrich`);
     return data;
   },
+
+  // Metadata editing
+  getMetadata: async (id: string): Promise<TrackMetadataResponse> => {
+    const { data } = await api.get(`/tracks/${id}/metadata`);
+    return data;
+  },
+
+  updateMetadata: async (
+    id: string,
+    update: TrackMetadataUpdate
+  ): Promise<TrackMetadataResponse> => {
+    const { data } = await api.patch(`/tracks/${id}/metadata`, update);
+    return data;
+  },
 };
+
+// Track metadata types
+export interface TrackMetadataUpdate {
+  // Core metadata
+  title?: string | null;
+  artist?: string | null;
+  album?: string | null;
+  album_artist?: string | null;
+  track_number?: number | null;
+  disc_number?: number | null;
+  year?: number | null;
+  genre?: string | null;
+
+  // Extended metadata
+  composer?: string | null;
+  conductor?: string | null;
+  lyricist?: string | null;
+  grouping?: string | null;
+  comment?: string | null;
+
+  // Sort fields
+  sort_artist?: string | null;
+  sort_album?: string | null;
+  sort_title?: string | null;
+
+  // Lyrics
+  lyrics?: string | null;
+
+  // User overrides for analysis values
+  user_overrides?: Record<string, number | string | null>;
+
+  // Whether to write changes to the audio file
+  write_to_file?: boolean;
+}
+
+export interface TrackMetadataResponse {
+  id: string;
+  file_path: string;
+
+  // Core metadata
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  album_artist: string | null;
+  track_number: number | null;
+  disc_number: number | null;
+  year: number | null;
+  genre: string | null;
+
+  // Extended metadata
+  composer: string | null;
+  conductor: string | null;
+  lyricist: string | null;
+  grouping: string | null;
+  comment: string | null;
+
+  // Sort fields
+  sort_artist: string | null;
+  sort_album: string | null;
+  sort_title: string | null;
+
+  // Lyrics
+  lyrics: string | null;
+
+  // User overrides
+  user_overrides: Record<string, number | string | null>;
+
+  // Audio info
+  duration_seconds: number | null;
+  format: string | null;
+
+  // Analysis features (with user overrides applied)
+  features: {
+    bpm: number | null;
+    key: string | null;
+    energy: number | null;
+    danceability: number | null;
+    valence: number | null;
+    acousticness: number | null;
+    instrumentalness: number | null;
+    speechiness: number | null;
+  } | null;
+
+  // Write status (only present after update)
+  file_write_status?: string | null;
+  file_write_error?: string | null;
+}
 
 export interface LyricLine {
   time: number;
@@ -288,6 +389,15 @@ export const lastfmApi = {
   },
 };
 
+export interface ClapStatus {
+  enabled: boolean;
+  reason: string;
+  ram_gb: number | null;
+  ram_sufficient: boolean;
+  env_override: boolean;
+  explicit_setting: boolean | null;
+}
+
 export interface AppSettingsResponse {
   spotify_client_id: string | null;
   spotify_client_secret: string | null;
@@ -299,6 +409,9 @@ export interface AppSettingsResponse {
   // Metadata enrichment
   auto_enrich_metadata: boolean;
   enrich_overwrite_existing: boolean;
+  // Analysis settings
+  clap_embeddings_enabled: boolean | null;
+  clap_status: ClapStatus;
 }
 
 export interface AppSettingsUpdate {
@@ -310,6 +423,8 @@ export interface AppSettingsUpdate {
   // Metadata enrichment
   auto_enrich_metadata?: boolean;
   enrich_overwrite_existing?: boolean;
+  // Analysis settings
+  clap_embeddings_enabled?: boolean | null;
 }
 
 export const appSettingsApi = {

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
@@ -531,6 +532,11 @@ export function ArtistDetail({ artistName, onBack }: Props) {
               const track = contextMenu.track;
               const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
               window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
             }
           }}
         />

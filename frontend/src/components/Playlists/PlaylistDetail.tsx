@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { RecommendationsPanel } from './RecommendationsPanel';
 import * as offlineService from '../../services/offlineService';
@@ -396,6 +397,11 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               const track = contextMenu.track;
               const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
               window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
             }
           }}
         />
