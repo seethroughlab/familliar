@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -1114,6 +1114,86 @@ async def get_music_map_stream(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
         },
+    )
+
+
+# ============================================================================
+# Ego-Centric Music Map
+# ============================================================================
+
+
+class EgoMapCenterResponse(BaseModel):
+    """Center artist of the ego map."""
+
+    name: str
+    track_count: int
+    first_track_id: str
+
+
+class EgoMapArtistResponse(BaseModel):
+    """An artist in the ego-centric map."""
+
+    name: str
+    x: float
+    y: float
+    distance: float
+    track_count: int
+    first_track_id: str
+
+
+class EgoMapResponse(BaseModel):
+    """Response for ego-centric music map."""
+
+    center: EgoMapCenterResponse
+    artists: list[EgoMapArtistResponse]
+    mode: str
+    total_artists: int
+
+
+@router.get("/map/ego")
+async def get_ego_centric_map(
+    db: DbSession,
+    center: str = Query(..., description="Artist name to center on"),
+    limit: int = Query(200, ge=10, le=500, description="Number of similar artists"),
+    mode: Literal["radial"] = Query("radial", description="Layout mode"),
+) -> EgoMapResponse:
+    """Get ego-centric map centered on an artist.
+
+    Returns the center artist and surrounding artists positioned radially
+    based on audio similarity. Distance from center indicates dissimilarity.
+
+    The angle of each artist is stable (based on name hash), so when you
+    recenter on a different artist, positions smoothly transition rather
+    than completely reshuffling.
+    """
+    from app.services.ego_map import get_ego_map_service
+
+    service = get_ego_map_service()
+
+    try:
+        data = await service.compute_ego_map(db, center=center, limit=limit, mode=mode)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+    return EgoMapResponse(
+        center=EgoMapCenterResponse(
+            name=data.center.name,
+            track_count=data.center.track_count,
+            first_track_id=data.center.first_track_id,
+        ),
+        artists=[
+            EgoMapArtistResponse(
+                name=a.name,
+                x=a.x,
+                y=a.y,
+                distance=a.distance,
+                track_count=a.track_count,
+                first_track_id=a.first_track_id,
+            )
+            for a in data.artists
+        ],
+        mode=data.mode,
+        total_artists=data.total_artists,
     )
 
 

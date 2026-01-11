@@ -117,6 +117,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
 
         const decoder = new TextDecoder();
         let buffer = '';
+        let eventType = ''; // Track event type across chunks
 
         while (true) {
           const { done, value } = await reader.read();
@@ -128,7 +129,6 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
           const lines = buffer.split('\n');
           buffer = lines.pop() || ''; // Keep incomplete line in buffer
 
-          let eventType = '';
           for (const line of lines) {
             if (line.startsWith('event: ')) {
               eventType = line.slice(7).trim();
@@ -326,7 +326,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
           {progress?.phase === 'checking_cache'
             ? 'Checking cache...'
             : progress?.phase === 'complete'
-            ? 'Finalizing...'
+            ? 'Loading visualization...'
             : 'Large libraries may take longer'}
         </p>
       </div>

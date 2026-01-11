@@ -5,6 +5,7 @@
  * Wraps TrackList with BrowserProps interface for the pluggable browser system.
  */
 import { useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
 import { tracksApi } from '../../../api/client';
@@ -317,12 +318,26 @@ export function TrackListBrowser({
   onGoToAlbum,
   onEditTrack,
 }: BrowserProps) {
+  const [, setSearchParams] = useSearchParams();
   const { currentTrack, isPlaying, setIsPlaying, setQueue } = usePlayerStore();
   const columns = useColumnStore((state) => state.columns);
   const reorderColumns = useColumnStore((state) => state.reorderColumns);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+
+  // Navigate to ego music map with artist
+  const handleExploreSimilarArtists = useCallback(
+    (artistName: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('view', 'ego-music-map');
+        next.set('center', artistName);
+        return next;
+      });
+    },
+    [setSearchParams]
+  );
 
   // Drag & drop state for columns
   const [draggedColId, setDraggedColId] = useState<string | null>(null);
@@ -680,6 +695,11 @@ export function TrackListBrowser({
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
               onGoToAlbum(contextMenu.track.artist, contextMenu.track.album);
+            }
+          }}
+          onExploreSimilarArtists={() => {
+            if (contextMenu.track?.artist) {
+              handleExploreSimilarArtists(contextMenu.track.artist);
             }
           }}
           onToggleSelect={() => {

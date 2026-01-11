@@ -634,6 +634,29 @@ export interface MusicMapResponse {
   total_entities: number;
 }
 
+// Ego-centric Music Map
+export interface EgoMapCenter {
+  name: string;
+  track_count: number;
+  first_track_id: string;
+}
+
+export interface EgoMapArtist {
+  name: string;
+  x: number;
+  y: number;
+  distance: number;
+  track_count: number;
+  first_track_id: string;
+}
+
+export interface EgoMapResponse {
+  center: EgoMapCenter;
+  artists: EgoMapArtist[];
+  mode: string;
+  total_artists: number;
+}
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
@@ -689,6 +712,21 @@ export const libraryApi = {
     limit?: number;
   }): Promise<MusicMapResponse> => {
     const { data } = await api.get('/library/map', { params });
+    return data;
+  },
+
+  getEgoMap: async (params: {
+    center: string;
+    limit?: number;
+    mode?: 'radial';
+  }): Promise<EgoMapResponse> => {
+    const { data } = await api.get('/library/map/ego', {
+      params: {
+        center: params.center,
+        limit: params.limit ?? 200,
+        mode: params.mode ?? 'radial',
+      },
+    });
     return data;
   },
 

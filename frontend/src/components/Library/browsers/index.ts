@@ -11,7 +11,7 @@ import './ArtistList';
 import './AlbumGrid';
 import './Timeline';
 import './MoodGrid';
-import './MusicMap';
+import './EgoMusicMap';
 
 // Phase 6 browsers:
 // import './TempoSpectrum';

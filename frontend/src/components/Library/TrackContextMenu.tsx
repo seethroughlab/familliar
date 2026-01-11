@@ -13,6 +13,7 @@ import {
   Square,
   Sparkles,
   Edit3,
+  Map,
 } from 'lucide-react';
 import type { Track } from '../../types';
 
@@ -25,6 +26,7 @@ interface TrackContextMenuProps {
   onQueue: () => void;
   onGoToArtist: () => void;
   onGoToAlbum: () => void;
+  onExploreSimilarArtists?: () => void;
   onToggleSelect: () => void;
   onAddToPlaylist: () => void;
   onMakePlaylist: () => void;
@@ -64,6 +66,7 @@ export function TrackContextMenu({
   onQueue,
   onGoToArtist,
   onGoToAlbum,
+  onExploreSimilarArtists,
   onToggleSelect,
   onAddToPlaylist,
   onMakePlaylist,
@@ -164,6 +167,14 @@ export function TrackContextMenu({
         onClick={() => handleAction(onGoToAlbum)}
         disabled={!track.album}
       />
+      {onExploreSimilarArtists && (
+        <MenuItem
+          icon={<Map className="w-4 h-4" />}
+          label="Explore Similar Artists"
+          onClick={() => handleAction(onExploreSimilarArtists)}
+          disabled={!track.artist}
+        />
+      )}
 
       <MenuDivider />
 

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.16] - 2026-01-11
+
+### Added
+
+- **Ego-centric Music Map** - completely redesigned artist similarity visualization
+  - Select any artist to center the map on them
+  - 200 most similar artists radiate outward based on audio embeddings
+  - Click any artist to recenter the map on them
+  - Double-click to navigate to artist detail view
+  - **Lasso selection** - drag to select multiple artists, then "Create Playlist" sends them to the LLM
+  - **Figma-style controls** - drag to select, space+drag to pan, scroll to zoom
+  - Deep zoom support (up to 15x)
+  - Smooth animations when recentering
+- **"Explore Similar Artists"** context menu item - right-click any track to open the Music Map centered on that artist
+
+### Changed
+
+- Music Map now uses ego-centric layout instead of UMAP projection (scales beyond 200 artists)
+
 ## [0.1.0-alpha.15] - 2026-01-09
 
 ### Added
