@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2, Shuffle, Repeat } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -8,6 +8,7 @@ import { tracksApi } from '../../api/client';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
+import { useArtworkPrefetch } from '../../hooks/useArtworkPrefetch';
 
 interface PlayerBarProps {
   onExpandClick?: () => void;
@@ -71,6 +72,14 @@ export function PlayerBar({
 
   const { seek, togglePlayPause } = useAudioEngine();
   const [, setSearchParams] = useSearchParams();
+
+  // Prefetch artwork for the current track
+  const prefetchArtwork = useArtworkPrefetch();
+  useEffect(() => {
+    if (currentTrack) {
+      prefetchArtwork(currentTrack.artist, currentTrack.album, currentTrack.id);
+    }
+  }, [currentTrack, prefetchArtwork]);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);

@@ -657,6 +657,24 @@ export interface EgoMapResponse {
   total_artists: number;
 }
 
+// 3D Music Map
+export interface MapNode3D {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  track_count: number;
+  first_track_id: string;
+  representative_track_id?: string; // Track closest to artist's audio centroid
+}
+
+export interface MusicMap3DResponse {
+  nodes: MapNode3D[];
+  entity_type: string;
+  total_entities: number;
+}
+
 export const libraryApi = {
   getStats: async (): Promise<LibraryStats> => {
     const { data } = await api.get('/library/stats');
@@ -725,6 +743,17 @@ export const libraryApi = {
         center: params.center,
         limit: params.limit ?? 200,
         mode: params.mode ?? 'radial',
+      },
+    });
+    return data;
+  },
+
+  get3DMap: async (params?: {
+    entity_type?: 'artists' | 'albums';
+  }): Promise<MusicMap3DResponse> => {
+    const { data } = await api.get('/library/map/3d', {
+      params: {
+        entity_type: params?.entity_type ?? 'artists',
       },
     });
     return data;
@@ -1404,6 +1433,61 @@ export const newReleasesApi = {
   dismiss: async (releaseId: string): Promise<{ status: string; message: string }> => {
     const { data } = await api.post(`/new-releases/${releaseId}/dismiss`);
     return data;
+  },
+};
+
+// Artwork prefetch API
+export interface ArtworkQueueRequest {
+  artist: string;
+  album: string;
+  track_id?: string;
+}
+
+export interface ArtworkQueueResponse {
+  status: string;
+  album_hash: string;
+  message: string;
+}
+
+export interface ArtworkQueueBatchResponse {
+  status: string;
+  queued_count: number;
+  existing_count: number;
+  queued_hashes: string[];
+}
+
+export const artworkApi = {
+  /**
+   * Queue a single album for artwork download.
+   * Returns immediately - artwork is fetched in background.
+   */
+  queue: async (request: ArtworkQueueRequest): Promise<ArtworkQueueResponse> => {
+    const { data } = await api.post('/artwork/queue', request);
+    return data;
+  },
+
+  /**
+   * Queue multiple albums for artwork download.
+   * Duplicates and existing artworks are filtered automatically.
+   */
+  queueBatch: async (
+    items: ArtworkQueueRequest[]
+  ): Promise<ArtworkQueueBatchResponse> => {
+    const { data } = await api.post('/artwork/queue/batch', { items });
+    return data;
+  },
+
+  /**
+   * Check if artwork exists for an artist/album.
+   * Uses HEAD request for efficiency.
+   */
+  checkExists: async (artist: string, album: string): Promise<boolean> => {
+    try {
+      await api.head(`/artwork/check/${encodeURIComponent(artist)}/${encodeURIComponent(album)}`);
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 

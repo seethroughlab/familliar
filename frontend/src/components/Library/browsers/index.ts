@@ -12,6 +12,7 @@ import './AlbumGrid';
 import './Timeline';
 import './MoodGrid';
 import './EgoMusicMap';
+import './UMAPExplorer';
 
 // Phase 6 browsers:
 // import './TempoSpectrum';

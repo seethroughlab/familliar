@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.17] - 2026-01-11
+
+### Added
+
+- **3D Explorer audio previews** - hover over artists to hear a preview
+  - Crossfade transitions when moving between artists (300ms)
+  - Representative track selection - uses track closest to artist's audio centroid instead of arbitrary first track
+  - Toggle button to enable/disable audio previews
+- **Proactive album art downloading** - artwork fetches in background when browsing
+  - AlbumGrid, FullPlayer, and PlayerBar trigger background fetches
+  - Fetches from Cover Art Archive, Last.fm, and Spotify (in order)
+  - Rate-limited to avoid API bans
+  - New endpoints: `POST /api/v1/artwork/queue`, `HEAD /api/v1/artwork/check/{artist}/{album}`
+
+### Fixed
+
+- **Broken image placeholders** - Music Map and 3D Explorer now show Music icon instead of broken image link when artwork is missing
+
 ## [0.1.0-alpha.16] - 2026-01-11
 
 ### Added
@@ -227,7 +245,9 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.15...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.17...HEAD
+[0.1.0-alpha.17]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.16...v0.1.0-alpha.17
+[0.1.0-alpha.16]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.15...v0.1.0-alpha.16
 [0.1.0-alpha.15]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.13...v0.1.0-alpha.15
 [0.1.0-alpha.13]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.12...v0.1.0-alpha.13
 [0.1.0-alpha.12]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...v0.1.0-alpha.12

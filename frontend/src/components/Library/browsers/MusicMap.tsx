@@ -9,7 +9,7 @@
  * - Click a node to filter library to that artist
  */
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { Map as MapIcon, Loader2, ZoomIn, ZoomOut, Maximize2, Users, Disc } from 'lucide-react';
+import { Map as MapIcon, Loader2, ZoomIn, ZoomOut, Maximize2, Users, Disc, Music } from 'lucide-react';
 import { tracksApi, type MapNode, type MusicMapResponse } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 
@@ -43,6 +43,7 @@ type EntityType = 'artists' | 'albums';
 
 export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   const [hoveredNode, setHoveredNode] = useState<HoveredNode | null>(null);
+  const [hoveredImageError, setHoveredImageError] = useState(false);
   const [entityType, setEntityType] = useState<EntityType>('artists');
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -509,6 +510,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
                     onMouseEnter={(e) => {
                       const rect = svgRef.current?.getBoundingClientRect();
                       if (rect) {
+                        setHoveredImageError(false); // Reset image error state
                         setHoveredNode({
                           node,
                           screenX: e.clientX - rect.left,
@@ -551,14 +553,18 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
           >
             {/* Artwork thumbnail */}
             <div className="flex items-start gap-3">
-              <img
-                src={tracksApi.getArtworkUrl(hoveredNode.node.first_track_id, 'thumb')}
-                alt=""
-                className="w-12 h-12 rounded object-cover bg-zinc-700"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
+              {!hoveredImageError ? (
+                <img
+                  src={tracksApi.getArtworkUrl(hoveredNode.node.first_track_id, 'thumb')}
+                  alt=""
+                  className="w-12 h-12 rounded object-cover bg-zinc-700"
+                  onError={() => setHoveredImageError(true)}
+                />
+              ) : (
+                <div className="w-12 h-12 rounded bg-zinc-700 flex items-center justify-center">
+                  <Music className="w-6 h-6 text-zinc-500" />
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="font-medium text-white truncate">
                   {hoveredNode.node.name}

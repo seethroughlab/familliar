@@ -24,6 +24,7 @@ import { VideoPlayer } from './VideoPlayer';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
+import { useArtworkPrefetch } from '../../hooks/useArtworkPrefetch';
 
 type ViewMode = 'visualizer' | 'video' | 'lyrics';
 
@@ -62,6 +63,14 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
 
   const { seek, togglePlayPause } = useAudioEngine();
   const { addToQueue } = usePlayerStore();
+
+  // Prefetch artwork for the current track
+  const prefetchArtwork = useArtworkPrefetch();
+  useEffect(() => {
+    if (currentTrack) {
+      prefetchArtwork(currentTrack.artist, currentTrack.album, currentTrack.id);
+    }
+  }, [currentTrack, prefetchArtwork]);
 
   // Context menu handlers
   const handleContextMenu = useCallback((e: React.MouseEvent) => {

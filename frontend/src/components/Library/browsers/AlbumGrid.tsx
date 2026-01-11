@@ -10,6 +10,7 @@ import { Grid3X3, Music, Loader2 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
+import { useArtworkPrefetchOnVisible } from '../../../hooks/useArtworkPrefetch';
 
 const PAGE_SIZE = 50;
 
@@ -168,8 +169,16 @@ interface AlbumCardProps {
 function AlbumCard({ album, onClick }: AlbumCardProps) {
   const [imageError, setImageError] = useState(false);
 
+  // Prefetch artwork when this card becomes visible
+  const prefetchRef = useArtworkPrefetchOnVisible(
+    album.artist,
+    album.name,
+    album.first_track_id
+  );
+
   return (
     <button
+      ref={prefetchRef}
       onClick={onClick}
       className="group text-left bg-zinc-800/30 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors"
     >

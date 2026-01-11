@@ -1150,6 +1150,144 @@ class EgoMapResponse(BaseModel):
     total_artists: int
 
 
+class MapNode3DResponse(BaseModel):
+    """A node in the 3D music map."""
+
+    id: str
+    name: str
+    x: float
+    y: float
+    z: float
+    track_count: int
+    first_track_id: str
+
+
+class MusicMap3DResponse(BaseModel):
+    """Response for 3D music map visualization."""
+
+    nodes: list[MapNode3DResponse]
+    entity_type: str
+    total_entities: int
+
+
+@router.get("/map/3d", response_model=MusicMap3DResponse)
+async def get_3d_music_map(
+    db: DbSession,
+    entity_type: Literal["artists", "albums"] = "artists",
+) -> MusicMap3DResponse:
+    """Get 3D positions for all artists/albums based on audio similarity.
+
+    Uses UMAP dimensionality reduction on CLAP embeddings to position
+    entities in 3D space so that similar-sounding music appears close together.
+
+    Unlike the 2D map, this includes ALL entities in your library for full
+    exploration. Results are cached for 1 hour due to expensive computation.
+
+    Args:
+        entity_type: "artists" (default) or "albums"
+    """
+    from app.services.embedding_map import get_embedding_map_service
+
+    service = get_embedding_map_service()
+
+    try:
+        map_data = await service.compute_3d_map(db, entity_type=entity_type)
+    except ImportError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"3D map computation failed: {e}")
+
+    return MusicMap3DResponse(
+        nodes=[
+            MapNode3DResponse(
+                id=n.id,
+                name=n.name,
+                x=n.x,
+                y=n.y,
+                z=n.z,
+                track_count=n.track_count,
+                first_track_id=n.first_track_id,
+            )
+            for n in map_data.nodes
+        ],
+        entity_type=map_data.entity_type,
+        total_entities=map_data.total_entities,
+    )
+
+
+@router.get("/map/3d/stream")
+async def get_3d_music_map_stream(
+    db: DbSession,
+    entity_type: Literal["artists", "albums"] = "artists",
+) -> StreamingResponse:
+    """Stream 3D music map computation progress via Server-Sent Events.
+
+    Sends progress events during computation, then the complete map data.
+    Use this for better UX during the initial (slow) UMAP computation.
+
+    Event types:
+    - progress: {"phase": "...", "progress": 0.5, "message": "..."}
+    - complete: Full MusicMap3DResponse JSON
+    - error: {"error": "..."}
+    """
+    import json
+
+    from app.services.embedding_map import (
+        MapData3D,
+        MapProgress,
+        get_embedding_map_service,
+    )
+
+    async def event_stream():
+        service = get_embedding_map_service()
+
+        try:
+            async for item in service.compute_3d_map_with_progress(
+                db, entity_type=entity_type
+            ):
+                if isinstance(item, MapProgress):
+                    # Send progress event
+                    data = {
+                        "phase": item.phase,
+                        "progress": item.progress,
+                        "message": item.message,
+                    }
+                    yield f"event: progress\ndata: {json.dumps(data)}\n\n"
+                elif isinstance(item, MapData3D):
+                    # Send complete event with full map data
+                    response = {
+                        "nodes": [
+                            {
+                                "id": n.id,
+                                "name": n.name,
+                                "x": n.x,
+                                "y": n.y,
+                                "z": n.z,
+                                "track_count": n.track_count,
+                                "first_track_id": n.first_track_id,
+                            }
+                            for n in item.nodes
+                        ],
+                        "entity_type": item.entity_type,
+                        "total_entities": item.total_entities,
+                    }
+                    yield f"event: complete\ndata: {json.dumps(response)}\n\n"
+        except ImportError as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': f'3D map computation failed: {e}'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
+
 @router.get("/map/ego")
 async def get_ego_centric_map(
     db: DbSession,

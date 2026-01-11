@@ -233,6 +233,11 @@ class BackgroundManager:
         # Clean up any stale Redis state from previous runs
         self._cleanup_stale_redis_state()
 
+        # Start artwork fetcher
+        from app.services.artwork_fetcher import get_artwork_fetcher
+        artwork_fetcher = get_artwork_fetcher()
+        await artwork_fetcher.start()
+
         try:
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.triggers.cron import CronTrigger
@@ -262,6 +267,11 @@ class BackgroundManager:
         """Cleanup on app shutdown."""
         logger.info("Shutting down BackgroundManager...")
 
+        # Stop artwork fetcher
+        from app.services.artwork_fetcher import get_artwork_fetcher
+        artwork_fetcher = get_artwork_fetcher()
+        await artwork_fetcher.stop()
+
         # Cancel running tasks
         if self._current_sync_task and not self._current_sync_task.done():
             self._current_sync_task.cancel()
@@ -283,6 +293,28 @@ class BackgroundManager:
             self._executor.shutdown(wait=False)
 
         logger.info("BackgroundManager shutdown complete")
+
+    async def queue_artwork_fetch(
+        self,
+        album_hash: str,
+        artist: str,
+        album: str,
+        track_id: str | None = None,
+    ) -> bool:
+        """Queue artwork for background fetching.
+
+        Returns True if queued, False if skipped (already exists or in progress).
+        """
+        from app.services.artwork_fetcher import ArtworkFetchRequest, get_artwork_fetcher
+
+        fetcher = get_artwork_fetcher()
+        request = ArtworkFetchRequest(
+            album_hash=album_hash,
+            artist=artist,
+            album=album,
+            track_id=track_id,
+        )
+        return await fetcher.queue(request)
 
     def is_analysis_running(self) -> bool:
         """Check if any analysis tasks are currently running."""
