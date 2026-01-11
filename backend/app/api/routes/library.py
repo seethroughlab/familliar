@@ -265,7 +265,7 @@ async def get_artist_detail(
             func.min(cast(Track.id, TEXT)).label("first_track_id"),
         )
         .where(
-            func.lower(Track.artist) == artist_normalized,
+            func.lower(func.trim(Track.artist)) == artist_normalized,
             Track.status == TrackStatus.ACTIVE,
         )
     )
@@ -284,7 +284,7 @@ async def get_artist_detail(
             func.min(cast(Track.id, TEXT)).label("first_track_id"),
         )
         .where(
-            func.lower(Track.artist) == artist_normalized,
+            func.lower(func.trim(Track.artist)) == artist_normalized,
             Track.status == TrackStatus.ACTIVE,
             Track.album.isnot(None),
             Track.album != "",
@@ -307,7 +307,7 @@ async def get_artist_detail(
     tracks_query = (
         select(Track)
         .where(
-            func.lower(Track.artist) == artist_normalized,
+            func.lower(func.trim(Track.artist)) == artist_normalized,
             Track.status == TrackStatus.ACTIVE,
         )
         .order_by(Track.album, Track.disc_number, Track.track_number, Track.title)
@@ -588,7 +588,7 @@ async def get_artist_image(
     track_query = (
         select(Track)
         .where(
-            func.lower(Track.artist) == artist_normalized,
+            func.lower(func.trim(Track.artist)) == artist_normalized,
             Track.status == TrackStatus.ACTIVE,
         )
         .order_by(Track.album, Track.track_number)
