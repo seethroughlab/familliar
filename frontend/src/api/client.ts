@@ -1491,4 +1491,32 @@ export const artworkApi = {
   },
 };
 
+// Background Jobs API
+export interface JobProgress {
+  current: number;
+  total: number;
+}
+
+export interface BackgroundJob {
+  type: 'library_sync' | 'spotify_sync' | 'new_releases' | 'artwork_fetch';
+  status: 'running' | 'idle' | 'error' | 'complete';
+  phase: string;
+  progress: JobProgress | null;
+  message: string;
+  current_item: string | null;
+  started_at: string | null;
+}
+
+export interface BackgroundJobsResponse {
+  jobs: BackgroundJob[];
+  active_count: number;
+}
+
+export const backgroundApi = {
+  getJobs: async (): Promise<BackgroundJobsResponse> => {
+    const { data } = await api.get('/background/jobs');
+    return data;
+  },
+};
+
 export default api;

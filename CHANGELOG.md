@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.18] - 2026-01-11
+
+### Added
+
+- **Background jobs status indicator** - see active background tasks in the header
+  - Spinner icon appears when any background job is running
+  - Click to see detailed progress for each job type
+  - Tracks: Library Sync, Spotify Sync, New Releases Check, Artwork Fetch
+  - Progress bars with current item and percentage
+  - New endpoint: `GET /api/v1/background/jobs`
+
+### Fixed
+
+- **3D Explorer audio preview volume** - hover previews now respect the player volume slider instead of always playing at 40%
+
 ## [0.1.0-alpha.17] - 2026-01-11
 
 ### Added

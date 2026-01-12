@@ -11,6 +11,7 @@ import { OfflineIndicator } from './components/PWA/OfflineIndicator';
 import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
+import { BackgroundJobsIndicator } from './components/BackgroundJobsIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
 import { GlobalDropZone, ImportModal } from './components/Import';
 import { ColumnSelector } from './components/Library/ColumnSelector';
@@ -326,8 +327,11 @@ function AppContent() {
                 </>
               )}
 
-              {/* Spacer to push health indicator right */}
+              {/* Spacer to push indicators right */}
               <div className="flex-1" />
+
+              {/* Background jobs indicator - shows when jobs are running */}
+              <BackgroundJobsIndicator />
 
               {/* Health indicator - only shows when issues detected */}
               <HealthIndicator />

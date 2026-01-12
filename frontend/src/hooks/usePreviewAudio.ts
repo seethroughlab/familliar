@@ -6,9 +6,9 @@
  */
 import { useRef, useCallback, useEffect } from 'react';
 import { tracksApi } from '../api/client';
+import { usePlayerStore } from '../stores/playerStore';
 
 // Configuration
-const PREVIEW_VOLUME = 0.4; // 40% volume
 const DEBOUNCE_MS = 400; // Wait before starting preview
 const FADE_IN_MS = 200;
 const FADE_OUT_MS = 300;
@@ -24,6 +24,9 @@ interface AudioChannel {
 }
 
 export function usePreviewAudio() {
+  // Get volume from player store
+  const volume = usePlayerStore((state) => state.volume);
+
   // Two audio channels for crossfade
   const channelARef = useRef<AudioChannel | null>(null);
   const channelBRef = useRef<AudioChannel | null>(null);
@@ -201,8 +204,8 @@ export function usePreviewAudio() {
         inactiveChannel.audio
           .play()
           .then(() => {
-            // Fade in
-            fadeChannel(inactiveChannel, PREVIEW_VOLUME, FADE_IN_MS);
+            // Fade in to player volume
+            fadeChannel(inactiveChannel, volume, FADE_IN_MS);
             activeChannelRef.current = newActiveChannel;
 
             // Set max duration timer
@@ -224,7 +227,7 @@ export function usePreviewAudio() {
           });
       }, DEBOUNCE_MS);
     },
-    [fadeChannel, stopChannel, getInactiveChannel]
+    [fadeChannel, stopChannel, getInactiveChannel, volume]
   );
 
   // Stop all previews with fade out

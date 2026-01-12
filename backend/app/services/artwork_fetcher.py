@@ -8,16 +8,23 @@ Sources (in priority order):
 """
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 import httpx
 
 from app.config import settings
 from app.services.artwork import get_artwork_path, save_artwork
+from app.services.tasks import get_redis
 
 logger = logging.getLogger(__name__)
+
+# Redis key for progress tracking
+ARTWORK_PROGRESS_KEY = "familiar:artwork:progress"
 
 # Rate limiting
 RATE_LIMIT_DELAY = 1.0  # Seconds between requests to Cover Art Archive
@@ -53,8 +60,46 @@ class ArtworkFetcher:
         self._queue: asyncio.Queue[ArtworkFetchRequest] = asyncio.Queue()
         self._failed_cache: dict[str, float] = {}  # album_hash -> timestamp of failure
         self._in_progress: set[str] = set()  # album_hashes currently being fetched
+        self._in_progress_items: dict[str, str] = {}  # album_hash -> "artist - album"
         self._worker_task: asyncio.Task | None = None
         self._last_request_time: float = 0.0
+        # Progress tracking
+        self._completed: int = 0
+        self._failed: int = 0
+        self._started_at: str | None = None
+
+    def _update_progress(self) -> None:
+        """Update progress in Redis."""
+        try:
+            redis = get_redis()
+            queued = self._queue.qsize()
+            in_progress = len(self._in_progress)
+
+            # Get current item being fetched
+            current_item = None
+            if self._in_progress_items:
+                # Get the first in-progress item
+                current_item = next(iter(self._in_progress_items.values()), None)
+
+            # Only write progress if there's activity
+            if queued > 0 or in_progress > 0 or self._completed > 0 or self._failed > 0:
+                data = {
+                    "status": "running" if (queued > 0 or in_progress > 0) else "idle",
+                    "phase": "fetching" if (queued > 0 or in_progress > 0) else "idle",
+                    "queued": queued,
+                    "in_progress": in_progress,
+                    "completed": self._completed,
+                    "failed": self._failed,
+                    "current_item": current_item,
+                    "started_at": self._started_at,
+                    "last_heartbeat": datetime.now().isoformat(),
+                }
+                redis.set(ARTWORK_PROGRESS_KEY, json.dumps(data), ex=3600)
+            else:
+                # Clear progress when idle with no history
+                redis.delete(ARTWORK_PROGRESS_KEY)
+        except Exception as e:
+            logger.debug(f"Failed to update artwork progress: {e}")
 
     async def start(self) -> None:
         """Start the background worker."""
@@ -91,8 +136,15 @@ class ArtworkFetcher:
         if request.album_hash in self._in_progress:
             return False
 
+        # Start tracking if this is the first item
+        if self._started_at is None:
+            self._started_at = datetime.now().isoformat()
+            self._completed = 0
+            self._failed = 0
+
         # Add to queue
         await self._queue.put(request)
+        self._update_progress()
         return True
 
     async def _worker(self) -> None:
@@ -105,10 +157,13 @@ class ArtworkFetcher:
                 full_path = get_artwork_path(request.album_hash, "full")
                 if full_path.exists():
                     self._queue.task_done()
+                    self._update_progress()
                     continue
 
                 # Mark as in progress
                 self._in_progress.add(request.album_hash)
+                self._in_progress_items[request.album_hash] = f"{request.artist} - {request.album}"
+                self._update_progress()
 
                 try:
                     # Rate limit
@@ -117,12 +172,23 @@ class ArtworkFetcher:
                     # Try to fetch artwork
                     success = await self._fetch_artwork(request)
 
-                    if not success:
+                    if success:
+                        self._completed += 1
+                    else:
                         # Cache the failure to avoid repeated attempts
                         self._failed_cache[request.album_hash] = time.time()
+                        self._failed += 1
                 finally:
                     self._in_progress.discard(request.album_hash)
+                    self._in_progress_items.pop(request.album_hash, None)
                     self._queue.task_done()
+                    self._update_progress()
+
+                    # Reset counters when queue is empty
+                    if self._queue.empty() and not self._in_progress:
+                        self._started_at = None
+                        self._completed = 0
+                        self._failed = 0
 
             except asyncio.CancelledError:
                 raise
@@ -357,3 +423,24 @@ def get_artwork_fetcher() -> ArtworkFetcher:
     if _artwork_fetcher is None:
         _artwork_fetcher = ArtworkFetcher()
     return _artwork_fetcher
+
+
+def get_artwork_fetch_progress() -> dict[str, Any] | None:
+    """Get current artwork fetch progress from Redis."""
+    try:
+        redis = get_redis()
+        data: bytes | None = redis.get(ARTWORK_PROGRESS_KEY)  # type: ignore[assignment]
+        if data:
+            return json.loads(data)
+    except Exception as e:
+        logger.debug(f"Failed to get artwork fetch progress: {e}")
+    return None
+
+
+def clear_artwork_fetch_progress() -> None:
+    """Clear artwork fetch progress from Redis."""
+    try:
+        redis = get_redis()
+        redis.delete(ARTWORK_PROGRESS_KEY)
+    except Exception as e:
+        logger.debug(f"Failed to clear artwork fetch progress: {e}")
