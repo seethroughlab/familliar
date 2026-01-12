@@ -75,6 +75,21 @@ export function usePreviewAudio() {
     };
   }, [createChannel]);
 
+  // Sync volume changes to active channel in real-time
+  useEffect(() => {
+    const activeChannel =
+      activeChannelRef.current === 'A'
+        ? channelARef.current
+        : activeChannelRef.current === 'B'
+          ? channelBRef.current
+          : null;
+
+    if (activeChannel && !activeChannel.audio.paused && !activeChannel.fadeInterval) {
+      // Only update if not currently fading (to avoid interfering with fade animations)
+      activeChannel.audio.volume = volume;
+    }
+  }, [volume]);
+
   // Fade a channel's volume
   const fadeChannel = useCallback(
     (
