@@ -6,11 +6,11 @@
  */
 import { useState, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Grid3X3, Music, Loader2 } from 'lucide-react';
-import { libraryApi, tracksApi } from '../../../api/client';
+import { Grid3X3, Loader2 } from 'lucide-react';
+import { libraryApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
-import { useArtworkPrefetchOnVisible } from '../../../hooks/useArtworkPrefetch';
+import { AlbumArtwork } from '../../AlbumArtwork';
 
 const PAGE_SIZE = 50;
 
@@ -167,38 +167,23 @@ interface AlbumCardProps {
 }
 
 function AlbumCard({ album, onClick }: AlbumCardProps) {
-  const [imageError, setImageError] = useState(false);
-
-  // Prefetch artwork when this card becomes visible
-  const prefetchRef = useArtworkPrefetchOnVisible(
-    album.artist,
-    album.name,
-    album.first_track_id
-  );
-
   return (
     <button
-      ref={prefetchRef}
       onClick={onClick}
       className="group text-left bg-zinc-800/30 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors"
     >
       {/* Album artwork */}
-      <div className="aspect-square bg-zinc-700 relative overflow-hidden">
-        {!imageError ? (
-          <img
-            src={tracksApi.getArtworkUrl(album.first_track_id, 'thumb')}
-            alt={album.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Music className="w-12 h-12 text-zinc-500" />
-          </div>
-        )}
+      <div className="aspect-square relative overflow-hidden">
+        <AlbumArtwork
+          artist={album.artist}
+          album={album.name}
+          trackId={album.first_track_id}
+          size="thumb"
+          className="w-full h-full group-hover:scale-105 transition-transform duration-300"
+        />
 
         {/* Track count badge */}
-        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded text-xs text-white">
+        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/70 backdrop-blur-sm rounded text-xs text-white z-10">
           {album.track_count} track{album.track_count !== 1 ? 's' : ''}
         </div>
       </div>

@@ -16,6 +16,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../api/client';
+import { AlbumArtwork } from '../AlbumArtwork';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { TrackContextMenu } from './TrackContextMenu';
@@ -26,9 +27,10 @@ import type { Track } from '../../types';
 interface Props {
   artistName: string;
   onBack: () => void;
+  onGoToAlbum?: (artistName: string, albumName: string) => void;
 }
 
-export function ArtistDetail({ artistName, onBack }: Props) {
+export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const [showFullBio, setShowFullBio] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
@@ -73,6 +75,7 @@ export function ArtistDetail({ artistName, onBack }: Props) {
         // Ignore errors - enrichment is best-effort
       });
     }
+    // Note: Artwork is now handled reactively by AlbumArtwork components
   }, [artist, artistName]);
 
   const handleRefreshLastfm = async () => {
@@ -366,18 +369,17 @@ export function ArtistDetail({ artistName, onBack }: Props) {
               <div
                 key={album.name}
                 className="group bg-zinc-800/50 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors cursor-pointer"
-                onClick={() => handlePlayAlbum(album.name)}
+                onClick={() => onGoToAlbum ? onGoToAlbum(artist.name, album.name) : handlePlayAlbum(album.name)}
               >
-                <div className="aspect-square bg-zinc-700 relative">
-                  <img
-                    src={tracksApi.getArtworkUrl(album.first_track_id, 'thumb')}
-                    alt={album.name}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
+                <div className="aspect-square relative overflow-hidden">
+                  <AlbumArtwork
+                    artist={artist.name}
+                    album={album.name}
+                    trackId={album.first_track_id}
+                    size="thumb"
+                    className="w-full h-full"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity z-20">
                     <Play className="w-10 h-10" fill="currentColor" />
                   </div>
                 </div>

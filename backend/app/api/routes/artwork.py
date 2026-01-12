@@ -110,6 +110,7 @@ async def queue_artwork_batch(request: ArtworkQueueBatchRequest) -> dict[str, An
         "queued_count": len(queued),
         "existing_count": len(exists),
         "queued_hashes": queued,
+        "existing_hashes": exists,
     }
 
 
@@ -123,6 +124,57 @@ async def get_artwork_status(album_hash: str) -> ArtworkStatusResponse:
         album_hash=album_hash,
         exists=full_path.exists() and thumb_path.exists(),
     )
+
+
+@router.get("/{album_hash}/{size}")
+async def get_artwork_by_hash(album_hash: str, size: str) -> Any:
+    """Get artwork by album hash.
+
+    This is the preferred endpoint for fetching artwork as it uses
+    the stable album hash directly rather than requiring a track ID.
+    """
+    from starlette.responses import FileResponse
+
+    if size not in ("full", "thumb"):
+        raise HTTPException(status_code=400, detail="Size must be 'full' or 'thumb'")
+
+    artwork_path = get_artwork_path(album_hash, size)
+
+    if not artwork_path.exists():
+        raise HTTPException(status_code=404, detail="Artwork not found")
+
+    return FileResponse(
+        artwork_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=31536000"},
+    )
+
+
+class ArtworkStatusBatchRequest(BaseModel):
+    """Request to check status of multiple album hashes."""
+
+    hashes: list[str]
+
+
+class ArtworkStatusBatchResponse(BaseModel):
+    """Response with status for multiple album hashes."""
+
+    status: dict[str, bool]  # hash -> exists
+
+
+@router.post("/status/batch")
+async def check_artwork_batch(request: ArtworkStatusBatchRequest) -> ArtworkStatusBatchResponse:
+    """Check if artwork exists for multiple album hashes.
+
+    Returns a map of hash -> exists (bool).
+    Used by frontend to poll for artwork completion.
+    """
+    result = {}
+    for h in request.hashes:
+        thumb_path = get_artwork_path(h, "thumb")
+        result[h] = thumb_path.exists()
+
+    return ArtworkStatusBatchResponse(status=result)
 
 
 @router.head("/check/{artist}/{album}")

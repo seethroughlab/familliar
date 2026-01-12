@@ -314,6 +314,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
           <ArtistDetail
             artistName={selectedArtist}
             onBack={handleBackFromArtist}
+            onGoToAlbum={handleGoToAlbum}
           />
         </div>
       </div>
