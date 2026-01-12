@@ -12,7 +12,7 @@ import { artworkApi, type ArtworkQueueRequest } from '../api/client';
 const processedAlbums = new Set<string>();
 
 // Batch queue for collecting requests
-let batchQueue: ArtworkQueueRequest[] = [];
+const batchQueue: ArtworkQueueRequest[] = [];
 let batchTimeout: ReturnType<typeof setTimeout> | number | null = null;
 
 // Configuration

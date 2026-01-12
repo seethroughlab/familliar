@@ -157,7 +157,7 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
 // Camera controller for smooth focus on selected artist
 interface CameraControllerProps {
   targetArtist: MapNode3D | null;
-  controlsRef: React.RefObject<any>;
+  controlsRef: React.RefObject<React.ComponentRef<typeof OrbitControls>>;
 }
 
 // How close to zoom in when selecting an artist (in world units)
@@ -303,7 +303,7 @@ function UMAPExplorerInner({ onGoToArtist }: BrowserProps) {
   const [hoveredArtist, setHoveredArtist] = useState<MapNode3D | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [previewEnabled, setPreviewEnabled] = useState(true);
-  const controlsRef = useRef<any>(null);
+  const controlsRef = useRef<React.ComponentRef<typeof OrbitControls>>(null);
   const lastClickTimeRef = useRef(0);
 
   // Fetch 3D map data via SSE

@@ -14,6 +14,22 @@ from fastapi.testclient import TestClient
 from app.main import app
 
 
+@pytest.fixture(autouse=True)
+def reset_artwork_fetcher():
+    """Reset the artwork fetcher singleton between tests.
+
+    This prevents asyncio loop issues when tests run with different event loops
+    but share the global singleton.
+    """
+    import app.services.artwork_fetcher as af
+
+    # Reset before test
+    af._artwork_fetcher = None
+    yield
+    # Reset after test
+    af._artwork_fetcher = None
+
+
 @pytest.fixture(scope="session")
 def client() -> Generator[TestClient, None, None]:
     """Provide a test client for the entire test session.
