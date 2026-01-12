@@ -157,7 +157,7 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
 // Camera controller for smooth focus on selected artist
 interface CameraControllerProps {
   targetArtist: MapNode3D | null;
-  controlsRef: React.RefObject<React.ComponentRef<typeof OrbitControls>>;
+  controlsRef: React.RefObject<React.ComponentRef<typeof OrbitControls> | null>;
 }
 
 // How close to zoom in when selecting an artist (in world units)

@@ -17,7 +17,6 @@ from typing import Any
 
 import httpx
 
-from app.config import settings
 from app.services.artwork import get_artwork_path, save_artwork
 from app.services.tasks import get_redis
 
