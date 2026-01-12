@@ -85,7 +85,7 @@ class EgoMapService:
 
             r = get_redis()
             key = self._get_map_cache_key(center, limit)
-            data = r.get(key)
+            data: bytes | None = r.get(key)  # type: ignore[assignment]
             if data:
                 cached = json.loads(data)
                 logger.info(f"Cache hit for ego map {center}:{limit}")
