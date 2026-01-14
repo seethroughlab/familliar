@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.8] - 2026-01-14
+
+### Added
+
+- **Album/artist name normalization** for consistent matching
+  - Case-insensitive grouping: "Alice In Ultraland" and "Alice in Ultraland" now appear as one album
+  - Handles diacritics (Björk = Bjork), quotes, dashes, and whitespace variations
+  - Applied to album grouping, artwork hash computation, and compilation detection
+- **Duplicate artist detection** LLM tools
+  - `find_duplicate_artists` - detects artists with variant spellings (e.g., "Arovane_Phonem" vs "Arovane and Phonem")
+  - `merge_duplicate_artists` - proposes merging duplicates via the review queue
+- **Proposed Changes as main view** - now accessible from Library browser picker
+  - Click the amber indicator to jump directly to the Proposed Changes view
+  - Removed from Settings panel (now has its own dedicated view)
+  - Improved card layout with more space for reviewing changes
+
+### Changed
+
+- **Artwork fetch order** - Last.fm checked first when API key is configured (faster than MusicBrainz)
+- **Background Jobs indicator** now shows queue count (e.g., "5/10 (3 queued)")
+- **Bulk change display** - shows unique values instead of raw JSON with track IDs
+  - Before: `{"uuid1":"proem","uuid2":"Proem",...}`
+  - After: `proem, Proem`
+
+### Fixed
+
+- Settings page crash caused by API responses not being arrays
+- Proposed Changes API endpoint missing trailing slash
+
 ## [0.1.0-alpha.7] - 2026-01-14
 
 ### Added

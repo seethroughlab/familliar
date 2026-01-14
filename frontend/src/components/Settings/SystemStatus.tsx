@@ -320,7 +320,7 @@ export function SystemStatus() {
 
   if (!health) return null;
 
-  const hasWarnings = health.warnings.length > 0;
+  const hasWarnings = Array.isArray(health.warnings) && health.warnings.length > 0;
 
   return (
     <div className={`rounded-lg p-4 border ${getStatusBgColor(health.status)}`}>
@@ -362,7 +362,7 @@ export function SystemStatus() {
 
       {/* Service status badges (always visible) - filter out analysis (shown in Library Status) */}
       <div className="mt-3 flex flex-wrap gap-2">
-        {health.services
+        {Array.isArray(health.services) && health.services
           .filter((service) => service.name !== 'analysis')
           .map((service) => (
             <div
@@ -404,7 +404,7 @@ export function SystemStatus() {
             <h5 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
               Services
             </h5>
-            {health.services
+            {Array.isArray(health.services) && health.services
               .filter((service) => service.name !== 'analysis')
               .map((service) => (
                 <ServiceStatusRow key={service.name} service={service} />
@@ -412,7 +412,7 @@ export function SystemStatus() {
           </div>
 
           {/* Workers */}
-          {workerStatus && workerStatus.workers.length > 0 && (
+          {workerStatus && Array.isArray(workerStatus.workers) && workerStatus.workers.length > 0 && (
             <div className="space-y-2">
               <h5 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
                 Workers
@@ -431,7 +431,7 @@ export function SystemStatus() {
                     </span>
                   </div>
 
-                  {worker.active_tasks.length > 0 ? (
+                  {Array.isArray(worker.active_tasks) && worker.active_tasks.length > 0 ? (
                     <div className="mt-2 space-y-1">
                       {worker.active_tasks.map((task) => (
                         <div
@@ -452,7 +452,7 @@ export function SystemStatus() {
           )}
 
           {/* Recent Failures */}
-          {workerStatus && workerStatus.recent_failures.length > 0 && (
+          {workerStatus && Array.isArray(workerStatus.recent_failures) && workerStatus.recent_failures.length > 0 && (
             <div className="space-y-2">
               <h5 className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
                 Recent Issues

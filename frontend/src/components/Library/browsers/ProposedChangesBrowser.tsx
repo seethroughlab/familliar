@@ -1,3 +1,8 @@
+/**
+ * ProposedChangesBrowser - Full-page view for reviewing proposed metadata changes.
+ *
+ * Registered as a library browser for easy access from the main window.
+ */
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,6 +17,7 @@ import {
   X,
   ChevronDown,
   AlertCircle,
+  FileEdit,
 } from 'lucide-react';
 import {
   proposedChangesApi,
@@ -19,7 +25,8 @@ import {
   type ChangeStatus,
   type ChangeScope,
   type ChangePreview,
-} from '../../api/client';
+} from '../../../api/client';
+import { registerBrowser, type BrowserProps } from '../types';
 
 const STATUS_LABELS: Record<ChangeStatus, string> = {
   pending: 'Pending',
@@ -44,7 +51,26 @@ const SCOPE_LABELS: Record<ChangeScope, string> = {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined) return '(empty)';
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'object') {
+    // Check if it's a track ID -> value mapping (bulk change)
+    // These are objects with UUID-like keys
+    const obj = value as Record<string, unknown>;
+    const keys = Object.keys(obj);
+    if (keys.length > 0 && keys[0].match(/^[0-9a-f]{8}-/)) {
+      // It's a bulk change mapping - show unique values instead
+      const uniqueValues = [...new Set(Object.values(obj).map(v => String(v)))];
+      if (uniqueValues.length === 1) {
+        return uniqueValues[0];
+      }
+      // Show the variations (limit to first 3)
+      const display = uniqueValues.slice(0, 3).join(', ');
+      if (uniqueValues.length > 3) {
+        return `${display}... (${uniqueValues.length} variations)`;
+      }
+      return display;
+    }
+    return JSON.stringify(value);
+  }
   return String(value);
 }
 
@@ -156,7 +182,7 @@ function ChangeCard({
 
   return (
     <div
-      className={`rounded-lg border p-3 space-y-2 ${
+      className={`rounded-lg border p-4 space-y-3 ${
         isPending
           ? 'bg-zinc-900/50 border-zinc-700'
           : isApproved
@@ -170,8 +196,8 @@ function ChangeCard({
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-purple-400 flex-shrink-0" />
-            <span className="text-white font-medium truncate">
+            <ClipboardList className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <span className="text-white font-medium">
               {change.field ? `Set ${change.field}` : change.change_type}
             </span>
             {change.target_type && (
@@ -201,19 +227,19 @@ function ChangeCard({
       </div>
 
       {/* Change details */}
-      <div className="grid grid-cols-2 gap-2 text-sm">
+      <div className="grid grid-cols-2 gap-4 text-sm bg-zinc-800/50 rounded-lg p-3">
         <div>
-          <span className="text-xs text-zinc-500">Before</span>
-          <p className="text-red-400 font-mono text-xs truncate">{formatValue(change.old_value)}</p>
+          <span className="text-xs text-zinc-500 uppercase">Before</span>
+          <p className="text-red-400 font-mono text-sm truncate">{formatValue(change.old_value)}</p>
         </div>
         <div>
-          <span className="text-xs text-zinc-500">After</span>
-          <p className="text-green-400 font-mono text-xs truncate">{formatValue(change.new_value)}</p>
+          <span className="text-xs text-zinc-500 uppercase">After</span>
+          <p className="text-green-400 font-mono text-sm truncate">{formatValue(change.new_value)}</p>
         </div>
       </div>
 
       {/* Metadata */}
-      <div className="flex items-center gap-3 text-xs text-zinc-500">
+      <div className="flex items-center gap-4 text-xs text-zinc-500">
         <span>{SOURCE_LABELS[change.source] || change.source}</span>
         <span>{Math.round(change.confidence * 100)}% confidence</span>
         <span>{Array.isArray(change.target_ids) ? change.target_ids.length : 0} track(s)</span>
@@ -221,13 +247,13 @@ function ChangeCard({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 pt-1 border-t border-zinc-700/50">
+      <div className="flex items-center gap-2 pt-2 border-t border-zinc-700/50">
         {/* Scope selector (for pending/approved) */}
         {(isPending || isApproved) && (
           <div className="relative">
             <button
               onClick={() => setShowScopeDropdown(!showScopeDropdown)}
-              className="flex items-center gap-1 px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs transition-colors"
+              className="flex items-center gap-1 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-sm transition-colors"
             >
               {SCOPE_LABELS[selectedScope]}
               <ChevronDown className="w-3 h-3" />
@@ -241,7 +267,7 @@ function ChangeCard({
                       setSelectedScope(scope);
                       setShowScopeDropdown(false);
                     }}
-                    className={`block w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-600 whitespace-nowrap ${
+                    className={`block w-full text-left px-3 py-2 text-sm hover:bg-zinc-600 whitespace-nowrap ${
                       selectedScope === scope ? 'text-purple-400' : 'text-zinc-200'
                     }`}
                   >
@@ -259,9 +285,9 @@ function ChangeCard({
         <button
           onClick={onPreview}
           disabled={isLoading}
-          className="flex items-center gap-1 px-2 py-1 bg-zinc-700 hover:bg-zinc-600 rounded text-xs transition-colors disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 rounded text-sm transition-colors disabled:opacity-50"
         >
-          <Eye className="w-3 h-3" />
+          <Eye className="w-4 h-4" />
           Preview
         </button>
 
@@ -271,17 +297,17 @@ function ChangeCard({
             <button
               onClick={onApprove}
               disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm transition-colors disabled:opacity-50"
             >
-              {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckSquare className="w-3 h-3" />}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
               Approve
             </button>
             <button
               onClick={onReject}
               disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-zinc-600 hover:bg-zinc-500 rounded text-xs transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-600 hover:bg-zinc-500 rounded text-sm transition-colors disabled:opacity-50"
             >
-              <X className="w-3 h-3" />
+              <X className="w-4 h-4" />
               Reject
             </button>
           </>
@@ -292,17 +318,17 @@ function ChangeCard({
             <button
               onClick={() => onApply(selectedScope)}
               disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 rounded text-xs transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded text-sm transition-colors disabled:opacity-50"
             >
-              {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
               Apply
             </button>
             <button
               onClick={onReject}
               disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-zinc-600 hover:bg-zinc-500 rounded text-xs transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-600 hover:bg-zinc-500 rounded text-sm transition-colors disabled:opacity-50"
             >
-              <X className="w-3 h-3" />
+              <X className="w-4 h-4" />
               Reject
             </button>
           </>
@@ -312,9 +338,9 @@ function ChangeCard({
           <button
             onClick={onUndo}
             disabled={isLoading}
-            className="flex items-center gap-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 rounded text-xs transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 rounded text-sm transition-colors disabled:opacity-50"
           >
-            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Undo2 className="w-3 h-3" />}
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Undo2 className="w-4 h-4" />}
             Undo
           </button>
         )}
@@ -323,9 +349,9 @@ function ChangeCard({
           <button
             onClick={onDelete}
             disabled={isLoading}
-            className="flex items-center gap-1 px-2 py-1 bg-red-600 hover:bg-red-700 rounded text-xs transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded text-sm transition-colors disabled:opacity-50"
           >
-            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
             Delete
           </button>
         )}
@@ -334,7 +360,7 @@ function ChangeCard({
   );
 }
 
-export function ProposedChangesPanel() {
+function ProposedChangesBrowser(_props: BrowserProps) {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<ChangeStatus | null>(null);
   const [previewData, setPreviewData] = useState<ChangePreview | null>(null);
@@ -451,130 +477,129 @@ export function ProposedChangesPanel() {
 
   const totalChanges = stats ? stats.pending + stats.approved + stats.rejected + stats.applied : 0;
 
-  if (totalChanges === 0 && !isLoading) {
-    return (
-      <div className="bg-zinc-800/50 dark:bg-zinc-800/50 light:bg-zinc-100 rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-2">
-          <CheckCircle className="w-5 h-5 text-green-400" />
-          <h4 className="font-medium text-white dark:text-white light:text-zinc-900">No Proposed Changes</h4>
-        </div>
-        <p className="text-sm text-zinc-400 dark:text-zinc-400 light:text-zinc-600">
-          When the AI suggests metadata corrections or you request changes, they'll appear here for review.
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="bg-zinc-800/50 dark:bg-zinc-800/50 light:bg-zinc-100 rounded-lg p-4 space-y-4">
+    <div className="p-4 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <ClipboardList className="w-5 h-5 text-purple-400" />
+      <div className="flex items-center gap-3 mb-6">
+        <FileEdit className="w-6 h-6 text-amber-400" />
         <div>
-          <h4 className="font-medium text-white dark:text-white light:text-zinc-900">Proposed Changes</h4>
-          <p className="text-sm text-zinc-400 dark:text-zinc-400 light:text-zinc-600">
-            Review and apply metadata corrections
+          <h2 className="text-xl font-semibold text-white">Proposed Changes</h2>
+          <p className="text-sm text-zinc-400">Review and apply metadata corrections</p>
+        </div>
+      </div>
+
+      {/* Empty state */}
+      {totalChanges === 0 && !isLoading && (
+        <div className="text-center py-12">
+          <CheckCircle className="w-12 h-12 text-green-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-white mb-2">No Proposed Changes</h3>
+          <p className="text-zinc-400 max-w-md mx-auto">
+            When the AI suggests metadata corrections or you request changes, they'll appear here for review.
           </p>
         </div>
-      </div>
-
-      {/* Status tabs */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setStatusFilter(null)}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === null
-              ? 'bg-purple-600 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          All ({totalChanges})
-        </button>
-        <button
-          onClick={() => setStatusFilter('pending')}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === 'pending'
-              ? 'bg-yellow-600 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          Pending ({stats?.pending || 0})
-        </button>
-        <button
-          onClick={() => setStatusFilter('approved')}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === 'approved'
-              ? 'bg-blue-600 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          Approved ({stats?.approved || 0})
-        </button>
-        <button
-          onClick={() => setStatusFilter('applied')}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === 'applied'
-              ? 'bg-green-600 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          Applied ({stats?.applied || 0})
-        </button>
-        <button
-          onClick={() => setStatusFilter('rejected')}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === 'rejected'
-              ? 'bg-zinc-500 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          Rejected ({stats?.rejected || 0})
-        </button>
-      </div>
-
-      {/* Loading state */}
-      {isLoading && (
-        <div className="flex items-center gap-2 py-8 justify-center">
-          <Loader2 className="w-5 h-5 animate-spin text-zinc-400" />
-          <span className="text-sm text-zinc-400">Loading changes...</span>
-        </div>
       )}
 
-      {/* Error state */}
-      {error && (
-        <div className="flex items-center gap-2 p-3 bg-red-900/30 rounded-lg border border-red-800">
-          <AlertCircle className="w-4 h-4 text-red-400" />
-          <span className="text-sm text-red-400">Failed to load changes</span>
-        </div>
-      )}
+      {totalChanges > 0 && (
+        <>
+          {/* Status tabs */}
+          <div className="flex flex-wrap gap-2 mb-6">
+            <button
+              onClick={() => setStatusFilter(null)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === null
+                  ? 'bg-purple-600 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              All ({totalChanges})
+            </button>
+            <button
+              onClick={() => setStatusFilter('pending')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === 'pending'
+                  ? 'bg-yellow-600 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              Pending ({stats?.pending || 0})
+            </button>
+            <button
+              onClick={() => setStatusFilter('approved')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === 'approved'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              Approved ({stats?.approved || 0})
+            </button>
+            <button
+              onClick={() => setStatusFilter('applied')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === 'applied'
+                  ? 'bg-green-600 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              Applied ({stats?.applied || 0})
+            </button>
+            <button
+              onClick={() => setStatusFilter('rejected')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                statusFilter === 'rejected'
+                  ? 'bg-zinc-500 text-white'
+                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+              }`}
+            >
+              Rejected ({stats?.rejected || 0})
+            </button>
+          </div>
 
-      {/* Changes list */}
-      {!isLoading && !error && Array.isArray(changes) && (
-        <div className="space-y-3 max-h-[500px] overflow-y-auto">
-          {changes.length === 0 ? (
-            <p className="text-sm text-zinc-500 text-center py-4">
-              No {statusFilter ? STATUS_LABELS[statusFilter].toLowerCase() : ''} changes
-            </p>
-          ) : (
-            changes.map((change) => (
-              <ChangeCard
-                key={change.id}
-                change={change}
-                onPreview={() => handlePreview(change.id)}
-                onApprove={() => handleApprove(change.id)}
-                onReject={() => handleReject(change.id)}
-                onApply={(scope) => handleApply(change.id, scope)}
-                onUndo={() => handleUndo(change.id)}
-                onDelete={() => handleDelete(change.id)}
-                isLoading={loadingChangeId === change.id}
-              />
-            ))
+          {/* Loading state */}
+          {isLoading && (
+            <div className="flex items-center gap-2 py-12 justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+              <span className="text-zinc-400">Loading changes...</span>
+            </div>
           )}
-        </div>
+
+          {/* Error state */}
+          {error && (
+            <div className="flex items-center gap-2 p-4 bg-red-900/30 rounded-lg border border-red-800">
+              <AlertCircle className="w-5 h-5 text-red-400" />
+              <span className="text-red-400">Failed to load changes</span>
+            </div>
+          )}
+
+          {/* Changes list */}
+          {!isLoading && !error && Array.isArray(changes) && (
+            <div className="space-y-4">
+              {changes.length === 0 ? (
+                <p className="text-zinc-500 text-center py-8">
+                  No {statusFilter ? STATUS_LABELS[statusFilter].toLowerCase() : ''} changes
+                </p>
+              ) : (
+                changes.map((change) => (
+                  <ChangeCard
+                    key={change.id}
+                    change={change}
+                    onPreview={() => handlePreview(change.id)}
+                    onApprove={() => handleApprove(change.id)}
+                    onReject={() => handleReject(change.id)}
+                    onApply={(scope) => handleApply(change.id, scope)}
+                    onUndo={() => handleUndo(change.id)}
+                    onDelete={() => handleDelete(change.id)}
+                    isLoading={loadingChangeId === change.id}
+                  />
+                ))
+              )}
+            </div>
+          )}
+        </>
       )}
 
       {/* Info text */}
-      <p className="text-xs text-zinc-500 dark:text-zinc-500 light:text-zinc-500">
+      <p className="text-xs text-zinc-500 mt-6 text-center">
         Changes can be applied at different scopes: database only (fast, reversible), with ID3 tags (writes to files),
         or with file organization (moves files to match metadata).
       </p>
@@ -584,3 +609,19 @@ export function ProposedChangesPanel() {
     </div>
   );
 }
+
+// Register the browser
+registerBrowser(
+  {
+    id: 'proposed-changes',
+    name: 'Proposed Changes',
+    description: 'Review metadata corrections',
+    icon: 'FileEdit',
+    category: 'traditional',
+    requiresFeatures: false,
+    requiresEmbeddings: false,
+  },
+  ProposedChangesBrowser
+);
+
+export { ProposedChangesBrowser };

@@ -708,11 +708,13 @@ async def list_albums(
     # Use album_artist (falls back to artist) to properly group compilations
     # Note: album_artist is populated during library sync for compilation albums
     # Cast UUID to text for min() since PostgreSQL doesn't support min(uuid)
+    # Group by lower(album) for case-insensitive matching (e.g., "Alice In Ultraland" = "Alice in Ultraland")
     album_artist_col = func.coalesce(func.nullif(Track.album_artist, ""), Track.artist)
+    album_artist_lower = func.lower(album_artist_col)
     base_query = (
         select(
-            Track.album.label("name"),
-            album_artist_col.label("artist"),
+            func.max(Track.album).label("name"),  # Representative album name from group
+            func.max(album_artist_col).label("artist"),  # Representative artist from group
             func.max(Track.year).label("year"),  # Use max year in case of inconsistency
             func.count(Track.id).label("track_count"),
             func.min(cast(Track.id, TEXT)).label("first_track_id"),
@@ -722,12 +724,12 @@ async def list_albums(
             Track.album != "",
             Track.status == TrackStatus.ACTIVE,
         )
-        .group_by(album_artist_col, Track.album)
+        .group_by(album_artist_lower, func.lower(Track.album))
     )
 
-    # Apply artist filter (filter by album_artist to match grouping)
+    # Apply artist filter (filter by album_artist to match grouping, case-insensitive)
     if artist:
-        base_query = base_query.having(album_artist_col == artist)
+        base_query = base_query.having(album_artist_lower == func.lower(artist))
 
     # Apply search filter (search both album name and album artist)
     if search:

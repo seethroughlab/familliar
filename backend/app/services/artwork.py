@@ -38,9 +38,14 @@ def get_artwork_path(album_hash: str, size: str = "full") -> Path:
 def compute_album_hash(artist: str | None, album: str | None) -> str:
     """Compute a hash for identifying unique albums.
 
-    Uses artist + album to create a stable identifier.
+    Uses normalized artist + album to create a stable identifier.
+    Normalization handles case, diacritics, quotes, dashes, whitespace.
     """
-    key = f"{artist or 'Unknown'}::{album or 'Unknown'}"
+    from app.services.normalize import normalize_for_matching
+
+    artist_norm = normalize_for_matching(artist) or "unknown"
+    album_norm = normalize_for_matching(album) or "unknown"
+    key = f"{artist_norm}::{album_norm}"
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 

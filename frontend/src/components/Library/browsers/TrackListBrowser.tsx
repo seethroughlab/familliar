@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
+import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen, Clock, Disc } from 'lucide-react';
 import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
 import { useFavorites } from '../../../hooks/useFavorites';
@@ -17,6 +17,7 @@ import { useOfflineTrack } from '../../../hooks/useOfflineTrack';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import { registerBrowser, type BrowserProps, type ContextMenuState, initialContextMenuState } from '../types';
 import { TrackContextMenu } from '../TrackContextMenu';
+import { AlbumArtwork } from '../../AlbumArtwork';
 import type { Track } from '../../../types';
 
 const PAGE_SIZE = 50;
@@ -549,8 +550,86 @@ export function TrackListBrowser({
     );
   }
 
+  // Compute album stats from tracks
+  const isAlbumView = filters.album && allTracks.length > 0;
+  const albumStats = isAlbumView ? {
+    artist: filters.artist || allTracks[0]?.album_artist || allTracks[0]?.artist || 'Unknown Artist',
+    album: filters.album,
+    year: allTracks.find(t => t.year)?.year || null,
+    trackCount: total,
+    totalDuration: allTracks.reduce((sum, t) => sum + (t.duration_seconds || 0), 0),
+    firstTrackId: allTracks[0]?.id,
+  } : null;
+
+  const formatTotalDuration = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${mins}m`;
+    }
+    return `${mins} min`;
+  };
+
+  const handlePlayAll = () => {
+    if (allTracks.length > 0) {
+      setQueue(allTracks, 0);
+    }
+  };
+
   return (
     <div>
+      {/* Album header when viewing an album */}
+      {albumStats && (
+        <div className="flex items-start gap-4 md:gap-6 p-4 mb-4 bg-zinc-800/30 rounded-lg">
+          {/* Album artwork */}
+          <div className="w-24 h-24 md:w-40 md:h-40 rounded-lg overflow-hidden flex-shrink-0 shadow-lg">
+            <AlbumArtwork
+              artist={albumStats.artist}
+              album={albumStats.album}
+              trackId={albumStats.firstTrackId}
+              size="full"
+              className="w-full h-full"
+            />
+          </div>
+
+          {/* Album info */}
+          <div className="flex-1 min-w-0 py-1">
+            <div className="text-xs text-zinc-400 uppercase tracking-wider mb-1">Album</div>
+            <h2 className="text-xl md:text-2xl font-bold truncate mb-2">{albumStats.album}</h2>
+
+            {/* Artist (clickable) */}
+            <button
+              onClick={() => onGoToArtist(albumStats.artist)}
+              className="text-zinc-300 hover:text-white hover:underline truncate block mb-2"
+            >
+              {albumStats.artist}
+            </button>
+
+            {/* Stats row */}
+            <div className="flex items-center gap-4 text-sm text-zinc-400">
+              {albumStats.year && <span>{albumStats.year}</span>}
+              <span className="flex items-center gap-1">
+                <Disc className="w-4 h-4" />
+                {albumStats.trackCount} tracks
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {formatTotalDuration(albumStats.totalDuration)}
+              </span>
+            </div>
+
+            {/* Play button */}
+            <button
+              onClick={handlePlayAll}
+              className="mt-4 flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-full transition-colors"
+            >
+              <Play className="w-4 h-4" fill="currentColor" />
+              Play All
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Mobile view - card layout (visible below md breakpoint) */}
       <div className="md:hidden">
         {allTracks.map((track, index) => (

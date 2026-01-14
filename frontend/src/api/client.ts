@@ -1594,7 +1594,7 @@ export const proposedChangesApi = {
     limit?: number;
     offset?: number;
   }): Promise<ProposedChange[]> => {
-    const { data } = await api.get('/proposed-changes', { params });
+    const { data } = await api.get('/proposed-changes/', { params });
     return data;
   },
 

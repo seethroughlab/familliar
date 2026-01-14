@@ -356,6 +356,46 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["artist", "album", "reason"]
         }
+    },
+    {
+        "name": "find_duplicate_artists",
+        "description": "Find artists in the library that are likely duplicates (same artist with different spellings). Detects variations like 'Artist_Name' vs 'Artist and Name', '&' vs 'and', etc. Use when the user mentions duplicate artists or to help clean up the library.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "artist_hint": {
+                    "type": "string",
+                    "description": "Optional: specific artist name to check for duplicates"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max duplicate groups to return (default 10)",
+                    "default": 10
+                }
+            }
+        }
+    },
+    {
+        "name": "merge_duplicate_artists",
+        "description": "Propose merging duplicate artists by changing the artist field on all tracks. Creates a proposed change for user approval.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source_artist": {
+                    "type": "string",
+                    "description": "The artist name to change FROM (the duplicate/incorrect spelling)"
+                },
+                "target_artist": {
+                    "type": "string",
+                    "description": "The artist name to change TO (the canonical/correct spelling)"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Explanation of why these are duplicates"
+                }
+            },
+            "required": ["source_artist", "target_artist", "reason"]
+        }
     }
 ]
 

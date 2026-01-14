@@ -26,6 +26,10 @@ function JobProgressBar({ job }: { job: BackgroundJob }) {
     ? Math.round((progress.current / progress.total) * 100)
     : null;
 
+  // Extract queue count from message for artwork jobs (format: "Fetching artwork (X queued)")
+  const queueMatch = job.message?.match(/\((\d+) queued\)/);
+  const queuedCount = queueMatch ? parseInt(queueMatch[1], 10) : null;
+
   return (
     <div className="p-3 bg-zinc-700/50 rounded-lg">
       <div className="flex items-center gap-2 mb-1">
@@ -33,16 +37,17 @@ function JobProgressBar({ job }: { job: BackgroundJob }) {
         <span className="text-sm font-medium text-white">
           {jobNames[job.type]}
         </span>
-        {percent !== null && (
-          <span className="text-xs text-zinc-400 ml-auto">
-            {percent}%
-          </span>
-        )}
+        <span className="text-xs text-zinc-400 ml-auto">
+          {progress && progress.total > 0 && `${progress.current}/${progress.total}`}
+          {queuedCount !== null && queuedCount > 0 && ` (${queuedCount} queued)`}
+        </span>
       </div>
 
-      <p className="text-xs text-zinc-400 mb-2 truncate">
-        {job.current_item || job.message}
-      </p>
+      {job.current_item && (
+        <p className="text-xs text-zinc-400 mb-2 truncate">
+          {job.current_item}
+        </p>
+      )}
 
       {progress && progress.total > 0 && (
         <div className="h-1.5 bg-zinc-600 rounded-full overflow-hidden">

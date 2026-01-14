@@ -20,6 +20,24 @@ import httpx
 from app.services.artwork import get_artwork_path, save_artwork
 from app.services.tasks import get_redis
 
+# Image magic bytes for validation
+IMAGE_MAGIC_BYTES = {
+    b'\xff\xd8\xff': 'jpeg',
+    b'\x89PNG': 'png',
+    b'GIF8': 'gif',
+    b'RIFF': 'webp',  # WebP starts with RIFF
+}
+
+
+def is_valid_image_data(data: bytes) -> bool:
+    """Check if bytes appear to be valid image data based on magic bytes."""
+    if not data or len(data) < 4:
+        return False
+    for magic, _ in IMAGE_MAGIC_BYTES.items():
+        if data.startswith(magic):
+            return True
+    return False
+
 logger = logging.getLogger(__name__)
 
 # Redis key for progress tracking
@@ -66,6 +84,7 @@ class ArtworkFetcher:
         self._completed: int = 0
         self._failed: int = 0
         self._started_at: str | None = None
+        self._queued_hashes: set[str] = set()  # Track what's already queued
 
     def _update_progress(self) -> None:
         """Update progress in Redis."""
@@ -116,10 +135,21 @@ class ArtworkFetcher:
                 pass
             logger.info("Artwork fetcher worker stopped")
 
+    def is_pending(self, album_hash: str) -> bool:
+        """Check if an album is pending (queued or in progress)."""
+        return album_hash in self._queued_hashes or album_hash in self._in_progress
+
+    def is_failed(self, album_hash: str) -> bool:
+        """Check if an album fetch recently failed."""
+        failed_time = self._failed_cache.get(album_hash)
+        if failed_time and time.time() - failed_time < CACHE_FAILED_DURATION:
+            return True
+        return False
+
     async def queue(self, request: ArtworkFetchRequest) -> bool:
         """Queue an artwork fetch request.
 
-        Returns True if queued, False if skipped (already exists, failed recently, or in progress).
+        Returns True if queued, False if skipped (already exists, failed recently, in progress, or already queued).
         """
         # Skip if artwork already exists
         full_path = get_artwork_path(request.album_hash, "full")
@@ -135,6 +165,10 @@ class ArtworkFetcher:
         if request.album_hash in self._in_progress:
             return False
 
+        # Skip if already queued
+        if request.album_hash in self._queued_hashes:
+            return False
+
         # Start tracking if this is the first item
         if self._started_at is None:
             self._started_at = datetime.now().isoformat()
@@ -142,6 +176,7 @@ class ArtworkFetcher:
             self._failed = 0
 
         # Add to queue
+        self._queued_hashes.add(request.album_hash)
         await self._queue.put(request)
         self._update_progress()
         return True
@@ -151,6 +186,9 @@ class ArtworkFetcher:
         while True:
             try:
                 request = await self._queue.get()
+
+                # Remove from queued set
+                self._queued_hashes.discard(request.album_hash)
 
                 # Skip if already processed (may have been queued multiple times)
                 full_path = get_artwork_path(request.album_hash, "full")
@@ -207,19 +245,32 @@ class ArtworkFetcher:
         """Fetch artwork from available sources.
 
         Returns True if artwork was successfully downloaded and saved.
+        Order: Last.fm (if configured) → MusicBrainz/CAA → Spotify
+        Last.fm is preferred when available as it's faster and more reliable.
         """
-        logger.debug(f"Fetching artwork for {request.artist} - {request.album}")
+        from app.services.lastfm import get_lastfm_service
 
-        # Try Cover Art Archive first (via MusicBrainz)
-        image_data = await self._fetch_from_musicbrainz(request.artist, request.album)
+        logger.info(f"Fetching artwork for {request.artist} - {request.album}")
+        image_data = None
 
-        # Try Last.fm if MusicBrainz failed
-        if not image_data:
+        # Try Last.fm first if configured (faster and more reliable)
+        lastfm = get_lastfm_service()
+        if lastfm.is_configured():
             image_data = await self._fetch_from_lastfm(request.artist, request.album)
+            if image_data:
+                logger.debug(f"Found artwork via Last.fm for {request.artist} - {request.album}")
+
+        # Try Cover Art Archive (via MusicBrainz) if Last.fm failed or not configured
+        if not image_data:
+            image_data = await self._fetch_from_musicbrainz(request.artist, request.album)
+            if image_data:
+                logger.debug(f"Found artwork via MusicBrainz/CAA for {request.artist} - {request.album}")
 
         # Try Spotify if available and others failed
         if not image_data:
             image_data = await self._fetch_from_spotify(request.artist, request.album)
+            if image_data:
+                logger.debug(f"Found artwork via Spotify for {request.artist} - {request.album}")
 
         if image_data:
             # Save artwork to disk
@@ -228,8 +279,21 @@ class ArtworkFetcher:
                 logger.info(f"Downloaded artwork for {request.artist} - {request.album}")
                 return True
 
-        logger.debug(f"No artwork found for {request.artist} - {request.album}")
+        logger.info(f"No artwork found for {request.artist} - {request.album}")
         return False
+
+    def _normalize_for_search(self, text: str) -> str:
+        """Normalize text for MusicBrainz search.
+
+        - Replace commas in numbers with spaces (10,000 -> 10 000)
+        - Normalize common unicode characters
+        """
+        import re
+        # Replace commas in numbers (e.g., "10,000" -> "10 000")
+        normalized = re.sub(r'(\d),(\d)', r'\1 \2', text)
+        # Normalize some unicode characters that might differ
+        normalized = normalized.replace('†', '✝')  # Dagger variants
+        return normalized
 
     async def _fetch_from_musicbrainz(self, artist: str, album: str) -> bytes | None:
         """Search MusicBrainz for release and fetch from Cover Art Archive."""
@@ -238,8 +302,13 @@ class ArtworkFetcher:
             headers={"User-Agent": MB_USER_AGENT},
         ) as client:
             try:
+                # Normalize album name for better matching
+                normalized_album = self._normalize_for_search(album)
+                normalized_artist = self._normalize_for_search(artist)
+
                 # Search for release
-                search_query = f'release:"{album}" AND artist:"{artist}"'
+                search_query = f'release:"{normalized_album}" AND artist:"{normalized_artist}"'
+                logger.info(f"MusicBrainz search: {search_query}")
                 response = await client.get(
                     f"{MB_BASE_URL}/release",
                     params={
@@ -250,17 +319,23 @@ class ArtworkFetcher:
                 )
 
                 if response.status_code != 200:
+                    logger.info(f"MusicBrainz returned {response.status_code} for {artist} - {album}")
                     return None
 
                 data = response.json()
                 releases = data.get("releases", [])
+                logger.info(f"MusicBrainz found {len(releases)} releases for {artist} - {album}")
 
                 if not releases:
                     return None
 
                 # Try each release until we find one with artwork
-                for release in releases:
+                for i, release in enumerate(releases):
                     release_id = release.get("id")
+                    release_title = release.get("title", "?")
+                    artist_credit = release.get("artist-credit", [])
+                    artist_name = artist_credit[0].get("name", "?") if artist_credit else "?"
+                    logger.info(f"MusicBrainz release {i+1}: '{artist_name}' - '{release_title}' (id={release_id})")
                     if not release_id:
                         continue
 
@@ -271,6 +346,8 @@ class ArtworkFetcher:
 
                     # Rate limit between CAA requests
                     await asyncio.sleep(0.5)
+
+                logger.info(f"No CAA artwork found for any of {len(releases)} releases")
 
             except httpx.TimeoutException:
                 logger.debug(f"MusicBrainz timeout for {artist} - {album}")
@@ -289,12 +366,18 @@ class ArtworkFetcher:
             response = await client.get(url, follow_redirects=True)
 
             if response.status_code == 200:
-                return response.content
+                content = response.content
+                if is_valid_image_data(content):
+                    logger.info(f"CAA success for {release_id}: {len(content)} bytes")
+                    return content
+                logger.info(f"CAA returned invalid image data for {release_id}")
+            else:
+                logger.info(f"CAA returned {response.status_code} for {release_id}")
 
         except httpx.TimeoutException:
-            pass
+            logger.info(f"CAA timeout for {release_id}")
         except Exception as e:
-            logger.debug(f"CAA error for {release_id}: {e}")
+            logger.info(f"CAA error for {release_id}: {e}")
 
         return None
 
@@ -342,7 +425,10 @@ class ArtworkFetcher:
                     # Download the image
                     img_response = await client.get(image_url, follow_redirects=True)
                     if img_response.status_code == 200:
-                        return img_response.content
+                        content = img_response.content
+                        if is_valid_image_data(content):
+                            return content
+                        logger.debug(f"Last.fm returned invalid image data for {artist} - {album}")
 
             except Exception as e:
                 logger.debug(f"Last.fm error: {e}")
@@ -404,7 +490,10 @@ class ArtworkFetcher:
                 if image_url:
                     img_response = await client.get(image_url, follow_redirects=True)
                     if img_response.status_code == 200:
-                        return img_response.content
+                        content = img_response.content
+                        if is_valid_image_data(content):
+                            return content
+                        logger.debug(f"Spotify returned invalid image data for {artist} - {album}")
 
             except Exception as e:
                 logger.debug(f"Spotify error: {e}")

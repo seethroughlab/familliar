@@ -306,7 +306,7 @@ export function LibrarySync() {
           </div>
 
           {/* Errors */}
-          {progress.errors.length > 0 && (
+          {Array.isArray(progress.errors) && progress.errors.length > 0 && (
             <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">
               <p className="font-medium mb-1">Errors ({progress.errors.length}):</p>
               <ul className="list-disc list-inside">

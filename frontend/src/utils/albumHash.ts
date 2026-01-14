@@ -1,4 +1,38 @@
 /**
+ * Normalize a string for consistent matching.
+ *
+ * This must stay in sync with backend/app/services/normalize.py:normalize_for_matching
+ * Handles: case, whitespace, quotes, dashes, diacritics.
+ */
+function normalizeForMatching(name: string | null | undefined): string {
+  if (!name) return '';
+
+  let s = name.trim();
+
+  // Normalize quotes: ' ' ´ ` ′ → '
+  s = s.replace(/[''´`′]/g, "'");
+  // Normalize quotes: " " « » → "
+  s = s.replace(/[""«»]/g, '"');
+
+  // Normalize dashes: – — − ‐ ‒ ⁻ → -
+  s = s.replace(/[–—−‐‒⁻]/g, '-');
+
+  // Remove diacritics: Björk → Bjork
+  // NFD decomposes characters (é → e + combining accent)
+  s = s.normalize('NFD');
+  // Remove combining marks (accents, umlauts, etc.) - Unicode range \u0300-\u036f
+  s = s.replace(/[\u0300-\u036f]/g, '');
+
+  // Case fold (toLowerCase is close enough for JS)
+  s = s.toLowerCase();
+
+  // Collapse whitespace
+  s = s.split(/\s+/).join(' ');
+
+  return s;
+}
+
+/**
  * Compute album hash matching the backend algorithm.
  *
  * This must stay in sync with backend/app/services/artwork.py:compute_album_hash
@@ -8,7 +42,9 @@ export async function computeAlbumHash(
   artist: string | null | undefined,
   album: string | null | undefined
 ): Promise<string> {
-  const key = `${artist || 'Unknown'}::${album || 'Unknown'}`;
+  const artistNorm = normalizeForMatching(artist) || 'unknown';
+  const albumNorm = normalizeForMatching(album) || 'unknown';
+  const key = `${artistNorm}::${albumNorm}`;
   const hash = await sha256(key);
   return hash.slice(0, 16);
 }

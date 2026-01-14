@@ -326,7 +326,7 @@ export function SpotifySettings() {
               </div>
             </div>
 
-            {syncStatus.progress.errors.length > 0 && (
+            {Array.isArray(syncStatus.progress.errors) && syncStatus.progress.errors.length > 0 && (
               <div className="mt-2 p-2 bg-red-900/20 border border-red-800 rounded text-xs text-red-300">
                 <p className="font-medium mb-1">Errors ({syncStatus.progress.errors.length}):</p>
                 <ul className="list-disc list-inside">

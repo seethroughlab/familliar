@@ -4,7 +4,7 @@
  * Automatically requests artwork, shows loading placeholder, and updates
  * when artwork becomes available. Uses the artworkStore for state management.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Disc } from 'lucide-react';
 import { useArtworkStore } from '../stores/artworkStore';
 
@@ -26,27 +26,25 @@ export function AlbumArtwork({
   className = '',
   fallbackTrackId,
 }: AlbumArtworkProps) {
-  const { requestArtwork, getStatus, getArtworkUrl } = useArtworkStore();
+  const requestArtwork = useArtworkStore((state) => state.requestArtwork);
+  // Subscribe to status map to trigger re-render when it changes
+  const statusMap = useArtworkStore((state) => state.status);
+  const hashesMap = useArtworkStore((state) => state.hashes);
   const [imageError, setImageError] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const requestedRef = useRef(false);
 
   // Normalize artist/album
   const normalizedArtist = artist || 'Unknown';
   const normalizedAlbum = album || 'Unknown';
 
-  // Request artwork on mount and when artist/album changes
-  useEffect(() => {
-    if (normalizedArtist !== 'Unknown' && normalizedAlbum !== 'Unknown') {
-      requestArtwork([{ artist: normalizedArtist, album: normalizedAlbum, trackId }]);
-    }
-  }, [normalizedArtist, normalizedAlbum, trackId, requestArtwork]);
+  // Get status and hash from subscribed state
+  const cacheKey = `${normalizedArtist}::${normalizedAlbum}`;
+  const status = statusMap.get(cacheKey) || 'unknown';
+  const hash = hashesMap.get(cacheKey);
 
-  // Reset error state when artist/album changes
-  useEffect(() => {
-    setImageError(false);
-  }, [normalizedArtist, normalizedAlbum]);
-
-  const status = getStatus(normalizedArtist, normalizedAlbum);
-  const artworkUrl = getArtworkUrl(normalizedArtist, normalizedAlbum, size);
+  // Compute artwork URL from local state
+  const artworkUrl = (hash && status === 'ready') ? `/api/v1/artwork/${hash}/${size}` : null;
 
   // Determine what to show
   const showPlaceholder = !artist || !album || status === 'unknown' || status === 'checking' || status === 'pending' || status === 'missing' || imageError;
@@ -54,9 +52,60 @@ export function AlbumArtwork({
   // For backwards compatibility, try the old track-based URL if we have a fallback
   const fallbackUrl = fallbackTrackId ? `/api/v1/tracks/${fallbackTrackId}/artwork?size=${size}` : null;
 
+  // Debug: log render with current state (only when status changes from initial)
+  if (status !== 'unknown') {
+    console.log(`[AlbumArtwork RENDER] ${normalizedArtist} - ${normalizedAlbum}: status=${status}, hash=${hash}, artworkUrl=${artworkUrl}, showPlaceholder=${showPlaceholder}, imageError=${imageError}`);
+  }
+
+  // Request artwork when component becomes visible (strictly visible, no margin)
+  useEffect(() => {
+    const element = containerRef.current;
+    console.log(`[AlbumArtwork OBSERVER SETUP] ${normalizedArtist} - ${normalizedAlbum}: element=${!!element}, requestedRef=${requestedRef.current}`);
+
+    if (!element) {
+      console.log(`[AlbumArtwork OBSERVER SKIP] No element for ${normalizedArtist} - ${normalizedAlbum}`);
+      return;
+    }
+    if (normalizedArtist === 'Unknown' || normalizedAlbum === 'Unknown') {
+      console.log(`[AlbumArtwork OBSERVER SKIP] Unknown artist/album for ${normalizedArtist} - ${normalizedAlbum}`);
+      return;
+    }
+    if (requestedRef.current) {
+      console.log(`[AlbumArtwork OBSERVER SKIP] Already requested ${normalizedArtist} - ${normalizedAlbum}`);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        console.log(`[AlbumArtwork OBSERVER CALLBACK] ${normalizedArtist} - ${normalizedAlbum}: isIntersecting=${entries[0]?.isIntersecting}, requestedRef=${requestedRef.current}`);
+        if (entries[0]?.isIntersecting && !requestedRef.current) {
+          requestedRef.current = true;
+          console.log(`[AlbumArtwork VISIBLE] Requesting: ${normalizedArtist} - ${normalizedAlbum}`);
+          requestArtwork([{ artist: normalizedArtist, album: normalizedAlbum, trackId }]);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '0px', threshold: 0.01 }  // Strictly visible - at least 1% in view
+    );
+
+    observer.observe(element);
+    console.log(`[AlbumArtwork OBSERVER STARTED] Observing ${normalizedArtist} - ${normalizedAlbum}`);
+    return () => observer.disconnect();
+  }, [normalizedArtist, normalizedAlbum, trackId, requestArtwork]);
+
+  // Reset requested ref when artist/album changes
+  useEffect(() => {
+    requestedRef.current = false;
+  }, [normalizedArtist, normalizedAlbum]);
+
+  // Reset error state when artist/album changes
+  useEffect(() => {
+    setImageError(false);
+  }, [normalizedArtist, normalizedAlbum]);
+
   if (showPlaceholder && !fallbackUrl) {
     return (
-      <div className={`bg-zinc-700 flex items-center justify-center ${className}`}>
+      <div ref={containerRef} className={`bg-zinc-700 flex items-center justify-center ${className}`}>
         <Disc className="w-1/3 h-1/3 text-zinc-500" />
       </div>
     );
@@ -65,13 +114,19 @@ export function AlbumArtwork({
   const imageUrl = artworkUrl || fallbackUrl;
 
   return (
-    <div className={`bg-zinc-700 relative ${className}`}>
+    <div ref={containerRef} className={`bg-zinc-700 relative ${className}`}>
       {imageUrl && !imageError && (
         <img
           src={imageUrl}
           alt={`${normalizedArtist} - ${normalizedAlbum}`}
           className="w-full h-full object-cover"
-          onError={() => setImageError(true)}
+          onLoad={() => {
+            console.log(`[AlbumArtwork IMG LOADED] ${normalizedArtist} - ${normalizedAlbum}: ${imageUrl}`);
+          }}
+          onError={(e) => {
+            console.log(`[AlbumArtwork IMG ERROR] ${normalizedArtist} - ${normalizedAlbum}: ${imageUrl}`, e);
+            setImageError(true);
+          }}
         />
       )}
       {/* Fallback icon - shown behind the image */}

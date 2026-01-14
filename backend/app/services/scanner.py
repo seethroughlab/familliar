@@ -561,37 +561,42 @@ class LibraryScanner:
 
         Sets album_artist = "Various Artists" for all tracks in those albums.
         Returns dict with albums_detected and tracks_updated counts.
+
+        Uses case-insensitive album matching to handle variations like
+        "Alice In Ultraland" vs "Alice in Ultraland".
         """
         from sqlalchemy import func, update
 
         # Find albums with multiple artists (compilation candidates)
         # Only consider tracks where album_artist is not already set
+        # Use lower(album) for case-insensitive grouping
         compilation_query = (
-            select(Track.album)
+            select(func.lower(Track.album).label("album_lower"))
             .where(
                 Track.album.isnot(None),
                 Track.album != "",
                 Track.status == TrackStatus.ACTIVE,
                 (Track.album_artist.is_(None) | (Track.album_artist == "")),
             )
-            .group_by(Track.album)
-            .having(func.count(func.distinct(Track.artist)) > 1)
+            .group_by(func.lower(Track.album))
+            .having(func.count(func.distinct(func.lower(Track.artist))) > 1)
         )
 
         result = await self.db.execute(compilation_query)
-        compilation_albums = [row[0] for row in result.fetchall()]
+        compilation_albums_lower = [row[0] for row in result.fetchall()]
 
-        if not compilation_albums:
+        if not compilation_albums_lower:
             logger.info("No compilation albums detected")
             return {"albums_detected": 0, "tracks_updated": 0}
 
-        logger.info(f"Detected {len(compilation_albums)} compilation albums: {compilation_albums[:5]}...")
+        logger.info(f"Detected {len(compilation_albums_lower)} compilation albums: {compilation_albums_lower[:5]}...")
 
         # Update all tracks in those albums to have album_artist = "Various Artists"
+        # Use case-insensitive matching
         update_stmt = (
             update(Track)
             .where(
-                Track.album.in_(compilation_albums),
+                func.lower(Track.album).in_(compilation_albums_lower),
                 (Track.album_artist.is_(None) | (Track.album_artist == "")),
             )
             .values(album_artist="Various Artists")
@@ -603,11 +608,11 @@ class LibraryScanner:
         await self.db.commit()
 
         logger.info(
-            f"Compilation detection complete: {len(compilation_albums)} albums, "
+            f"Compilation detection complete: {len(compilation_albums_lower)} albums, "
             f"{tracks_updated} tracks updated"
         )
 
-        return {"albums_detected": len(compilation_albums), "tracks_updated": tracks_updated}
+        return {"albums_detected": len(compilation_albums_lower), "tracks_updated": tracks_updated}
 
     async def _update_track(
         self,

@@ -175,6 +175,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     (artistName: string, albumName: string) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
+        // Clear artist detail view - we're navigating to album
+        next.delete('artistDetail');
         next.delete('artist');
         next.delete('album');
         next.delete('yearFrom');

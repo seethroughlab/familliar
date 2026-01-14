@@ -76,14 +76,19 @@ async def queue_artwork_batch(request: ArtworkQueueBatchRequest) -> dict[str, An
     Returns immediately (202 Accepted). Artworks will be fetched in background.
     Duplicates and existing artworks are automatically filtered.
     """
+    from app.services.artwork_fetcher import get_artwork_fetcher
+
     bg = get_background_manager()
+    fetcher = get_artwork_fetcher()
 
     queued = []
     exists = []
+    pending = []  # Already in queue or in progress from previous request
     seen_hashes: set[str] = set()
 
     for item in request.items:
         album_hash = compute_album_hash(item.artist, item.album)
+        logger.info(f"Queue batch: '{item.artist}' - '{item.album}' -> hash: {album_hash}")
 
         # Skip duplicates in this batch
         if album_hash in seen_hashes:
@@ -92,25 +97,36 @@ async def queue_artwork_batch(request: ArtworkQueueBatchRequest) -> dict[str, An
 
         # Check if artwork already exists
         full_path = get_artwork_path(album_hash, "full")
+        logger.info(f"Checking path {full_path} exists: {full_path.exists()}")
         if full_path.exists():
             exists.append(album_hash)
+            logger.info(f"Album exists: {album_hash}")
+            continue
+
+        # Check if already pending (queued or in progress from previous request)
+        if fetcher.is_pending(album_hash):
+            pending.append(album_hash)
             continue
 
         # Queue for background download
-        await bg.queue_artwork_fetch(
+        was_queued = await bg.queue_artwork_fetch(
             album_hash=album_hash,
             artist=item.artist,
             album=item.album,
             track_id=item.track_id,
         )
-        queued.append(album_hash)
+        if was_queued:
+            queued.append(album_hash)
+        # If not queued here, it must have been recently failed - frontend will treat as 'missing'
 
+    logger.info(f"Batch result: queued={len(queued)}, existing={len(exists)}, pending={len(pending)}")
     return {
         "status": "accepted",
         "queued_count": len(queued),
         "existing_count": len(exists),
         "queued_hashes": queued,
         "existing_hashes": exists,
+        "pending_hashes": pending,  # Already being fetched
     }
 
 
@@ -160,21 +176,34 @@ class ArtworkStatusBatchResponse(BaseModel):
     """Response with status for multiple album hashes."""
 
     status: dict[str, bool]  # hash -> exists
+    failed: list[str] = []  # hashes that failed to fetch (stop polling)
 
 
 @router.post("/status/batch")
 async def check_artwork_batch(request: ArtworkStatusBatchRequest) -> ArtworkStatusBatchResponse:
     """Check if artwork exists for multiple album hashes.
 
-    Returns a map of hash -> exists (bool).
+    Returns a map of hash -> exists (bool) and list of failed hashes.
     Used by frontend to poll for artwork completion.
     """
+    from app.services.artwork_fetcher import get_artwork_fetcher
+
+    fetcher = get_artwork_fetcher()
     result = {}
+    failed = []
+
     for h in request.hashes:
         thumb_path = get_artwork_path(h, "thumb")
-        result[h] = thumb_path.exists()
+        if thumb_path.exists():
+            result[h] = True
+        elif fetcher.is_failed(h):
+            result[h] = False
+            failed.append(h)
+        else:
+            # Still pending - not yet processed or currently in progress
+            result[h] = False
 
-    return ArtworkStatusBatchResponse(status=result)
+    return ArtworkStatusBatchResponse(status=result, failed=failed)
 
 
 @router.head("/check/{artist}/{album}")

@@ -101,7 +101,10 @@ async def list_tracks(
             | Track.album.ilike(search_filter)
         )
     if artist:
-        query = query.where(Track.artist.ilike(f"%{artist}%"))
+        # Check both track artist and album_artist (for compilations)
+        query = query.where(
+            Track.artist.ilike(f"%{artist}%") | Track.album_artist.ilike(f"%{artist}%")
+        )
     if album:
         query = query.where(Track.album.ilike(f"%{album}%"))
     if genre:

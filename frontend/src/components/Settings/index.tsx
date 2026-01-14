@@ -8,7 +8,6 @@ import { SystemStatus } from './SystemStatus';
 import { LibrarySync } from './LibrarySync';
 import { MetadataSettings } from './MetadataSettings';
 import { AnalysisSettings } from './AnalysisSettings';
-import { ProposedChangesPanel } from './ProposedChangesPanel';
 import { InstallStatus } from '../PWA/InstallPrompt';
 
 export function SettingsPanel() {
@@ -37,7 +36,6 @@ export function SettingsPanel() {
           <div className="space-y-4">
             <LibrarySync />
             <MetadataSettings />
-            <ProposedChangesPanel />
             <AnalysisSettings />
           </div>
         </section>

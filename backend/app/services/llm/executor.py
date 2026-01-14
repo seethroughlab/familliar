@@ -68,6 +68,9 @@ class ToolExecutor:
             "get_album_tracks": self._get_album_tracks,
             "mark_album_as_compilation": self._mark_album_as_compilation,
             "propose_album_artwork": self._propose_album_artwork,
+            # Duplicate detection tools
+            "find_duplicate_artists": self._find_duplicate_artists,
+            "merge_duplicate_artists": self._merge_duplicate_artists,
         }
 
         handler = handlers.get(tool_name)
@@ -1157,3 +1160,125 @@ Respond with ONLY the playlist name, nothing else."""
             "artwork_options_found": len(artwork_options),
             "message": f"Found artwork for '{album}' and proposed the change. User can review in Settings > Proposed Changes.",
         }
+
+    def _normalize_artist_for_comparison(self, artist: str) -> str:
+        """Normalize artist name for duplicate detection.
+
+        Handles common variations:
+        - Case: "Artist Name" vs "artist name"
+        - Separators: "_" vs " ", "-" vs " "
+        - Conjunctions: "and" vs "&" vs "+"
+        - Whitespace: extra spaces
+        """
+        if not artist:
+            return ""
+
+        s = artist.lower().strip()
+
+        # Normalize separators to spaces
+        s = s.replace("_", " ")
+        s = s.replace("-", " ")
+
+        # Normalize conjunctions
+        s = s.replace(" & ", " and ")
+        s = s.replace(" + ", " and ")
+        s = s.replace("&", " and ")
+        s = s.replace("+", " and ")
+
+        # Collapse whitespace
+        s = " ".join(s.split())
+
+        return s
+
+    async def _find_duplicate_artists(
+        self,
+        artist_hint: str | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Find artists that are likely duplicates based on normalized names."""
+        from collections import defaultdict
+
+        # Get all distinct artists
+        stmt = (
+            select(Track.artist, func.count(Track.id).label("track_count"))
+            .where(Track.artist.isnot(None), Track.artist != "")
+            .group_by(Track.artist)
+            .order_by(func.count(Track.id).desc())
+        )
+        result = await self.db.execute(stmt)
+        artists = [(row.artist, row.track_count) for row in result.all()]
+
+        # Group by normalized name
+        normalized_groups: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        for artist, count in artists:
+            normalized = self._normalize_artist_for_comparison(artist)
+            normalized_groups[normalized].append((artist, count))
+
+        # Find groups with more than one variant
+        duplicates = []
+        for normalized, variants in normalized_groups.items():
+            if len(variants) > 1:
+                # If artist_hint provided, only include groups that match
+                if artist_hint:
+                    hint_normalized = self._normalize_artist_for_comparison(artist_hint)
+                    if hint_normalized != normalized:
+                        continue
+
+                # Sort by track count (most common first)
+                variants.sort(key=lambda x: x[1], reverse=True)
+                total_tracks = sum(v[1] for v in variants)
+
+                duplicates.append({
+                    "canonical": variants[0][0],  # Most common spelling
+                    "variants": [{"name": v[0], "track_count": v[1]} for v in variants],
+                    "total_tracks": total_tracks,
+                })
+
+        # Sort by total tracks and limit
+        duplicates.sort(key=lambda x: x["total_tracks"], reverse=True)
+        duplicates = duplicates[:limit]
+
+        if not duplicates:
+            if artist_hint:
+                return {
+                    "found": 0,
+                    "message": f"No duplicates found for artist '{artist_hint}'",
+                }
+            return {
+                "found": 0,
+                "message": "No duplicate artists found in the library",
+            }
+
+        return {
+            "found": len(duplicates),
+            "duplicates": duplicates,
+            "message": f"Found {len(duplicates)} artist(s) with duplicate spellings. Use merge_duplicate_artists to propose merging them.",
+        }
+
+    async def _merge_duplicate_artists(
+        self,
+        source_artist: str,
+        target_artist: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Propose merging duplicate artists by changing the artist field."""
+        # Find all tracks with the source artist
+        stmt = select(Track).where(
+            func.lower(Track.artist) == source_artist.lower()
+        )
+        result = await self.db.execute(stmt)
+        tracks = list(result.scalars().all())
+
+        if not tracks:
+            return {"error": f"No tracks found with artist '{source_artist}'"}
+
+        track_ids = [str(t.id) for t in tracks]
+
+        # Use the existing propose_metadata_change
+        return await self._propose_metadata_change(
+            track_ids=track_ids,
+            field="artist",
+            new_value=target_artist,
+            reason=reason,
+            source="llm_suggestion",
+        )
