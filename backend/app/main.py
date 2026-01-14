@@ -34,6 +34,7 @@ from app.api.routes import (
     outputs,
     playlists,
     profiles,
+    proposed_changes,
     sessions,
     smart_playlists,
     spotify,
@@ -308,6 +309,7 @@ app.include_router(playlists.router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
 app.include_router(favorites.router, prefix="/api/v1")
 app.include_router(organizer.router, prefix="/api/v1")
+app.include_router(proposed_changes.router, prefix="/api/v1")
 app.include_router(bandcamp.router, prefix="/api/v1")
 app.include_router(outputs.router, prefix="/api/v1")
 app.include_router(new_releases.router, prefix="/api/v1")

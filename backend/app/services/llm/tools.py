@@ -245,6 +245,117 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["track_ids"]
         }
+    },
+    # Metadata correction tools
+    {
+        "name": "lookup_correct_metadata",
+        "description": "Look up correct metadata for a track from external sources (MusicBrainz). Use when the user reports incorrect metadata or you notice potential issues like wrong artist, album, year, etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_id": {
+                    "type": "string",
+                    "description": "UUID of the track to look up"
+                }
+            },
+            "required": ["track_id"]
+        }
+    },
+    {
+        "name": "propose_metadata_change",
+        "description": "Propose a metadata correction for user review. The change will be queued in Proposed Changes for the user to approve/reject. Use after lookup_correct_metadata confirms the correct value, or when the user explicitly tells you the correct value.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "track_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of track UUIDs to change"
+                },
+                "field": {
+                    "type": "string",
+                    "enum": ["title", "artist", "album", "album_artist", "year", "genre"],
+                    "description": "Which metadata field to change"
+                },
+                "new_value": {
+                    "type": "string",
+                    "description": "The correct value for the field"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Explanation of why this change is needed"
+                },
+                "source": {
+                    "type": "string",
+                    "enum": ["user_request", "llm_suggestion"],
+                    "description": "user_request if user explicitly asked, llm_suggestion if you noticed the issue",
+                    "default": "user_request"
+                }
+            },
+            "required": ["track_ids", "field", "new_value", "reason"]
+        }
+    },
+    {
+        "name": "get_album_tracks",
+        "description": "Get all tracks from a specific album. Useful before proposing album-wide metadata changes.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "album": {
+                    "type": "string",
+                    "description": "Album name to find tracks for"
+                },
+                "artist": {
+                    "type": "string",
+                    "description": "Artist name (optional but recommended for accuracy)"
+                }
+            },
+            "required": ["album"]
+        }
+    },
+    {
+        "name": "mark_album_as_compilation",
+        "description": "Mark an album as a compilation and set the album_artist field. Use when an album has tracks from multiple artists but should be grouped together (e.g., compilations curated by a DJ, Various Artists albums).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "album": {
+                    "type": "string",
+                    "description": "Album name"
+                },
+                "album_artist": {
+                    "type": "string",
+                    "description": "The album artist to set (e.g., 'Ladytron', 'Various Artists', 'Ministry of Sound')"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why this album should be marked as a compilation"
+                }
+            },
+            "required": ["album", "album_artist", "reason"]
+        }
+    },
+    {
+        "name": "propose_album_artwork",
+        "description": "Search for and propose new album artwork. Searches Cover Art Archive (MusicBrainz) for artwork options and creates a proposed change for the user to review.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string",
+                    "description": "Artist name"
+                },
+                "album": {
+                    "type": "string",
+                    "description": "Album name"
+                },
+                "reason": {
+                    "type": "string",
+                    "description": "Why the artwork needs to be changed (e.g., 'missing artwork', 'wrong album art')"
+                }
+            },
+            "required": ["artist", "album", "reason"]
+        }
     }
 ]
 
@@ -284,6 +395,29 @@ DO NOT keep searching repeatedly. If your first search returns tracks, USE THEM.
 - valence: 0=sad, 1=happy
 - danceability: 0=not danceable, 1=danceable
 - bpm: typical range 60-180
+
+## Metadata Corrections
+
+You can help fix incorrect metadata when the user reports issues:
+
+**"Album X is showing under the wrong artist"** or **"The album artist is wrong"**:
+1. Use get_album_tracks to find all tracks on that album
+2. Use mark_album_as_compilation or propose_metadata_change to suggest the fix
+3. Tell the user the change has been proposed for review in Settings
+
+**"This track has the wrong [field]"**:
+1. Optionally use lookup_correct_metadata to find the correct value from MusicBrainz
+2. Use propose_metadata_change to suggest the correction
+3. The user will review and approve the change in Settings > Proposed Changes
+
+**"This album has wrong/missing artwork"** or **"Fix the album art for X"**:
+1. Use propose_album_artwork to search Cover Art Archive and propose new artwork
+2. The user can preview and approve the artwork change
+
+Changes are NOT applied immediately - they go to a review queue where the user can:
+- Preview what will change
+- Approve or reject the change
+- Choose scope: database only, ID3 tags, or file organization
 
 NEVER make up track names. Only mention tracks returned by tools."""
 

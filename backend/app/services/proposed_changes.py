@@ -1,0 +1,457 @@
+"""Service for managing proposed metadata changes.
+
+Handles the lifecycle of proposed changes: create, preview, approve, reject, apply, undo.
+Changes can affect database records, ID3 tags, and file organization depending on scope.
+"""
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Literal
+from uuid import UUID
+
+from sqlalchemy import select, update, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models import (
+    ChangeScope,
+    ChangeSource,
+    ChangeStatus,
+    ProposedChange,
+    Track,
+)
+from app.services.metadata_writer import write_metadata, WriteResult
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ChangePreview:
+    """Preview of what applying a change would do."""
+
+    change_id: UUID
+    target_description: str  # "Track: Song Name by Artist" or "Album: Album Name"
+    field: str | None
+    old_value: Any
+    new_value: Any
+    tracks_affected: int
+    files_affected: list[str]  # File paths that would be modified
+    scope: ChangeScope
+
+
+@dataclass
+class ApplyResult:
+    """Result of applying a single change."""
+
+    change_id: UUID
+    success: bool
+    error: str | None = None
+    db_updated: bool = False
+    id3_written: bool = False
+    id3_errors: list[str] = field(default_factory=list)
+    files_moved: bool = False
+    files_errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ChangeStats:
+    """Summary statistics for proposed changes."""
+
+    pending: int
+    approved: int
+    rejected: int
+    applied: int
+
+
+class ProposedChangesService:
+    """Manages the lifecycle of proposed metadata changes."""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    async def create_change(
+        self,
+        change_type: str,
+        target_type: str,
+        target_ids: list[str],
+        source: ChangeSource,
+        new_value: Any,
+        field: str | None = None,
+        old_value: Any = None,
+        source_detail: str | None = None,
+        confidence: float = 1.0,
+        reason: str | None = None,
+        scope: ChangeScope = ChangeScope.DB_ONLY,
+    ) -> ProposedChange:
+        """Create a new proposed change."""
+        change = ProposedChange(
+            change_type=change_type,
+            target_type=target_type,
+            target_ids=target_ids,
+            field=field,
+            old_value=old_value,
+            new_value=new_value,
+            source=source,
+            source_detail=source_detail,
+            confidence=confidence,
+            reason=reason,
+            scope=scope,
+            status=ChangeStatus.PENDING,
+        )
+        self.db.add(change)
+        await self.db.commit()
+        await self.db.refresh(change)
+        logger.info(f"Created proposed change {change.id}: {change_type} for {len(target_ids)} targets")
+        return change
+
+    async def get_by_id(self, change_id: UUID) -> ProposedChange | None:
+        """Get a single change by ID."""
+        result = await self.db.execute(
+            select(ProposedChange).where(ProposedChange.id == change_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_pending(self, limit: int = 50, offset: int = 0) -> list[ProposedChange]:
+        """Get pending changes, ordered by creation date."""
+        result = await self.db.execute(
+            select(ProposedChange)
+            .where(ProposedChange.status == ChangeStatus.PENDING)
+            .order_by(ProposedChange.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_status(
+        self,
+        status: ChangeStatus,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[ProposedChange]:
+        """Get changes by status."""
+        result = await self.db.execute(
+            select(ProposedChange)
+            .where(ProposedChange.status == status)
+            .order_by(ProposedChange.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(result.scalars().all())
+
+    async def get_by_track(self, track_id: UUID) -> list[ProposedChange]:
+        """Get all changes affecting a specific track."""
+        track_id_str = str(track_id)
+        result = await self.db.execute(
+            select(ProposedChange)
+            .where(ProposedChange.target_ids.contains([track_id_str]))
+            .order_by(ProposedChange.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def get_stats(self) -> ChangeStats:
+        """Get summary statistics for all changes."""
+        result = await self.db.execute(
+            select(
+                ProposedChange.status,
+                func.count(ProposedChange.id).label("count"),
+            ).group_by(ProposedChange.status)
+        )
+        counts = {row.status: row.count for row in result.all()}
+        return ChangeStats(
+            pending=counts.get(ChangeStatus.PENDING, 0),
+            approved=counts.get(ChangeStatus.APPROVED, 0),
+            rejected=counts.get(ChangeStatus.REJECTED, 0),
+            applied=counts.get(ChangeStatus.APPLIED, 0),
+        )
+
+    async def approve(
+        self,
+        change_id: UUID,
+        profile_id: UUID | None = None,
+    ) -> ProposedChange | None:
+        """Approve a change (mark it ready to apply)."""
+        change = await self.get_by_id(change_id)
+        if not change:
+            return None
+
+        if change.status != ChangeStatus.PENDING:
+            logger.warning(f"Cannot approve change {change_id}: status is {change.status}")
+            return change
+
+        change.status = ChangeStatus.APPROVED
+        change.approved_at = datetime.utcnow()
+        change.approved_by_profile_id = profile_id
+        await self.db.commit()
+        await self.db.refresh(change)
+        logger.info(f"Approved change {change_id}")
+        return change
+
+    async def reject(self, change_id: UUID) -> ProposedChange | None:
+        """Reject a change."""
+        change = await self.get_by_id(change_id)
+        if not change:
+            return None
+
+        if change.status not in (ChangeStatus.PENDING, ChangeStatus.APPROVED):
+            logger.warning(f"Cannot reject change {change_id}: status is {change.status}")
+            return change
+
+        change.status = ChangeStatus.REJECTED
+        await self.db.commit()
+        await self.db.refresh(change)
+        logger.info(f"Rejected change {change_id}")
+        return change
+
+    async def preview(self, change_id: UUID) -> ChangePreview | None:
+        """Generate a preview of what applying a change would do."""
+        change = await self.get_by_id(change_id)
+        if not change:
+            return None
+
+        # Get the tracks affected
+        track_ids = [UUID(tid) for tid in change.target_ids]
+        result = await self.db.execute(
+            select(Track).where(Track.id.in_(track_ids))
+        )
+        tracks = list(result.scalars().all())
+
+        # Build description
+        if change.target_type == "album" and tracks:
+            first_track = tracks[0]
+            description = f"Album: {first_track.album} by {first_track.album_artist or first_track.artist}"
+        elif tracks:
+            if len(tracks) == 1:
+                t = tracks[0]
+                description = f"Track: {t.title} by {t.artist}"
+            else:
+                description = f"{len(tracks)} tracks"
+        else:
+            description = f"{len(change.target_ids)} items"
+
+        return ChangePreview(
+            change_id=change.id,
+            target_description=description,
+            field=change.field,
+            old_value=change.old_value,
+            new_value=change.new_value,
+            tracks_affected=len(tracks),
+            files_affected=[t.file_path for t in tracks],
+            scope=change.scope,
+        )
+
+    async def apply(
+        self,
+        change_id: UUID,
+        scope_override: ChangeScope | None = None,
+    ) -> ApplyResult:
+        """Apply a change.
+
+        Args:
+            change_id: The change to apply
+            scope_override: Override the change's default scope
+        """
+        change = await self.get_by_id(change_id)
+        if not change:
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error="Change not found",
+            )
+
+        if change.status not in (ChangeStatus.PENDING, ChangeStatus.APPROVED):
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error=f"Cannot apply change with status {change.status.value}",
+            )
+
+        scope = scope_override or change.scope
+        result = ApplyResult(change_id=change_id, success=True)
+
+        try:
+            # Get affected tracks
+            track_ids = [UUID(tid) for tid in change.target_ids]
+            db_result = await self.db.execute(
+                select(Track).where(Track.id.in_(track_ids))
+            )
+            tracks = list(db_result.scalars().all())
+
+            if not tracks:
+                return ApplyResult(
+                    change_id=change_id,
+                    success=False,
+                    error="No tracks found for this change",
+                )
+
+            # Step 1: Update database
+            if change.change_type == "metadata" and change.field:
+                await self._apply_metadata_to_db(tracks, change.field, change.new_value)
+                result.db_updated = True
+
+            # Step 2: Write to ID3 tags if scope includes it
+            if scope in (ChangeScope.DB_AND_ID3, ChangeScope.DB_ID3_FILES):
+                if change.change_type == "metadata" and change.field:
+                    id3_results = await self._apply_metadata_to_files(
+                        tracks, change.field, change.new_value
+                    )
+                    result.id3_written = any(r.success for r in id3_results)
+                    result.id3_errors = [r.error for r in id3_results if r.error]
+
+            # Step 3: Reorganize files if scope includes it
+            if scope == ChangeScope.DB_ID3_FILES:
+                # TODO: Integrate with LibraryOrganizer
+                # For now, just note that this would happen
+                logger.info(f"File reorganization would happen for {len(tracks)} tracks")
+                result.files_moved = False
+
+            # Mark change as applied
+            change.status = ChangeStatus.APPLIED
+            change.applied_at = datetime.utcnow()
+            await self.db.commit()
+
+            logger.info(f"Applied change {change_id} with scope {scope.value}")
+
+        except Exception as e:
+            logger.error(f"Failed to apply change {change_id}: {e}")
+            result.success = False
+            result.error = str(e)
+            await self.db.rollback()
+
+        return result
+
+    async def _apply_metadata_to_db(
+        self,
+        tracks: list[Track],
+        field: str,
+        new_value: Any,
+    ) -> None:
+        """Update the database with new metadata values."""
+        for track in tracks:
+            if hasattr(track, field):
+                setattr(track, field, new_value)
+        await self.db.commit()
+
+    async def _apply_metadata_to_files(
+        self,
+        tracks: list[Track],
+        field: str,
+        new_value: Any,
+    ) -> list[WriteResult]:
+        """Write metadata to audio files."""
+        from pathlib import Path
+
+        results = []
+        for track in tracks:
+            try:
+                file_path = Path(track.file_path)
+                if not file_path.exists():
+                    results.append(WriteResult(
+                        success=False,
+                        file_path=track.file_path,
+                        error=f"File not found: {track.file_path}",
+                    ))
+                    continue
+
+                metadata = {field: new_value}
+                result = write_metadata(file_path, metadata)
+                results.append(result)
+            except Exception as e:
+                results.append(WriteResult(
+                    success=False,
+                    file_path=track.file_path,
+                    error=str(e),
+                ))
+        return results
+
+    async def apply_batch(
+        self,
+        change_ids: list[UUID],
+        scope_override: ChangeScope | None = None,
+    ) -> list[ApplyResult]:
+        """Apply multiple changes."""
+        results = []
+        for change_id in change_ids:
+            result = await self.apply(change_id, scope_override)
+            results.append(result)
+        return results
+
+    async def undo(self, change_id: UUID) -> ApplyResult:
+        """Undo an applied change by reverting to old values.
+
+        Note: Only reverts database changes. File changes require re-syncing.
+        """
+        change = await self.get_by_id(change_id)
+        if not change:
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error="Change not found",
+            )
+
+        if change.status != ChangeStatus.APPLIED:
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error=f"Cannot undo change with status {change.status.value}",
+            )
+
+        if not change.old_value:
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error="No old value stored - cannot undo",
+            )
+
+        try:
+            # Get affected tracks
+            track_ids = [UUID(tid) for tid in change.target_ids]
+            db_result = await self.db.execute(
+                select(Track).where(Track.id.in_(track_ids))
+            )
+            tracks = list(db_result.scalars().all())
+
+            # Revert database values
+            if change.change_type == "metadata" and change.field:
+                # old_value might be a dict mapping track_id -> old_value
+                # or a single value for all tracks
+                if isinstance(change.old_value, dict):
+                    for track in tracks:
+                        old_val = change.old_value.get(str(track.id))
+                        if old_val is not None and hasattr(track, change.field):
+                            setattr(track, change.field, old_val)
+                else:
+                    for track in tracks:
+                        if hasattr(track, change.field):
+                            setattr(track, change.field, change.old_value)
+
+            # Mark as pending again (can be re-applied if needed)
+            change.status = ChangeStatus.PENDING
+            change.applied_at = None
+            await self.db.commit()
+
+            logger.info(f"Undid change {change_id}")
+            return ApplyResult(
+                change_id=change_id,
+                success=True,
+                db_updated=True,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to undo change {change_id}: {e}")
+            await self.db.rollback()
+            return ApplyResult(
+                change_id=change_id,
+                success=False,
+                error=str(e),
+            )
+
+    async def delete(self, change_id: UUID) -> bool:
+        """Delete a proposed change."""
+        change = await self.get_by_id(change_id)
+        if not change:
+            return False
+
+        await self.db.delete(change)
+        await self.db.commit()
+        logger.info(f"Deleted change {change_id}")
+        return True

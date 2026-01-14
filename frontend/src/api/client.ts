@@ -1519,4 +1519,149 @@ export const backgroundApi = {
   },
 };
 
+// Proposed Changes API
+export type ChangeStatus = 'pending' | 'approved' | 'rejected' | 'applied';
+export type ChangeSource = 'user_request' | 'llm_suggestion' | 'musicbrainz' | 'spotify' | 'auto_enrichment';
+export type ChangeScope = 'db_only' | 'db_and_id3' | 'db_id3_files';
+
+export interface ProposedChange {
+  id: string;
+  change_type: string;
+  target_type: string;
+  target_ids: string[];
+  field: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  source: ChangeSource;
+  source_detail: string | null;
+  confidence: number;
+  reason: string | null;
+  scope: ChangeScope;
+  status: ChangeStatus;
+  created_at: string;
+  approved_at: string | null;
+  applied_at: string | null;
+}
+
+export interface ChangePreview {
+  change_id: string;
+  target_description: string;
+  field: string | null;
+  old_value: unknown;
+  new_value: unknown;
+  tracks_affected: number;
+  files_affected: string[];
+  scope: ChangeScope;
+}
+
+export interface ApplyResult {
+  change_id: string;
+  success: boolean;
+  error: string | null;
+  db_updated: boolean;
+  id3_written: boolean;
+  id3_errors: string[];
+  files_moved: boolean;
+  files_errors: string[];
+}
+
+export interface ChangeStats {
+  pending: number;
+  approved: number;
+  rejected: number;
+  applied: number;
+}
+
+export interface CreateChangeRequest {
+  change_type: string;
+  target_type: string;
+  target_ids: string[];
+  field?: string;
+  old_value?: unknown;
+  new_value: unknown;
+  source?: string;
+  source_detail?: string;
+  confidence?: number;
+  reason?: string;
+  scope?: string;
+}
+
+export const proposedChangesApi = {
+  list: async (params?: {
+    status?: ChangeStatus;
+    source?: ChangeSource;
+    target_type?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<ProposedChange[]> => {
+    const { data } = await api.get('/proposed-changes', { params });
+    return data;
+  },
+
+  get: async (changeId: string): Promise<ProposedChange> => {
+    const { data } = await api.get(`/proposed-changes/${changeId}`);
+    return data;
+  },
+
+  getStats: async (): Promise<ChangeStats> => {
+    const { data } = await api.get('/proposed-changes/stats');
+    return data;
+  },
+
+  getTrackChanges: async (trackId: string): Promise<ProposedChange[]> => {
+    const { data } = await api.get(`/proposed-changes/track/${trackId}`);
+    return data;
+  },
+
+  preview: async (changeId: string): Promise<ChangePreview> => {
+    const { data } = await api.get(`/proposed-changes/${changeId}/preview`);
+    return data;
+  },
+
+  create: async (request: CreateChangeRequest): Promise<ProposedChange> => {
+    const { data } = await api.post('/proposed-changes', request);
+    return data;
+  },
+
+  approve: async (changeId: string): Promise<ProposedChange> => {
+    const { data } = await api.post(`/proposed-changes/${changeId}/approve`);
+    return data;
+  },
+
+  reject: async (changeId: string): Promise<ProposedChange> => {
+    const { data } = await api.post(`/proposed-changes/${changeId}/reject`);
+    return data;
+  },
+
+  apply: async (changeId: string, scope?: ChangeScope): Promise<ApplyResult> => {
+    const { data } = await api.post(`/proposed-changes/${changeId}/apply`, null, {
+      params: scope ? { scope } : undefined,
+    });
+    return data;
+  },
+
+  undo: async (changeId: string): Promise<ApplyResult> => {
+    const { data } = await api.post(`/proposed-changes/${changeId}/undo`);
+    return data;
+  },
+
+  delete: async (changeId: string): Promise<{ status: string }> => {
+    const { data } = await api.delete(`/proposed-changes/${changeId}`);
+    return data;
+  },
+
+  batchApprove: async (changeIds: string[]): Promise<ProposedChange[]> => {
+    const { data } = await api.post('/proposed-changes/batch/approve', { change_ids: changeIds });
+    return data;
+  },
+
+  batchApply: async (changeIds: string[], scope?: ChangeScope): Promise<ApplyResult[]> => {
+    const { data } = await api.post('/proposed-changes/batch/apply', {
+      change_ids: changeIds,
+      scope,
+    });
+    return data;
+  },
+};
+
 export default api;

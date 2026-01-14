@@ -109,7 +109,7 @@ export function BackgroundJobsIndicator() {
 
       {/* Popover */}
       {showPopover && (
-        <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50">
+        <div className="absolute right-0 top-full mt-2 w-80 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-[60]">
           <div className="p-3 border-b border-zinc-700 flex items-center justify-between">
             <h3 className="font-medium text-white flex items-center gap-2">
               <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />

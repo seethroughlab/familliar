@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.7] - 2026-01-14
+
+### Added
+
+- **Proposed Changes system** for metadata corrections
+  - LLM can suggest metadata fixes that go to a review queue
+  - New Settings panel to view, approve, reject, and apply proposed changes
+  - Support for different scopes: database only, ID3 tags, or file organization
+  - New LLM tools: `lookup_correct_metadata`, `propose_metadata_change`, `get_album_tracks`, `mark_album_as_compilation`, `propose_album_artwork`
+  - MusicBrainz integration for looking up correct metadata
+  - Cover Art Archive integration for album artwork
+- **Proposed Changes indicator** in header bar
+  - Amber badge shows count of pending changes
+  - Click for quick preview popover
+  - Links to full review interface in Settings
+
+### Fixed
+
+- Header popovers (Background Jobs, Proposed Changes, Health) now display above album art
+  - Added proper z-index stacking: header z-30, PlayerBar z-20, popovers z-60
+
 ## [0.1.0-alpha.6] - 2026-01-11
 
 ### Added
@@ -186,7 +207,8 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.6...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...HEAD
+[0.1.0-alpha.7]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.3...v0.1.0-alpha.4

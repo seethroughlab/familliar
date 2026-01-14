@@ -12,6 +12,7 @@ import { ShortcutsHelp } from './components/KeyboardShortcuts';
 import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
 import { BackgroundJobsIndicator } from './components/BackgroundJobsIndicator';
+import { ProposedChangesIndicator } from './components/ProposedChangesIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
 import { GlobalDropZone, ImportModal } from './components/Import';
 import { ColumnSelector } from './components/Library/ColumnSelector';
@@ -245,7 +246,7 @@ function AppContent() {
         {/* Right panel - Library/Context */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header with tabs */}
-          <header className={`backdrop-blur-md border-b ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
+          <header className={`relative z-30 backdrop-blur-md border-b ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
             <div className="px-4 py-3 flex items-center gap-2 md:gap-4">
               {/* Mobile chat toggle */}
               <button
@@ -329,6 +330,9 @@ function AppContent() {
 
               {/* Spacer to push indicators right */}
               <div className="flex-1" />
+
+              {/* Proposed changes indicator - shows when changes need review */}
+              <ProposedChangesIndicator />
 
               {/* Background jobs indicator - shows when jobs are running */}
               <BackgroundJobsIndicator />

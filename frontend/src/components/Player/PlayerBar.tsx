@@ -113,14 +113,14 @@ export function PlayerBar({
 
   if (!currentTrack) {
     return (
-      <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 flex items-center justify-center text-zinc-500">
+      <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 z-20 flex items-center justify-center text-zinc-500">
         No track selected
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800">
+    <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 z-20">
       <div className="h-full max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
         {/* Track info - clickable to expand, right-click for context menu */}
         <button
