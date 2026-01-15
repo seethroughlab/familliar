@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  globalSetup: './e2e/global-setup.ts',
   // Use serial execution to avoid race conditions with shared database/audio
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
