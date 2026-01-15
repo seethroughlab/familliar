@@ -23,7 +23,7 @@ async function globalSetup() {
 
     console.log(`📁 Configuring library path: ${fixturesPath}`);
 
-    const settingsResponse = await context.put('/api/settings', {
+    const settingsResponse = await context.put('/api/v1/settings', {
       data: {
         music_library_paths: [fixturesPath],
       },
@@ -34,53 +34,50 @@ async function globalSetup() {
       throw new Error('Failed to configure library path');
     }
 
-    // 2. Trigger a library scan
-    console.log('🔍 Scanning library...');
-    const scanResponse = await context.post('/api/library/scan');
+    // 2. Trigger a library sync (scan + analysis)
+    console.log('🔍 Starting library sync...');
+    const syncResponse = await context.post('/api/v1/library/sync');
 
-    if (!scanResponse.ok()) {
-      console.error('Failed to start scan:', await scanResponse.text());
-      throw new Error('Failed to start library scan');
+    if (!syncResponse.ok()) {
+      console.error('Failed to start sync:', await syncResponse.text());
+      throw new Error('Failed to start library sync');
     }
 
-    const scanResult = await scanResponse.json();
-    const taskId = scanResult.task_id;
+    // 3. Poll for sync completion
+    console.log('⏳ Waiting for sync to complete...');
 
-    if (!taskId) {
-      console.log('No task ID returned - scan may have completed immediately');
-    } else {
-      // 3. Poll for scan completion
-      console.log(`⏳ Waiting for scan to complete (task: ${taskId})...`);
+    let attempts = 0;
+    const maxAttempts = 120; // 120 seconds max
 
-      let attempts = 0;
-      const maxAttempts = 60; // 60 seconds max
+    while (attempts < maxAttempts) {
+      const statusResponse = await context.get('/api/v1/library/sync/status');
 
-      while (attempts < maxAttempts) {
-        const statusResponse = await context.get(`/api/tasks/${taskId}`);
+      if (statusResponse.ok()) {
+        const status = await statusResponse.json();
 
-        if (statusResponse.ok()) {
-          const status = await statusResponse.json();
-
-          if (status.status === 'completed') {
-            console.log(`✅ Scan completed: ${status.result?.tracks_added || 0} tracks added`);
-            break;
-          } else if (status.status === 'failed') {
-            console.error('Scan failed:', status.error);
-            throw new Error(`Library scan failed: ${status.error}`);
-          }
+        if (status.status === 'idle' || status.status === 'complete') {
+          const progress = status.progress;
+          console.log(
+            `✅ Sync completed: ${progress?.files_discovered || 0} files, ${progress?.tracks_added || 0} tracks added`
+          );
+          break;
+        } else if (status.status === 'error') {
+          console.error('Sync failed:', status.message);
+          throw new Error(`Library sync failed: ${status.message}`);
         }
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        attempts++;
+        // Status is 'running' or 'started' - keep polling
       }
 
-      if (attempts >= maxAttempts) {
-        console.warn('⚠️ Scan timed out after 60 seconds');
-      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      attempts++;
+    }
+
+    if (attempts >= maxAttempts) {
+      console.warn('⚠️ Sync timed out after 120 seconds');
     }
 
     // 4. Verify tracks are available
-    const tracksResponse = await context.get('/api/library/tracks?limit=1');
+    const tracksResponse = await context.get('/api/v1/library/tracks?limit=1');
     if (tracksResponse.ok()) {
       const tracks = await tracksResponse.json();
       console.log(`📊 Library has ${tracks.total || 0} tracks available for testing`);
