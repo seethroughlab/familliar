@@ -12,12 +12,12 @@ An LLM-powered local music player that combines library management with AI-power
 
 ### AI-Powered Music Chat
 Talk to your music library using Claude. Ask questions like:
-- "Play something upbeat for a workout"
-- "What albums do I have from the 90s?"
+- "Play something gloomy with Eastern influences" *(semantic search via CLAP)*
 - "Find tracks similar to this one"
 - "Create a playlist for a dinner party"
+- "Fix the album artist for this compilation"
 
-The AI understands your library's metadata, audio features (BPM, key, energy), and can create intelligent playlists on the fly.
+The AI understands your library's metadata, audio features (BPM, key, energy), and **CLAP audio embeddings** — so you can describe the *sound* you want, not just genres or artists. It can also help fix metadata issues by proposing corrections for your review.
 
 ### Local Library Management
 - **Fast scanning** - Scans thousands of tracks quickly with metadata extraction
@@ -61,6 +61,21 @@ Create dynamic playlists with rules:
 - Multiple user profiles for household use
 - Each profile has its own favorites and history
 - Simple profile switching (no passwords)
+
+### Library Browser Views
+Explore your music in multiple ways:
+- **Artists & Albums** - Visual grids with artwork, infinite scroll
+- **Mood Grid** - 2D scatter plot by energy and valence (happy/sad × calm/energetic)
+- **Music Map** - Ego-centric similarity map powered by CLAP embeddings. Click any artist to center the map on them, with similar artists radiating outward. Includes lasso selection and Figma-style controls.
+- **Timeline** - Browse by release year
+- **3D Explorer** - Navigate a 3D space of artists with hover-to-preview audio
+
+### Metadata Editing & Corrections
+- **Right-click to edit** any track's metadata (title, artist, album, year, genre, and more)
+- **AI-assisted corrections** - The LLM can look up correct metadata from MusicBrainz and propose fixes
+- **Proposed Changes queue** - Review and approve metadata corrections before applying
+- **Write to files** - Optionally write changes back to ID3/Vorbis tags
+- **Duplicate artist detection** - Find and merge artists with variant spellings (e.g., "Artist_Name" vs "Artist and Name")
 
 ### Audio Visualizers
 Seven built-in visualizers with real-time audio reactivity:
@@ -118,21 +133,6 @@ Play to Sonos speakers and AirPlay devices in addition to browser audio. Control
 
 ### Additional LLM Providers
 Support for more AI providers beyond Claude and Ollama, including OpenAI (ChatGPT), Google Gemini, and other compatible APIs.
-
-### Library Browser Views
-Pluggable library views for exploring your music in new ways:
-- **Artist & Album views** - Browse by artist or album grid with artwork
-- **Timeline** - Visualize your library by year, see when music was released
-- **Mood Grid** - 2D scatter plot by energy and valence (happy/sad × calm/energetic)
-- **Music Map** - Spatial visualization where similar-sounding artists appear close together (powered by CLAP embeddings)
-- **Tempo Spectrum** - BPM distribution histogram for finding tracks at the right tempo
-
-### Metadata Editing
-Edit track metadata with changes written back to audio files:
-- Single and bulk editing of ID3 tags
-- Extended fields: composer, conductor, sort fields, lyrics
-- Artwork upload and management
-- MusicBrainz lookup for auto-populating metadata
 
 ## Documentation
 
