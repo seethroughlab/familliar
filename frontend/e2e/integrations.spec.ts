@@ -29,8 +29,8 @@ test.describe('Spotify Integration', () => {
     // Fill client secret (second input)
     await inputs.nth(1).fill(SPOTIFY_CLIENT_SECRET!);
 
-    // Save
-    const saveButton = spotifySection.locator('button:has-text("Save")');
+    // Save - use exact match to avoid matching "Save Provider Settings" etc.
+    const saveButton = spotifySection.getByRole('button', { name: 'Save', exact: true }).first();
     await saveButton.click();
 
     await page.waitForTimeout(1000);
@@ -53,7 +53,7 @@ test.describe('Spotify Integration', () => {
 
     await inputs.first().fill(SPOTIFY_CLIENT_ID!);
     await inputs.nth(1).fill(SPOTIFY_CLIENT_SECRET!);
-    await spotifySection.locator('button:has-text("Save")').click();
+    await spotifySection.getByRole('button', { name: 'Save', exact: true }).first().click();
     await page.waitForTimeout(1000);
 
     // Look for Connect button
@@ -88,8 +88,8 @@ test.describe('Last.fm Integration', () => {
     // Fill API secret (second input)
     await inputs.nth(1).fill(LASTFM_API_SECRET!);
 
-    // Save
-    const saveButton = lastfmSection.locator('button:has-text("Save")');
+    // Save - use exact match to avoid matching "Save Provider Settings" etc.
+    const saveButton = lastfmSection.getByRole('button', { name: 'Save', exact: true }).first();
     await saveButton.click();
 
     await page.waitForTimeout(1000);
@@ -112,7 +112,7 @@ test.describe('Last.fm Integration', () => {
 
     await inputs.first().fill(LASTFM_API_KEY!);
     await inputs.nth(1).fill(LASTFM_API_SECRET!);
-    await lastfmSection.locator('button:has-text("Save")').click();
+    await lastfmSection.getByRole('button', { name: 'Save', exact: true }).first().click();
     await page.waitForTimeout(1000);
 
     // Look for Connect button
