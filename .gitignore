@@ -81,4 +81,4 @@ plans
 
 # Backend runtime data (settings, artwork cache, profiles)
 backend/data/
-TODO.md
+TODO.mddev/
