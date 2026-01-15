@@ -7,10 +7,10 @@ Changes can affect database records, ID3 tags, and file organization depending o
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, update, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -20,7 +20,7 @@ from app.db.models import (
     ProposedChange,
     Track,
 )
-from app.services.metadata_writer import write_metadata, WriteResult
+from app.services.metadata_writer import WriteResult, write_metadata
 
 logger = logging.getLogger(__name__)
 

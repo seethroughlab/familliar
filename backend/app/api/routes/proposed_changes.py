@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_db, get_current_profile
+from app.api.deps import get_current_profile, get_db
 from app.db.models import ChangeScope, ChangeSource, ChangeStatus
 from app.services.proposed_changes import (
     ApplyResult,

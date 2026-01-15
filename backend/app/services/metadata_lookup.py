@@ -11,9 +11,8 @@ from typing import Any
 import musicbrainzngs
 
 from app.services.musicbrainz import (
-    search_recording,
-    get_recording_by_id,
     _normalize_for_comparison,
+    search_recording,
 )
 
 logger = logging.getLogger(__name__)

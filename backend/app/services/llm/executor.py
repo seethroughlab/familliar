@@ -1056,7 +1056,7 @@ Respond with ONLY the playlist name, nothing else."""
             old_value=old_values,
             new_value=final_new_value,
             source=source_enum,
-            source_detail=f"LLM tool call",
+            source_detail="LLM tool call",
             confidence=1.0 if source == "user_request" else 0.9,
             reason=reason,
             scope=ChangeScope.DB_ONLY,
