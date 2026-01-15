@@ -4,12 +4,13 @@
  * Uses infinite scroll to load tracks progressively as you scroll.
  * Wraps TrackList with BrowserProps interface for the pluggable browser system.
  */
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen, Clock, Disc } from 'lucide-react';
 import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
+import { useVisibleTracksStore } from '../../../stores/visibleTracksStore';
 import { useFavorites } from '../../../hooks/useFavorites';
 import { useColumnStore, getVisibleColumns } from '../../../stores/columnStore';
 import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from '../columnDefinitions';
@@ -467,6 +468,30 @@ export function TrackListBrowser({
     [data]
   );
   const total = data?.pages[0]?.total ?? 0;
+
+  // Update visible tracks store when tracks change (for LLM context)
+  const setVisibleTracks = useVisibleTracksStore((state) => state.setVisibleTracks);
+  useEffect(() => {
+    if (allTracks.length > 0) {
+      const visibleTracks = allTracks.map((t) => ({
+        id: t.id,
+        title: t.title || 'Unknown Title',
+        artist: t.artist || 'Unknown Artist',
+        album: t.album || 'Unknown Album',
+      }));
+
+      // Build filter description for LLM context
+      const filterParts: string[] = [];
+      if (filters.search) filterParts.push(`search: "${filters.search}"`);
+      if (filters.artist) filterParts.push(`artist: "${filters.artist}"`);
+      if (filters.album) filterParts.push(`album: "${filters.album}"`);
+      const filterDescription = filterParts.length > 0
+        ? `Filtered by ${filterParts.join(', ')}`
+        : 'All tracks';
+
+      setVisibleTracks(visibleTracks, total, filterDescription);
+    }
+  }, [allTracks, total, filters, setVisibleTracks]);
 
   const handlePlayTrack = useCallback(
     (track: Track, index: number) => {

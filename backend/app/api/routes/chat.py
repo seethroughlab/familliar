@@ -60,6 +60,11 @@ class ChatRequest(BaseModel):
         max_length=100,
         description="Chat history, max 100 messages"
     )
+    visible_track_ids: list[str] = Field(
+        default=[],
+        max_length=100,
+        description="Track IDs currently visible in the library view"
+    )
 
     @field_validator("message")
     @classmethod
@@ -75,12 +80,13 @@ async def generate_sse_events(
     history: list[dict[str, Any]],
     db: AsyncSession,
     profile_id: UUID | None = None,
+    visible_track_ids: list[str] | None = None,
 ) -> AsyncIterator[str]:
     """Generate Server-Sent Events for streaming chat response."""
     llm_service = LLMService()  # type: ignore[no-untyped-call]
 
     try:
-        async for event in llm_service.chat(message, history, db, profile_id):  # type: ignore[no-untyped-call]
+        async for event in llm_service.chat(message, history, db, profile_id, visible_track_ids):  # type: ignore[no-untyped-call]
             # Format as SSE
             yield f"data: {json.dumps(event)}\n\n"
     except Exception as e:
@@ -129,7 +135,13 @@ async def chat_stream(
     profile_id = profile.id if profile else None
 
     return StreamingResponse(
-        generate_sse_events(chat_request.message, history, db, profile_id),
+        generate_sse_events(
+            chat_request.message,
+            history,
+            db,
+            profile_id,
+            chat_request.visible_track_ids or None,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -171,13 +183,14 @@ async def chat(
     llm_service = LLMService()  # type: ignore[no-untyped-call]
     history = [{"role": msg.role, "content": msg.content} for msg in chat_request.history]
     profile_id = profile.id if profile else None
+    visible_track_ids = chat_request.visible_track_ids or None
 
     response_text = ""
     tool_calls = []
     queued_tracks = []
     playback_action = None
 
-    async for event in llm_service.chat(chat_request.message, history, db, profile_id):  # type: ignore[no-untyped-call]
+    async for event in llm_service.chat(chat_request.message, history, db, profile_id, visible_track_ids):  # type: ignore[no-untyped-call]
         if event["type"] == "text":
             response_text += event["content"]
         elif event["type"] == "tool_call":

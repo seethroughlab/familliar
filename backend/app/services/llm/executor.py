@@ -33,11 +33,16 @@ class ToolExecutor:
     """Executes tools called by the LLM."""
 
     def __init__(
-        self, db: AsyncSession, profile_id: UUID | None = None, user_message: str = ""
+        self,
+        db: AsyncSession,
+        profile_id: UUID | None = None,
+        user_message: str = "",
+        visible_track_ids: list[str] | None = None,
     ) -> None:
         self.db = db
         self.profile_id = profile_id
         self.user_message = user_message
+        self.visible_track_ids = visible_track_ids or []
         self._queued_tracks: list[dict[str, Any]] = []
         self._clear_queue: bool = True  # Default to clearing queue for new requests
         self._playback_action: str | None = None
@@ -72,12 +77,14 @@ class ToolExecutor:
             # Duplicate detection tools
             "find_duplicate_artists": self._find_duplicate_artists,
             "merge_duplicate_artists": self._merge_duplicate_artists,
+            # View context tools
+            "get_visible_tracks": self._get_visible_tracks,
         }
 
         handler = handlers.get(tool_name)
         if handler:
             # Handle methods that take no args vs those that do
-            if tool_name in ("get_library_stats", "get_spotify_status", "get_spotify_sync_stats"):
+            if tool_name in ("get_library_stats", "get_spotify_status", "get_spotify_sync_stats", "get_visible_tracks"):
                 return await handler()  # type: ignore[operator]
             return await handler(**tool_input)  # type: ignore[operator]
         return {"error": f"Unknown tool: {tool_name}"}
@@ -530,6 +537,49 @@ Respond with ONLY the playlist name, nothing else."""
             "total_artists": total_artists,
             "total_albums": total_albums,
             "top_genres": top_genres,
+        }
+
+    async def _get_visible_tracks(self) -> dict[str, Any]:
+        """Get the tracks currently visible in the user's library view.
+
+        Returns the tracks that the user can see right now in the UI.
+        Use this when the user refers to 'these tracks', 'this list',
+        'what I'm looking at', or wants to queue/analyze the current view.
+        """
+        if not self.visible_track_ids:
+            return {
+                "tracks": [],
+                "count": 0,
+                "message": "No tracks currently visible in the library view.",
+            }
+
+        # Fetch track details from database
+        result = await self.db.execute(
+            select(Track).where(Track.id.in_(self.visible_track_ids))
+        )
+        tracks = result.scalars().all()
+
+        # Build a map to preserve order
+        track_map = {str(t.id): t for t in tracks}
+
+        # Return in the same order as visible_track_ids
+        ordered_tracks = []
+        for track_id in self.visible_track_ids:
+            if track_id in track_map:
+                t = track_map[track_id]
+                ordered_tracks.append({
+                    "id": str(t.id),
+                    "title": t.title,
+                    "artist": t.artist or "Unknown Artist",
+                    "album": t.album or "Unknown Album",
+                    "duration_seconds": t.duration_seconds,
+                    "genre": t.genre,
+                })
+
+        return {
+            "tracks": ordered_tracks,
+            "count": len(ordered_tracks),
+            "message": f"Found {len(ordered_tracks)} tracks in the current view.",
         }
 
     async def _get_library_genres(self, limit: int = 50) -> dict[str, Any]:

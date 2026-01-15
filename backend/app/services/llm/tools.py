@@ -104,6 +104,14 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
         }
     },
     {
+        "name": "get_visible_tracks",
+        "description": "Get the tracks currently visible in the user's library view. Use this when the user refers to 'these tracks', 'this list', 'what I'm looking at', 'all of these', or wants to queue/analyze the tracks they're currently viewing. Returns track IDs and basic metadata for all tracks in the current view.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
         "name": "queue_tracks",
         "description": "Add tracks to the playback queue. Use after finding tracks the user wants to play.",
         "input_schema": {

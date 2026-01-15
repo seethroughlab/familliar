@@ -46,6 +46,7 @@ class LLMService:
         conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
+        visible_track_ids: list[str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """
         Process a chat message and stream the response.
@@ -59,10 +60,10 @@ class LLMService:
         - {"type": "done"}
         """
         if self.provider == "ollama":
-            async for event in self._chat_ollama(message, conversation_history, db, profile_id):
+            async for event in self._chat_ollama(message, conversation_history, db, profile_id, visible_track_ids):
                 yield event
         else:
-            async for event in self._chat_claude(message, conversation_history, db, profile_id):
+            async for event in self._chat_claude(message, conversation_history, db, profile_id, visible_track_ids):
                 yield event
 
     async def _chat_claude(
@@ -71,13 +72,14 @@ class LLMService:
         conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
+        visible_track_ids: list[str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Chat using Claude API."""
         if not self.claude_client:
             yield {"type": "error", "content": "Claude client not configured"}
             return
 
-        tool_executor = ToolExecutor(db, profile_id, user_message=message)
+        tool_executor = ToolExecutor(db, profile_id, user_message=message, visible_track_ids=visible_track_ids)
         messages: list[dict[str, Any]] = conversation_history + [
             {"role": "user", "content": message}
         ]
@@ -196,13 +198,14 @@ class LLMService:
         conversation_history: list[dict[str, Any]],
         db: AsyncSession,
         profile_id: UUID | None = None,
+        visible_track_ids: list[str] | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Chat using Ollama API with tool support."""
         if not self.ollama_client:
             yield {"type": "error", "content": "Ollama client not configured"}
             return
 
-        tool_executor = ToolExecutor(db, profile_id, user_message=message)
+        tool_executor = ToolExecutor(db, profile_id, user_message=message, visible_track_ids=visible_track_ids)
         messages = conversation_history + [{"role": "user", "content": message}]
 
         max_iterations = 10

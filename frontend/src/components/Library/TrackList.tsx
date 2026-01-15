@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen } from 'lucide-react';
 import { tracksApi, favoritesApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useColumnStore, getVisibleColumns } from '../../stores/columnStore';
+import { useVisibleTracksStore } from '../../stores/visibleTracksStore';
 import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from './columnDefinitions';
 import { useOfflineTrack } from '../../hooks/useOfflineTrack';
 import type { Track } from '../../types';
@@ -363,6 +364,30 @@ export function TrackList({ search, artist, album }: TrackListProps) {
       include_features: needsFeatures,
     }),
   });
+
+  // Update visible tracks store when data changes (for LLM context)
+  const setVisibleTracks = useVisibleTracksStore((state) => state.setVisibleTracks);
+  useEffect(() => {
+    if (data?.items) {
+      const visibleTracks = data.items.map((t) => ({
+        id: t.id,
+        title: t.title || 'Unknown Title',
+        artist: t.artist || 'Unknown Artist',
+        album: t.album || 'Unknown Album',
+      }));
+
+      // Build filter description for LLM context
+      const filterParts: string[] = [];
+      if (search) filterParts.push(`search: "${search}"`);
+      if (artist) filterParts.push(`artist: "${artist}"`);
+      if (album) filterParts.push(`album: "${album}"`);
+      const filterDescription = filterParts.length > 0
+        ? `Filtered by ${filterParts.join(', ')}`
+        : 'All tracks';
+
+      setVisibleTracks(visibleTracks, data.total, filterDescription);
+    }
+  }, [data, search, artist, album, setVisibleTracks]);
 
   const handlePlayTrack = (track: Track, index: number) => {
     if (currentTrack?.id === track.id) {

@@ -3,6 +3,7 @@ import { Send, Loader2, Music, Wrench, Plus, History, AlertTriangle } from 'luci
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useLibraryViewStore } from '../../stores/libraryViewStore';
+import { useVisibleTracksStore } from '../../stores/visibleTracksStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
@@ -172,6 +173,10 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
           content: m.content,
         }));
 
+      // Get visible tracks context for LLM
+      const visibleTracksState = useVisibleTracksStore.getState();
+      const visibleTrackIds = visibleTracksState.trackIds.slice(0, 100); // Limit to 100
+
       const response = await fetch('/api/v1/chat/stream', {
         method: 'POST',
         headers: {
@@ -181,6 +186,7 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
         body: JSON.stringify({
           message: userMessageContent,
           history,
+          visible_track_ids: visibleTrackIds,
         }),
       });
 

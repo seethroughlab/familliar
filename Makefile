@@ -29,12 +29,12 @@ dev-remote:
 
 # Quick deploy to NAS (build + rsync + restart)
 deploy-dev:
-	./scripts/deploy-dev.sh
+	./dev/scripts/deploy-dev.sh
 
 # Deploy frontend only
 deploy-frontend:
-	./scripts/deploy-dev.sh --frontend-only
+	./dev/scripts/deploy-dev.sh --frontend-only
 
 # Deploy backend only
 deploy-backend:
-	./scripts/deploy-dev.sh --backend-only
+	./dev/scripts/deploy-dev.sh --backend-only
