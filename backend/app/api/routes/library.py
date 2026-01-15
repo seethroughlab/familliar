@@ -105,11 +105,16 @@ async def list_artists(
     sort_by: str = "name",  # name, track_count, album_count
     page: int = 1,
     page_size: int = 100,
+    has_embeddings: bool = False,
 ) -> ArtistListResponse:
     """Get distinct artists with aggregated stats.
 
     Returns artists sorted by name (default), track count, or album count.
     Includes first_track_id for artwork lookup.
+
+    Args:
+        has_embeddings: If True, only include artists that have at least one
+            track with an embedding (for use in similarity-based features).
     """
     from sqlalchemy import cast, desc, literal_column
     from sqlalchemy.dialects.postgresql import TEXT
@@ -130,6 +135,17 @@ async def list_artists(
         )
         .group_by(Track.artist)
     )
+
+    # Filter to only artists with embeddings if requested
+    if has_embeddings:
+        # Subquery to get track IDs that have embeddings
+        tracks_with_embeddings = (
+            select(TrackAnalysis.track_id)
+            .where(TrackAnalysis.embedding.isnot(None))
+            .distinct()
+            .subquery()
+        )
+        base_query = base_query.where(Track.id.in_(select(tracks_with_embeddings)))
 
     # Apply search filter
     if search:

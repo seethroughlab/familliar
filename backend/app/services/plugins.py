@@ -121,8 +121,25 @@ class PluginService:
 
         response = await client.get(manifest_url)
         if response.status_code == 404:
+            # Check if the repo itself is accessible to give a better error
+            repo_response = await client.get(f"https://api.github.com/repos/{user}/{repo}")
+            if repo_response.status_code == 404:
+                raise ValueError(
+                    f"Repository {user}/{repo} not found. "
+                    "It may be private, or the URL may be incorrect."
+                )
+            # Repo exists, check if the branch exists
+            branch_response = await client.get(
+                f"https://api.github.com/repos/{user}/{repo}/branches/{ref}"
+            )
+            if branch_response.status_code == 404:
+                raise ValueError(
+                    f"Branch '{ref}' not found in {user}/{repo}. "
+                    f"Check if the repository uses a different default branch (e.g., 'master' instead of 'main')."
+                )
+            # Branch exists, so the file must be missing
             raise ValueError(
-                f"No familiar-plugin.json found in {user}/{repo}. "
+                f"No familiar-plugin.json found in {user}/{repo} on branch '{ref}'. "
                 "Plugin repositories must include a familiar-plugin.json manifest."
             )
         response.raise_for_status()

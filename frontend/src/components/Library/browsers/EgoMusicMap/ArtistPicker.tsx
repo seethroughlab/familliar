@@ -33,7 +33,7 @@ export function ArtistPicker({ onSelect, onClose, initialValue = '' }: ArtistPic
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Fetch artists matching search
+  // Fetch artists matching search (only artists with embeddings for the music map)
   const { data, isLoading } = useQuery({
     queryKey: ['artists-picker', debouncedSearch],
     queryFn: () =>
@@ -41,6 +41,7 @@ export function ArtistPicker({ onSelect, onClose, initialValue = '' }: ArtistPic
         search: debouncedSearch || undefined,
         sort_by: debouncedSearch ? 'name' : 'track_count',
         page_size: 20,
+        has_embeddings: true,
       }),
     staleTime: 30000,
   });
@@ -100,8 +101,8 @@ export function ArtistPicker({ onSelect, onClose, initialValue = '' }: ArtistPic
           </div>
           <p className="mt-2 text-xs text-zinc-500">
             {search
-              ? 'Matching artists'
-              : 'Showing artists with most tracks'}
+              ? 'Matching artists with embeddings'
+              : 'Showing artists with most tracks (with embeddings)'}
           </p>
         </div>
 

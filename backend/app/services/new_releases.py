@@ -7,10 +7,10 @@ from typing import Any
 from uuid import UUID
 
 from rapidfuzz import fuzz
-from sqlalchemy import func, select
+from sqlalchemy import Float, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ArtistCheckCache, ArtistNewRelease, Track
+from app.db.models import ArtistCheckCache, ArtistNewRelease, ProfilePlayHistory, Track
 from app.services.search_links import generate_release_search_urls
 
 logger = logging.getLogger(__name__)
@@ -351,6 +351,153 @@ class NewReleasesService:
         await self.db.flush()
 
         return True
+
+    async def get_prioritized_artists_batch(
+        self,
+        profile_id: UUID,
+        batch_size: int = 75,
+        min_days_since_check: int = 7,
+    ) -> list[dict[str, Any]]:
+        """Get a batch of artists prioritized by listening activity.
+
+        Only includes artists the user has actually listened to.
+        Priority is based on recency (60%) and frequency (40%) of listening.
+
+        Args:
+            profile_id: Profile to use for play history
+            batch_size: Number of artists to return
+            min_days_since_check: Skip artists checked more recently than this
+
+        Returns:
+            List of artist dicts sorted by priority (highest first)
+        """
+        # Subquery: aggregate play stats per artist from play history
+        artist_stats = (
+            select(
+                func.lower(func.trim(Track.artist)).label("artist_normalized"),
+                Track.artist.label("artist_name"),
+                Track.musicbrainz_artist_id,
+                func.max(ProfilePlayHistory.last_played_at).label("last_played"),
+                func.sum(ProfilePlayHistory.play_count).label("total_plays"),
+            )
+            .select_from(ProfilePlayHistory)
+            .join(Track, ProfilePlayHistory.track_id == Track.id)
+            .where(
+                ProfilePlayHistory.profile_id == profile_id,
+                Track.artist.isnot(None),
+            )
+            .group_by(
+                func.lower(func.trim(Track.artist)),
+                Track.artist,
+                Track.musicbrainz_artist_id,
+            )
+        ).subquery("artist_stats")
+
+        # Get max plays for normalization
+        max_plays_result = await self.db.execute(
+            select(func.max(artist_stats.c.total_plays))
+        )
+        max_plays = max_plays_result.scalar() or 1  # Avoid division by zero
+
+        # Calculate cutoff date for cache
+        cache_cutoff = datetime.utcnow() - timedelta(days=min_days_since_check)
+
+        # Main query: select artists with priority scores
+        # Priority = recency (60%) + frequency (40%)
+        # Recency: 60 * (1 - days_since_played / 365), capped at 0-60
+        # Frequency: 40 * log(plays) / log(max_plays), capped at 0-40
+
+        days_since_played = func.extract(
+            "epoch",
+            func.now() - artist_stats.c.last_played
+        ) / 86400.0  # Convert seconds to days
+
+        recency_score = 60.0 * func.greatest(
+            0.0,
+            1.0 - func.least(days_since_played, 365.0) / 365.0
+        )
+
+        frequency_score = 40.0 * (
+            func.ln(artist_stats.c.total_plays.cast(Float) + 1.0) /
+            func.ln(float(max_plays) + 1.0)
+        )
+
+        priority_score = (recency_score + frequency_score).label("priority_score")
+
+        query = (
+            select(
+                artist_stats.c.artist_normalized,
+                artist_stats.c.artist_name,
+                artist_stats.c.musicbrainz_artist_id,
+                artist_stats.c.last_played,
+                artist_stats.c.total_plays,
+                priority_score,
+            )
+            .select_from(artist_stats)
+            .outerjoin(
+                ArtistCheckCache,
+                artist_stats.c.artist_normalized == ArtistCheckCache.artist_name_normalized,
+            )
+            .where(
+                or_(
+                    ArtistCheckCache.last_checked_at.is_(None),
+                    ArtistCheckCache.last_checked_at < cache_cutoff,
+                )
+            )
+            .order_by(priority_score.desc())
+            .limit(batch_size)
+        )
+
+        result = await self.db.execute(query)
+        rows = result.fetchall()
+
+        return [
+            {
+                "name": row.artist_name,
+                "normalized_name": row.artist_normalized,
+                "musicbrainz_artist_id": row.musicbrainz_artist_id,
+                "last_played": row.last_played.isoformat() if row.last_played else None,
+                "total_plays": row.total_plays,
+                "priority_score": float(row.priority_score) if row.priority_score else 0.0,
+            }
+            for row in rows
+        ]
+
+    async def get_rotation_status(self, profile_id: UUID) -> dict[str, Any]:
+        """Get status of priority-based rotation checking.
+
+        Returns info about how many artists are in rotation and progress.
+        """
+        # Count total artists with play history (these are in rotation)
+        total_in_rotation_result = await self.db.execute(
+            select(func.count(func.distinct(func.lower(func.trim(Track.artist)))))
+            .select_from(ProfilePlayHistory)
+            .join(Track, ProfilePlayHistory.track_id == Track.id)
+            .where(
+                ProfilePlayHistory.profile_id == profile_id,
+                Track.artist.isnot(None),
+            )
+        )
+        total_in_rotation = total_in_rotation_result.scalar() or 0
+
+        # Count artists checked in last 7 days
+        week_ago = datetime.utcnow() - timedelta(days=7)
+        checked_this_week_result = await self.db.execute(
+            select(func.count(ArtistCheckCache.artist_name_normalized))
+            .where(ArtistCheckCache.last_checked_at >= week_ago)
+        )
+        checked_this_week = checked_this_week_result.scalar() or 0
+
+        # Estimate days to complete full rotation at 75/day
+        remaining = max(0, total_in_rotation - checked_this_week)
+        days_to_complete = (remaining // 75) + (1 if remaining % 75 > 0 else 0)
+
+        return {
+            "total_artists_in_rotation": total_in_rotation,
+            "checked_this_week": checked_this_week,
+            "remaining_this_week": remaining,
+            "estimated_days_to_complete": days_to_complete,
+        }
 
     async def get_check_status(self) -> dict[str, Any]:
         """Get status of new releases checking."""

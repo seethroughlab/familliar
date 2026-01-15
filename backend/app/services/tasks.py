@@ -1862,6 +1862,174 @@ async def run_new_releases_check(
         await local_engine.dispose()
 
 
+async def run_prioritized_new_releases_check(
+    profile_id: str,
+    batch_size: int = 75,
+    days_back: int = 90,
+) -> dict[str, Any]:
+    """Check for new releases using priority-based batching.
+
+    Checks a limited batch of artists prioritized by recent listening activity.
+    Only checks artists the user has actually listened to.
+    Designed to run daily and eventually cover all listened artists.
+
+    Args:
+        profile_id: Profile ID to use for play history prioritization
+        batch_size: Number of artists to check per run (default 75)
+        days_back: How far back to look for releases (default 90 days)
+
+    Returns:
+        Dict with status and statistics
+    """
+    from uuid import UUID as UUIDType
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.services.musicbrainz import get_artist_releases_recent, search_artist
+    from app.services.new_releases import NewReleasesService
+
+    progress = NewReleasesProgressReporter(profile_id)
+    profile_uuid = UUIDType(profile_id)
+
+    stats = {
+        "artists_in_batch": 0,
+        "artists_checked": 0,
+        "releases_found": 0,
+        "releases_new": 0,
+        "musicbrainz_queries": 0,
+    }
+
+    local_engine = create_async_engine(
+        settings.database_url,
+        echo=False,
+        future=True,
+    )
+    local_session_maker = async_sessionmaker(
+        local_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+        autocommit=False,
+        autoflush=False,
+    )
+
+    try:
+        async with local_session_maker() as db:
+            service = NewReleasesService(db)
+
+            # Get prioritized batch of artists based on listening activity
+            artists = await service.get_prioritized_artists_batch(
+                profile_id=profile_uuid,
+                batch_size=batch_size,
+                min_days_since_check=7,  # Don't re-check artists checked within 7 days
+            )
+            stats["artists_in_batch"] = len(artists)
+
+            if not artists:
+                logger.info("No artists need checking in this batch")
+                progress.complete(0, 0, 0)
+                return {"status": "success", **stats}
+
+            logger.info(
+                f"Checking {len(artists)} prioritized artists for new releases "
+                f"(top priority: {artists[0]['name'] if artists else 'N/A'})"
+            )
+
+            for i, artist_info in enumerate(artists):
+                artist_name = artist_info["name"]
+                normalized = artist_info["normalized_name"]
+                mb_artist_id = artist_info.get("musicbrainz_artist_id")
+
+                if i % 5 == 0:
+                    progress.set_checking(
+                        checked=i,
+                        total=len(artists),
+                        found=stats["releases_found"],
+                        new=stats["releases_new"],
+                        current_artist=artist_name,
+                    )
+
+                stats["artists_checked"] += 1
+                releases_for_artist: list[dict[str, Any]] = []
+                mb_id_to_use = mb_artist_id
+
+                # Query MusicBrainz for releases
+                try:
+                    if not mb_id_to_use:
+                        mb_result = search_artist(artist_name)
+                        if mb_result and mb_result.get("score", 0) >= 80:
+                            mb_id_to_use = mb_result["musicbrainz_artist_id"]
+
+                    if mb_id_to_use:
+                        recent = get_artist_releases_recent(mb_id_to_use, days_back=days_back)
+                        stats["musicbrainz_queries"] += 1
+
+                        for release in recent:
+                            releases_for_artist.append({
+                                "release_id": release["musicbrainz_release_group_id"],
+                                "source": "musicbrainz",
+                                "release_name": release["title"],
+                                "release_type": release.get("release_type"),
+                                "release_date_str": release.get("release_date"),
+                                "release_date": release.get("release_date_parsed"),
+                                "musicbrainz_artist_id": mb_id_to_use,
+                            })
+
+                except Exception as e:
+                    logger.warning(f"MusicBrainz lookup failed for {artist_name}: {e}")
+
+                # Save discovered releases
+                for release in releases_for_artist:
+                    stats["releases_found"] += 1
+
+                    release_date = None
+                    if release.get("release_date"):
+                        try:
+                            from datetime import datetime as dt
+                            release_date = dt.fromisoformat(release["release_date"])
+                        except Exception:
+                            pass
+
+                    saved = await service.save_discovered_release(
+                        artist_name=artist_name,
+                        release_id=release["release_id"],
+                        source=release["source"],
+                        release_name=release["release_name"],
+                        release_type=release.get("release_type"),
+                        release_date=release_date,
+                        musicbrainz_artist_id=release.get("musicbrainz_artist_id"),
+                    )
+                    if saved:
+                        stats["releases_new"] += 1
+
+                # Update cache for this artist
+                await service.update_artist_cache(
+                    artist_normalized=normalized,
+                    musicbrainz_id=mb_id_to_use,
+                )
+
+            await db.commit()
+
+        progress.complete(
+            checked=stats["artists_checked"],
+            found=stats["releases_found"],
+            new=stats["releases_new"],
+        )
+
+        logger.info(
+            f"Priority-based new releases check complete: "
+            f"{stats['artists_checked']} artists, {stats['releases_new']} new releases"
+        )
+
+        return {"status": "success", **stats}
+
+    except Exception as e:
+        logger.error(f"Priority-based new releases check failed: {e}", exc_info=True)
+        progress.error(str(e))
+        return {"status": "error", "error": str(e)}
+    finally:
+        await local_engine.dispose()
+
+
 # ============================================================================
 # Metadata Enrichment
 # ============================================================================

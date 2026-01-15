@@ -768,6 +768,7 @@ export const libraryApi = {
     sort_by?: 'name' | 'track_count' | 'album_count';
     page?: number;
     page_size?: number;
+    has_embeddings?: boolean;
   }): Promise<ArtistListResponse> => {
     const { data } = await api.get('/library/artists', { params });
     return data;

@@ -252,8 +252,16 @@ class BackgroundManager:
                 replace_existing=True,
             )
 
+            # Daily new releases check at 3 AM
+            self._scheduler.add_job(
+                self._daily_new_releases_check,
+                CronTrigger(hour=3, minute=0),
+                id="daily_new_releases",
+                replace_existing=True,
+            )
+
             self._scheduler.start()
-            logger.info("APScheduler started with periodic sync (every 2 hours)")
+            logger.info("APScheduler started with periodic sync (every 2 hours) and daily new releases check (3 AM)")
 
             # Schedule startup sync after a short delay
             asyncio.create_task(self._startup_sync())
@@ -652,6 +660,75 @@ class BackgroundManager:
         except Exception as e:
             logger.error(f"New releases check failed: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
+
+    async def run_prioritized_new_releases_check(
+        self,
+        profile_id: str,
+        batch_size: int = 75,
+        days_back: int = 90,
+    ) -> dict[str, Any]:
+        """Start priority-based new releases check in the background.
+
+        This checks a batch of artists prioritized by recent listening activity.
+        Only artists the user has actually listened to are checked.
+        """
+        from app.services.tasks import run_prioritized_new_releases_check
+
+        try:
+            result = await run_prioritized_new_releases_check(
+                profile_id=profile_id,
+                batch_size=batch_size,
+                days_back=days_back,
+            )
+            return result
+        except Exception as e:
+            logger.error(f"Priority-based new releases check failed: {e}", exc_info=True)
+            return {"status": "error", "error": str(e)}
+
+    async def _daily_new_releases_check(self) -> None:
+        """Run daily priority-based new releases check.
+
+        Called by the scheduler at 3 AM daily. Gets the most recently active
+        profile and uses it for prioritization.
+        """
+        logger.info("Starting daily new releases check")
+
+        try:
+            # Get the most recently active profile for prioritization
+            from sqlalchemy import select
+            from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+            from app.config import settings
+            from app.db.models import Profile
+
+            engine = create_async_engine(settings.database_url)
+            async_session = async_sessionmaker(engine, class_=AsyncSession)
+
+            profile_id = None
+            async with async_session() as db:
+                # Get any profile (prefer the one with most recent activity, but for now just get first)
+                result = await db.execute(
+                    select(Profile.id).limit(1)
+                )
+                row = result.scalar_one_or_none()
+                if row:
+                    profile_id = str(row)
+
+            await engine.dispose()
+
+            if not profile_id:
+                logger.warning("No profiles found - skipping daily new releases check")
+                return
+
+            result = await self.run_prioritized_new_releases_check(
+                profile_id=profile_id,
+                batch_size=75,
+                days_back=90,
+            )
+            logger.info(f"Daily new releases check completed: {result}")
+
+        except Exception as e:
+            logger.error(f"Daily new releases check failed: {e}", exc_info=True)
 
     async def run_sync(
         self,

@@ -428,6 +428,10 @@ class ArtistCheckCache(Base):
     spotify_artist_id: Mapped[str | None] = mapped_column(String(50))
     last_checked_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    # Priority-based checking fields
+    check_priority: Mapped[float] = mapped_column(Float, default=0.0)
+    priority_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
 
 class ArtistNewRelease(Base):
     """Cached new releases discovered from external APIs."""

@@ -57,12 +57,16 @@ async def list_new_releases(
 
 
 @router.get("/status")
-async def get_status(db: DbSession) -> dict[str, Any]:
+async def get_status(
+    db: DbSession,
+    profile: RequiredProfile,
+) -> dict[str, Any]:
     """Get new releases check status.
 
     Returns:
     - Status of the last/current check (from Redis progress)
     - Database stats (total releases, artists checked, etc.)
+    - Rotation status (for priority-based checking)
     """
     service = NewReleasesService(db)
 
@@ -72,9 +76,13 @@ async def get_status(db: DbSession) -> dict[str, Any]:
     # Get progress from Redis (for running/recent checks)
     progress = get_new_releases_progress()
 
+    # Get rotation status for priority-based checking
+    rotation = await service.get_rotation_status(profile.id)
+
     return {
         **db_stats,
         "progress": progress,
+        "rotation": rotation,
     }
 
 
@@ -115,6 +123,47 @@ async def trigger_check(
     return {
         "status": "started",
         "message": "New releases check started",
+    }
+
+
+@router.post("/check/batch")
+async def trigger_batch_check(
+    profile: RequiredProfile,
+    batch_size: int = Query(default=75, ge=10, le=200),
+    days_back: int = Query(default=90, ge=1, le=365),
+) -> dict[str, Any]:
+    """Trigger a priority-based batch check for new releases.
+
+    This checks a limited number of artists based on listening activity.
+    Only artists the user has actually listened to are checked.
+    Designed for frequent (daily) runs with lower API overhead.
+
+    Query params:
+    - batch_size: Number of artists to check (10-200, default 75)
+    - days_back: Number of days to look back for releases (1-365)
+
+    Returns status for tracking progress.
+    """
+    import asyncio
+
+    from app.services.background import get_background_manager
+
+    # Clear any stale progress
+    clear_new_releases_progress()
+
+    # Start background task
+    bg = get_background_manager()
+    asyncio.create_task(
+        bg.run_prioritized_new_releases_check(
+            profile_id=str(profile.id),
+            batch_size=batch_size,
+            days_back=days_back,
+        )
+    )
+
+    return {
+        "status": "started",
+        "message": f"Priority-based new releases check started (batch size: {batch_size})",
     }
 
 
