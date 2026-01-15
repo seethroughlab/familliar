@@ -7,6 +7,7 @@ import {
   Music,
   FileText,
   ArrowUpDown,
+  Image,
   Mic2,
   BarChart3,
   AlertCircle,
@@ -19,8 +20,9 @@ import { ExtendedMetadataTab } from './tabs/ExtendedMetadataTab';
 import { SortFieldsTab } from './tabs/SortFieldsTab';
 import { LyricsTab } from './tabs/LyricsTab';
 import { AnalysisTab } from './tabs/AnalysisTab';
+import { ArtworkTab } from './tabs/ArtworkTab';
 
-type TabId = 'basic' | 'extended' | 'sort' | 'lyrics' | 'analysis';
+type TabId = 'basic' | 'extended' | 'sort' | 'artwork' | 'lyrics' | 'analysis';
 
 interface Tab {
   id: TabId;
@@ -32,6 +34,7 @@ const TABS: Tab[] = [
   { id: 'basic', label: 'Basic', icon: <Music className="w-4 h-4" /> },
   { id: 'extended', label: 'Extended', icon: <FileText className="w-4 h-4" /> },
   { id: 'sort', label: 'Sort', icon: <ArrowUpDown className="w-4 h-4" /> },
+  { id: 'artwork', label: 'Artwork', icon: <Image className="w-4 h-4" /> },
   { id: 'lyrics', label: 'Lyrics', icon: <Mic2 className="w-4 h-4" /> },
   { id: 'analysis', label: 'Analysis', icon: <BarChart3 className="w-4 h-4" /> },
 ];
@@ -196,6 +199,13 @@ export function TrackEditModal() {
                   formData={formData}
                   onChange={handleFieldChange}
                   isBulkEdit={isBulkEdit}
+                />
+              )}
+              {activeTab === 'artwork' && (
+                <ArtworkTab
+                  trackId={trackId}
+                  artist={metadata?.artist}
+                  album={metadata?.album}
                 />
               )}
               {activeTab === 'lyrics' && (

@@ -108,6 +108,12 @@ export const tracksApi = {
     const { data } = await api.patch(`/tracks/${id}/metadata`, update);
     return data;
   },
+
+  // Artwork
+  deleteArtwork: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const { data } = await api.delete(`/tracks/${id}/artwork`);
+    return data;
+  },
 };
 
 // Track metadata types

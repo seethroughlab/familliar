@@ -651,11 +651,16 @@ export function EgoMusicMap({ onGoToArtist }: BrowserProps) {
 
   // Error state
   if (error) {
+    // Extract the actual error detail from axios response if available
+    const axiosError = error as { response?: { data?: { detail?: string } } };
+    const errorDetail = axiosError.response?.data?.detail
+      || (error instanceof Error ? error.message : 'Unknown error');
+
     return (
       <div ref={containerRef} className="flex flex-col items-center justify-center h-full">
         <div className="text-red-500 mb-2">Error loading music map</div>
         <p className="text-sm text-zinc-500">
-          {error instanceof Error ? error.message : 'Unknown error'}
+          {errorDetail}
         </p>
         <button
           onClick={handleChangeCenterArtist}

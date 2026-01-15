@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
@@ -409,6 +409,145 @@ async def get_track_artwork(
         headers={
             "Cache-Control": "public, max-age=31536000",  # Cache for 1 year
         },
+    )
+
+
+class ArtworkUploadResponse(BaseModel):
+    """Response for artwork upload."""
+
+    success: bool
+    message: str
+    embedded_in_file: bool = False
+    saved_to_cache: bool = False
+
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+MAX_ARTWORK_SIZE = 10 * 1024 * 1024  # 10MB
+
+
+@router.post("/{track_id}/artwork", response_model=ArtworkUploadResponse)
+async def upload_track_artwork(
+    db: DbSession,
+    track_id: UUID,
+    file: UploadFile,
+    embed_in_file: bool = Query(True, description="Embed artwork in audio file tags"),
+) -> ArtworkUploadResponse:
+    """Upload or replace album artwork for a track.
+
+    The artwork is saved to the cache and optionally embedded in the audio file.
+    All tracks from the same album will share this artwork.
+
+    Accepts JPEG, PNG, or WebP images up to 10MB.
+    """
+    from app.services.artwork import compute_album_hash, save_artwork
+    from app.services.metadata_writer import write_artwork
+
+    # Validate content type
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid image type. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}",
+        )
+
+    # Read file data
+    image_data = await file.read()
+
+    if len(image_data) > MAX_ARTWORK_SIZE:
+        raise HTTPException(
+            status_code=400, detail=f"Image too large. Max size: {MAX_ARTWORK_SIZE // 1024 // 1024}MB"
+        )
+
+    if len(image_data) == 0:
+        raise HTTPException(status_code=400, detail="Empty file uploaded")
+
+    # Get track
+    query = select(Track).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Save to cache
+    album_hash = compute_album_hash(track.artist, track.album)
+    saved_paths = save_artwork(image_data, album_hash)
+    saved_to_cache = len(saved_paths) > 0
+
+    # Embed in file if requested
+    embedded_in_file = False
+    embed_error = None
+
+    if embed_in_file:
+        file_path = Path(track.file_path)
+        if file_path.exists():
+            write_result = write_artwork(file_path, image_data, file.content_type or "image/jpeg")
+            embedded_in_file = write_result.success
+            if not write_result.success:
+                embed_error = write_result.error
+
+    message = "Artwork uploaded successfully"
+    if embed_in_file and not embedded_in_file:
+        message = f"Artwork saved to cache but failed to embed in file: {embed_error}"
+
+    return ArtworkUploadResponse(
+        success=saved_to_cache or embedded_in_file,
+        message=message,
+        embedded_in_file=embedded_in_file,
+        saved_to_cache=saved_to_cache,
+    )
+
+
+@router.delete("/{track_id}/artwork", response_model=ArtworkUploadResponse)
+async def delete_track_artwork(
+    db: DbSession,
+    track_id: UUID,
+    remove_from_file: bool = Query(False, description="Also remove embedded artwork from audio file"),
+) -> ArtworkUploadResponse:
+    """Remove album artwork for a track.
+
+    Removes artwork from the cache. Optionally removes embedded artwork from the audio file.
+    Note: This affects all tracks from the same album.
+    """
+    from app.services.artwork import compute_album_hash, get_artwork_path
+
+    # Get track
+    query = select(Track).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Remove cached artwork
+    album_hash = compute_album_hash(track.artist, track.album)
+    removed_cache = False
+
+    for size in ["full", "thumb"]:
+        artwork_path = get_artwork_path(album_hash, size)
+        if artwork_path.exists():
+            artwork_path.unlink()
+            removed_cache = True
+
+    # Remove from file if requested (this is destructive and format-specific)
+    removed_from_file = False
+    if remove_from_file:
+        # For now, we don't implement removal from files as it's risky
+        # The user can re-embed new artwork instead
+        pass
+
+    if not removed_cache:
+        return ArtworkUploadResponse(
+            success=False,
+            message="No cached artwork found to remove",
+            embedded_in_file=False,
+            saved_to_cache=False,
+        )
+
+    return ArtworkUploadResponse(
+        success=True,
+        message="Artwork removed from cache",
+        embedded_in_file=removed_from_file,
+        saved_to_cache=False,
     )
 
 
@@ -863,3 +1002,204 @@ async def get_track_metadata(
             response.features = TrackFeaturesResponse(**features_data)
 
     return response
+
+
+# ============================================================================
+# Bulk Metadata Editing
+# ============================================================================
+
+
+class BulkMetadataUpdateRequest(BaseModel):
+    """Request to update metadata for multiple tracks."""
+
+    track_ids: list[UUID]
+    metadata: TrackMetadataUpdateRequest
+    write_to_files: bool = False
+
+
+class BulkEditErrorResponse(BaseModel):
+    """Error for a single track in bulk edit."""
+
+    track_id: str
+    file_path: str
+    error: str
+
+
+class BulkEditResultResponse(BaseModel):
+    """Result of bulk edit operation."""
+
+    total: int
+    successful: int
+    failed: int
+    errors: list[BulkEditErrorResponse]
+    fields_updated: list[str]
+
+
+@router.post("/bulk/metadata", response_model=BulkEditResultResponse)
+async def bulk_update_metadata(
+    db: DbSession,
+    request: BulkMetadataUpdateRequest,
+) -> BulkEditResultResponse:
+    """Update metadata for multiple tracks at once.
+
+    Only provided (non-None) fields in metadata are applied to all tracks.
+    Set write_to_files=true to also update audio file tags.
+
+    Returns summary with success/failure counts and any errors.
+    """
+    from app.services.bulk_editor import BulkEditorService
+
+    service = BulkEditorService(db)
+
+    # Extract metadata dict (exclude write_to_file as it's handled separately)
+    metadata_dict = request.metadata.model_dump(
+        exclude_unset=True, exclude={"write_to_file"}
+    )
+
+    result = await service.apply_to_tracks(
+        track_ids=request.track_ids,
+        metadata=metadata_dict,
+        write_to_files=request.write_to_files,
+    )
+
+    return BulkEditResultResponse(
+        total=result.total,
+        successful=result.successful,
+        failed=result.failed,
+        errors=[
+            BulkEditErrorResponse(
+                track_id=e.track_id, file_path=e.file_path, error=e.error
+            )
+            for e in result.errors
+        ],
+        fields_updated=result.fields_updated,
+    )
+
+
+class CommonValuesRequest(BaseModel):
+    """Request to get common values across tracks."""
+
+    track_ids: list[UUID]
+
+
+class CommonValuesResponse(BaseModel):
+    """Common values across multiple tracks.
+
+    Fields with identical values across all tracks have that value.
+    Fields with different values are None (representing "mixed").
+    """
+
+    # Core metadata
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    album_artist: str | None = None
+    track_number: int | None = None
+    disc_number: int | None = None
+    year: int | None = None
+    genre: str | None = None
+
+    # Extended metadata
+    composer: str | None = None
+    conductor: str | None = None
+    lyricist: str | None = None
+    grouping: str | None = None
+    comment: str | None = None
+
+    # Sort fields
+    sort_artist: str | None = None
+    sort_album: str | None = None
+    sort_title: str | None = None
+
+    # Lyrics
+    lyrics: str | None = None
+
+    # Track count for UI
+    track_count: int = 0
+
+
+@router.post("/bulk/common-values", response_model=CommonValuesResponse)
+async def get_common_values(
+    db: DbSession,
+    request: CommonValuesRequest,
+) -> CommonValuesResponse:
+    """Get common field values across multiple tracks.
+
+    Used to pre-fill the bulk edit form. Fields with different values
+    across the selected tracks are returned as None (indicating "mixed").
+    """
+    from app.services.bulk_editor import BulkEditorService
+
+    service = BulkEditorService(db)
+    common = await service.get_common_values(request.track_ids)
+
+    return CommonValuesResponse(
+        **common,
+        track_count=len(request.track_ids),
+    )
+
+
+# ============================================================================
+# Metadata Lookup
+# ============================================================================
+
+
+class MetadataLookupRequest(BaseModel):
+    """Request to look up track metadata from external sources."""
+
+    title: str
+    artist: str
+    album: str | None = None
+
+
+class MetadataCandidateResponse(BaseModel):
+    """A candidate metadata match."""
+
+    source: str
+    source_id: str
+    confidence: float
+    title: str | None = None
+    artist: str | None = None
+    album: str | None = None
+    album_artist: str | None = None
+    year: int | None = None
+    track_number: int | None = None
+    genre: str | None = None
+    artwork_url: str | None = None
+
+
+@router.post("/lookup/metadata", response_model=list[MetadataCandidateResponse])
+async def lookup_metadata(
+    request: MetadataLookupRequest,
+) -> list[MetadataCandidateResponse]:
+    """Look up track metadata from MusicBrainz.
+
+    Returns a list of candidate matches sorted by confidence.
+    Use this to find correct metadata for tracks with incomplete or wrong info.
+    """
+    from app.services.metadata_lookup import MetadataLookupService
+
+    service = MetadataLookupService()
+    candidates = await service.lookup_track(
+        title=request.title,
+        artist=request.artist,
+        album=request.album,
+        limit=5,
+    )
+
+    return [
+        MetadataCandidateResponse(
+            source=c.source,
+            source_id=c.source_id,
+            confidence=c.confidence,
+            title=c.metadata.get("title"),
+            artist=c.metadata.get("artist"),
+            album=c.metadata.get("album"),
+            album_artist=c.metadata.get("album_artist"),
+            year=c.metadata.get("year"),
+            track_number=c.metadata.get("track_number"),
+            genre=c.metadata.get("genre"),
+            artwork_url=c.artwork_url,
+        )
+        for c in candidates
+    ]

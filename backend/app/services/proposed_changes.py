@@ -156,7 +156,10 @@ class ProposedChangesService:
                 func.count(ProposedChange.id).label("count"),
             ).group_by(ProposedChange.status)
         )
-        counts = {row.status: row.count for row in result.all()}
+        rows = result.all()
+        counts: dict[ChangeStatus, int] = {}
+        for row in rows:
+            counts[row.status] = row.count  # type: ignore[assignment]
         return ChangeStats(
             pending=counts.get(ChangeStatus.PENDING, 0),
             approved=counts.get(ChangeStatus.APPROVED, 0),

@@ -1,4 +1,5 @@
 import type { TrackMetadataUpdate } from '../../../api/client';
+import { MusicBrainzLookup } from '../MusicBrainzLookup';
 
 interface Props {
   formData: Partial<TrackMetadataUpdate>;
@@ -7,6 +8,15 @@ interface Props {
 }
 
 export function BasicMetadataTab({ formData, onChange, isBulkEdit }: Props) {
+  // Handle applying metadata from MusicBrainz lookup
+  const handleApplyLookup = (metadata: Partial<TrackMetadataUpdate>) => {
+    Object.entries(metadata).forEach(([field, value]) => {
+      if (value !== null && value !== undefined) {
+        onChange(field as keyof TrackMetadataUpdate, value);
+      }
+    });
+  };
+
   return (
     <div className="space-y-4">
       {/* Title */}
@@ -108,6 +118,18 @@ export function BasicMetadataTab({ formData, onChange, isBulkEdit }: Props) {
           />
         </div>
       </div>
+
+      {/* MusicBrainz Lookup - only for single track edit */}
+      {!isBulkEdit && (
+        <div className="pt-4 border-t border-zinc-800">
+          <MusicBrainzLookup
+            title={formData.title}
+            artist={formData.artist}
+            album={formData.album}
+            onApply={handleApplyLookup}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -150,7 +150,7 @@ def _preview_to_response(preview: ChangePreview) -> ChangePreviewResponse:
         new_value=preview.new_value,
         tracks_affected=preview.tracks_affected,
         files_affected=preview.files_affected,
-        scope=preview.scope.value if hasattr(preview.scope, "value") else preview.scope,
+        scope=str(preview.scope.value if hasattr(preview.scope, "value") else preview.scope),
     )
 
 

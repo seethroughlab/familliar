@@ -1286,8 +1286,8 @@ Respond with ONLY the playlist name, nothing else."""
                     "total_tracks": total_tracks,
                 })
 
-        # Sort by total tracks and limit
-        duplicates.sort(key=lambda x: x["total_tracks"], reverse=True)
+        # Sort by total tracks and limit (total_tracks is always int)
+        duplicates.sort(key=lambda x: x["total_tracks"], reverse=True)  # type: ignore[arg-type, return-value]
         duplicates = duplicates[:limit]
 
         if not duplicates:
