@@ -1074,7 +1074,8 @@ Respond with ONLY the playlist name, nothing else."""
             "field": field,
             "new_value": final_new_value,
             "tracks_affected": len(tracks),
-            "message": f"Proposed changing '{field}' to '{new_value}' for {len(tracks)} track(s). The user can review this in Settings > Proposed Changes.",
+            "message": f"Proposed changing '{field}' to '{new_value}' for {len(tracks)} track(s). Opening the Proposed Changes view for review.",
+            "_navigate": "proposed-changes",  # Triggers frontend navigation
         }
 
     async def _get_album_tracks(

@@ -41,6 +41,8 @@ dependencies = [
     "musicbrainzngs>=0.7.1",
     # Database migrations
     "alembic>=1.13.0",
+    # System monitoring
+    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]

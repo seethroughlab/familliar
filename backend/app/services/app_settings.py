@@ -249,7 +249,9 @@ class AppSettingsService:
         # Auto-detect based on RAM
         ram_gb = get_system_ram_gb()
         if ram_gb is None:
-            return (False, "RAM detection unavailable - defaulting to disabled")
+            # Can't detect RAM (e.g., in container without psutil) - default to enabled
+            # Most systems have enough RAM, better to try than silently disable
+            return (True, "Auto-enabled (RAM detection unavailable, assuming sufficient)")
 
         if ram_gb >= 6.0:
             return (True, f"Auto-enabled ({ram_gb:.1f}GB RAM detected, 6GB+ required)")

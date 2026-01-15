@@ -5,9 +5,12 @@ import { ensureProfile, waitForAudioReady, isAudioPlaying } from './helpers';
 // Run with: ANTHROPIC_API_KEY=sk-ant-... npm run test:e2e -- e2e/ai-chat.spec.ts
 
 const API_KEY = process.env.ANTHROPIC_API_KEY;
+const IS_CI = process.env.CI === 'true';
 
 test.describe('AI Chat', () => {
-  test.skip(!API_KEY, 'Requires ANTHROPIC_API_KEY environment variable');
+  // Skip in CI: these tests require a populated music library and real AI responses
+  // They're useful for local development but too flaky for CI (empty library, non-deterministic AI)
+  test.skip(!API_KEY || IS_CI, 'Requires ANTHROPIC_API_KEY and local music library (skipped in CI)');
 
   // Helper to ensure API key is configured
   async function ensureApiKey(page: import('@playwright/test').Page) {

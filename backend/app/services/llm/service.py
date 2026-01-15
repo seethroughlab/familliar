@@ -137,6 +137,10 @@ class LLMService:
 
                     yield {"type": "tool_result", "name": block.name, "result": result}
 
+                    # Check for navigation hint in result
+                    if isinstance(result, dict) and "_navigate" in result:
+                        yield {"type": "navigate", "view": result["_navigate"]}
+
                     assistant_content.append(block)
 
                     messages.append({"role": "assistant", "content": assistant_content})
@@ -246,6 +250,10 @@ class LLMService:
                         result = await tool_executor.execute(tool_name, tool_input)
 
                         yield {"type": "tool_result", "name": tool_name, "result": result}
+
+                        # Check for navigation hint in result
+                        if isinstance(result, dict) and "_navigate" in result:
+                            yield {"type": "navigate", "view": result["_navigate"]}
 
                         messages.append({
                             "role": "assistant",

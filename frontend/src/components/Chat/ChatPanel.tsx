@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Loader2, Music, Wrench, Plus, History, AlertTriangle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useLibraryViewStore } from '../../stores/libraryViewStore';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
@@ -373,6 +374,18 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
             },
           })
         );
+        break;
+      }
+
+      case 'navigate': {
+        const view = event.view as string;
+        if (view === 'proposed-changes') {
+          // Switch to Proposed Changes browser view
+          useLibraryViewStore.getState().setSelectedBrowserId('proposed-changes');
+          // Refresh the changes list
+          queryClient.invalidateQueries({ queryKey: ['proposed-changes'] });
+          queryClient.invalidateQueries({ queryKey: ['proposed-changes-stats'] });
+        }
         break;
       }
     }
