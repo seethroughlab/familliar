@@ -11,3 +11,5 @@ import './AlbumKaleidoscope';
 import './ColorFlow';
 import './TypographyWave';
 import './LyricStorm';
+import './RainWindow';
+import './NonPlaces';

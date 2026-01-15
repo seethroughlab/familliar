@@ -2044,6 +2044,9 @@ class ImportTrackPreview(BaseModel):
     file_size_bytes: int
     sample_rate: int | None = None
     bit_depth: int | None = None
+    # Duplicate detection
+    duplicate_of: str | None = None  # ID of existing track if duplicate found
+    duplicate_info: str | None = None  # e.g. "Artist - Album - Title"
 
 
 class ImportPreviewResponse(BaseModel):
@@ -2100,6 +2103,7 @@ class ImportExecuteResponse(BaseModel):
 
 @router.post("/import/preview", response_model=ImportPreviewResponse)
 async def import_preview(
+    db: DbSession,
     file: UploadFile = File(...),
 ) -> ImportPreviewResponse:
     """Preview an import - extract and scan files without importing.
@@ -2109,6 +2113,9 @@ async def import_preview(
 
     Session expires after 24 hours if not executed.
     """
+    from sqlalchemy import func, select
+
+    from app.db.models import Track
     from app.services.import_service import (
         ImportPreviewService,
         MusicImportError,
@@ -2133,9 +2140,35 @@ async def import_preview(
         preview_service = ImportPreviewService()
         result = preview_service.create_preview_session(temp_path, file.filename)
 
+        # Check for duplicates in the library
+        tracks = result["tracks"]
+        for track in tracks:
+            artist = track.get("detected_artist") or ""
+            album = track.get("detected_album") or ""
+            title = track.get("detected_title") or ""
+
+            # Only check if we have enough metadata to match
+            if artist and album and title:
+                stmt = (
+                    select(Track)
+                    .where(
+                        func.lower(Track.artist) == artist.lower(),
+                        func.lower(Track.album) == album.lower(),
+                        func.lower(Track.title) == title.lower(),
+                    )
+                    .limit(1)
+                )
+                existing = (await db.execute(stmt)).scalar_one_or_none()
+
+                if existing:
+                    track["duplicate_of"] = str(existing.id)
+                    track["duplicate_info"] = (
+                        f"{existing.artist} - {existing.album} - {existing.title}"
+                    )
+
         return ImportPreviewResponse(
             session_id=result["session_id"],
-            tracks=[ImportTrackPreview(**t) for t in result["tracks"]],
+            tracks=[ImportTrackPreview(**t) for t in tracks],
             total_size_bytes=result["total_size_bytes"],
             estimated_sizes=result["estimated_sizes"],
             has_convertible_formats=result["has_convertible_formats"],

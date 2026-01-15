@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, Music, ExternalLink, Loader2 } from 'lucide-react';
+import { Music, Loader2, Play, Pause } from 'lucide-react';
 import { tracksApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import type { Track } from '../../types';
+import { DiscoverySection } from '../shared';
 
 interface DiscoverSectionProps {
   trackId: string;
@@ -11,12 +12,12 @@ interface DiscoverSectionProps {
 }
 
 export function DiscoverSection({ trackId, onNavigateToArtist, onClose }: DiscoverSectionProps) {
-  const { setQueue, addToQueue } = usePlayerStore();
+  const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['track-discover', trackId],
     queryFn: () => tracksApi.getDiscover(trackId, 6, 8),
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 5 * 60 * 1000,
   });
 
   if (isLoading) {
@@ -37,158 +38,100 @@ export function DiscoverSection({ trackId, onNavigateToArtist, onClose }: Discov
 
   const { similar_tracks, similar_artists, bandcamp_artist_url, bandcamp_track_url } = data;
 
-  const inLibrary = similar_artists.filter(a => a.in_library);
-  const toDiscover = similar_artists.filter(a => !a.in_library);
-
-  const handlePlaySimilar = (_track: Track, index: number) => {
-    // Play this track and queue the rest
-    setQueue(similar_tracks as Track[], index);
+  const handlePlaySimilar = (track: Track, index: number) => {
+    if (currentTrack?.id === track.id) {
+      setIsPlaying(!isPlaying);
+    } else {
+      setQueue(similar_tracks as Track[], index);
+    }
   };
 
   const handleQueueSimilar = (track: Track) => {
     addToQueue(track as Track);
   };
 
+  const handleNavigateToArtist = (artistName: string) => {
+    if (onNavigateToArtist) {
+      onNavigateToArtist(artistName);
+      onClose?.();
+    }
+  };
+
   return (
     <div className="h-full overflow-y-auto p-6 pb-32">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Similar Tracks in Library */}
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Similar Tracks - custom component for play/queue functionality */}
         {similar_tracks.length > 0 && (
           <section>
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Music className="w-5 h-5 text-emerald-500" />
-              Similar Tracks in Your Library
+            <h3 className="text-sm font-semibold text-zinc-300 mb-2">
+              Similar Tracks
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {similar_tracks.map((track, idx) => (
-                <div
-                  key={track.id}
-                  className="flex items-center gap-3 p-3 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg group transition-colors"
-                >
-                  <button
-                    onClick={() => handlePlaySimilar(track as Track, idx)}
-                    className="flex-1 text-left min-w-0"
+            <div className="space-y-1">
+              {similar_tracks.map((track, idx) => {
+                const isCurrentTrack = currentTrack?.id === track.id;
+                return (
+                  <div
+                    key={track.id}
+                    className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 transition-colors ${
+                      isCurrentTrack ? 'bg-zinc-800/30' : ''
+                    }`}
                   >
-                    <div className="font-medium truncate group-hover:text-white">
-                      {track.title || 'Unknown'}
+                    <button
+                      onClick={() => handlePlaySimilar(track as Track, idx)}
+                      className={`w-8 h-8 flex items-center justify-center rounded-full transition-opacity ${
+                        isCurrentTrack
+                          ? 'bg-green-600 opacity-100'
+                          : 'bg-green-600 hover:bg-green-500 opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {isCurrentTrack && isPlaying ? (
+                        <Pause className="w-3.5 h-3.5" fill="currentColor" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5" fill="currentColor" />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-medium text-sm truncate ${isCurrentTrack ? 'text-green-500' : ''}`}>
+                        {track.title || 'Unknown'}
+                      </div>
+                      <div className="text-xs text-zinc-400 truncate">
+                        {track.artist || 'Unknown'}
+                      </div>
                     </div>
-                    <div className="text-sm text-zinc-400 truncate">
-                      {track.artist || 'Unknown'}
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => handleQueueSimilar(track as Track)}
-                    className="px-3 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded transition-colors opacity-0 group-hover:opacity-100"
-                  >
-                    Queue
-                  </button>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Similar Artists in Library */}
-        {inLibrary.length > 0 && (
-          <section>
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-500" />
-              Similar Artists in Your Library
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {inLibrary.map((artist) => (
-                <button
-                  key={artist.name}
-                  onClick={() => {
-                    if (onNavigateToArtist) {
-                      onNavigateToArtist(artist.name);
-                      onClose?.();
-                    }
-                  }}
-                  className="flex flex-col items-center p-4 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors group"
-                >
-                  {artist.image_url ? (
-                    <img
-                      src={artist.image_url}
-                      alt={artist.name}
-                      className="w-16 h-16 rounded-full object-cover mb-2"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center mb-2">
-                      <Users className="w-6 h-6 text-zinc-500" />
-                    </div>
-                  )}
-                  <span className="text-sm font-medium text-center truncate w-full group-hover:text-white">
-                    {artist.name}
-                  </span>
-                  <span className="text-xs text-zinc-500">
-                    {artist.track_count} {artist.track_count === 1 ? 'track' : 'tracks'}
-                  </span>
-                  <span className="text-xs text-emerald-500">
-                    {Math.round(artist.match_score * 100)}% match
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Discover Similar Artists */}
-        {toDiscover.length > 0 && (
-          <section>
-            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-              <ExternalLink className="w-5 h-5 text-teal-500" />
-              Discover Similar Artists
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-              {toDiscover.map((artist) => (
-                <div
-                  key={artist.name}
-                  className="flex flex-col items-center p-4 bg-zinc-800/50 rounded-lg"
-                >
-                  {artist.image_url ? (
-                    <img
-                      src={artist.image_url}
-                      alt={artist.name}
-                      className="w-16 h-16 rounded-full object-cover mb-2 opacity-75"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center mb-2">
-                      <Users className="w-6 h-6 text-zinc-500" />
-                    </div>
-                  )}
-                  <span className="text-sm font-medium text-center truncate w-full text-zinc-300">
-                    {artist.name}
-                  </span>
-                  <span className="text-xs text-zinc-500 mb-2">
-                    {Math.round(artist.match_score * 100)}% match
-                  </span>
-                  <div className="flex gap-1">
-                    {artist.bandcamp_url && (
-                      <a
-                        href={artist.bandcamp_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2 py-1 text-xs bg-teal-600/20 text-teal-400 hover:bg-teal-600/40 rounded transition-colors"
-                      >
-                        Bandcamp
-                      </a>
-                    )}
-                    {artist.lastfm_url && (
-                      <a
-                        href={artist.lastfm_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="px-2 py-1 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded transition-colors"
-                      >
-                        Last.fm
-                      </a>
-                    )}
+                    <button
+                      onClick={() => handleQueueSimilar(track as Track)}
+                      className="px-2 py-1 text-xs bg-zinc-700 hover:bg-zinc-600 rounded transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      Queue
+                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
+        )}
+
+        {/* Similar Artists - using shared component */}
+        {similar_artists.length > 0 && (
+          <DiscoverySection
+            title="Similar Artists"
+            type="artist"
+            collapsible
+            items={similar_artists.map((artist) => ({
+              name: artist.name,
+              subtitle: artist.in_library
+                ? `${artist.track_count} ${artist.track_count === 1 ? 'track' : 'tracks'}`
+                : undefined,
+              imageUrl: artist.image_url || undefined,
+              matchScore: artist.match_score,
+              inLibrary: artist.in_library,
+              externalLinks: artist.in_library ? undefined : {
+                bandcamp: artist.bandcamp_url || undefined,
+                lastfm: artist.lastfm_url || undefined,
+              },
+            }))}
+            onItemClick={(item) => item.inLibrary && handleNavigateToArtist(item.name)}
+          />
         )}
 
         {/* External Links for Current Track */}
@@ -201,7 +144,7 @@ export function DiscoverSection({ trackId, onNavigateToArtist, onClose }: Discov
                   href={bandcamp_track_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded-lg transition-colors text-sm"
+                  className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
                 >
                   Search for this track
                 </a>
@@ -211,7 +154,7 @@ export function DiscoverSection({ trackId, onNavigateToArtist, onClose }: Discov
                   href={bandcamp_artist_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="px-4 py-2 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded-lg transition-colors text-sm"
+                  className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
                 >
                   More by {data.artist}
                 </a>

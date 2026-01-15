@@ -13,6 +13,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { BrowserPicker } from './BrowserPicker';
 import { SelectionToolbar } from './SelectionToolbar';
 import { ArtistDetail } from './ArtistDetail';
+import { AlbumDetail } from './AlbumDetail';
 import {
   getBrowser,
   DEFAULT_BROWSER_ID,
@@ -63,6 +64,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
       search: initialSearch || searchParams.get('search') || undefined,
       artist: searchParams.get('artist') || undefined,
       album: searchParams.get('album') || undefined,
+      genre: searchParams.get('genre') || undefined,
       yearFrom: searchParams.get('yearFrom') ? Number(searchParams.get('yearFrom')) : undefined,
       yearTo: searchParams.get('yearTo') ? Number(searchParams.get('yearTo')) : undefined,
       energyMin: searchParams.get('energyMin') ? Number(searchParams.get('energyMin')) : undefined,
@@ -79,6 +81,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         // Clear old filter params
         next.delete('artist');
         next.delete('album');
+        next.delete('genre');
         next.delete('yearFrom');
         next.delete('yearTo');
         next.delete('energyMin');
@@ -88,6 +91,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         // Set new ones
         if (newFilters.artist) next.set('artist', newFilters.artist);
         if (newFilters.album) next.set('album', newFilters.album);
+        if (newFilters.genre) next.set('genre', newFilters.genre);
         if (newFilters.yearFrom) next.set('yearFrom', String(newFilters.yearFrom));
         if (newFilters.yearTo) next.set('yearTo', String(newFilters.yearTo));
         if (newFilters.energyMin !== undefined) next.set('energyMin', String(newFilters.energyMin));
@@ -120,6 +124,16 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
 
   // Artist detail view state - read from URL
   const selectedArtist = searchParams.get('artistDetail');
+
+  // Album detail view state - read from URL
+  const selectedAlbum = useMemo(() => {
+    const artistParam = searchParams.get('albumDetailArtist');
+    const albumParam = searchParams.get('albumDetailAlbum');
+    if (artistParam && albumParam) {
+      return { artist: artistParam, album: albumParam };
+    }
+    return null;
+  }, [searchParams]);
 
   const selectTrack = useCallback((trackId: string, multi: boolean) => {
     setSelectedTrackIds((prev) => {
@@ -186,27 +200,37 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
 
   const handleGoToAlbum = useCallback(
     (artistName: string, albumName: string) => {
+      // Open album detail view - persist in URL
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        // Clear artist detail view - we're navigating to album
+        // Clear other detail/filter views
         next.delete('artistDetail');
         next.delete('artist');
         next.delete('album');
+        next.delete('view');
         next.delete('yearFrom');
         next.delete('yearTo');
         next.delete('energyMin');
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
-        // Explicitly switch to track-list to show album tracks
-        next.set('view', 'track-list');
-        next.set('artist', artistName);
-        next.set('album', albumName);
+        // Set album detail params
+        next.set('albumDetailArtist', artistName);
+        next.set('albumDetailAlbum', albumName);
         return next;
       });
     },
     [setSearchParams]
   );
+
+  const handleBackFromAlbum = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('albumDetailArtist');
+      next.delete('albumDetailAlbum');
+      return next;
+    });
+  }, [setSearchParams]);
 
   const handleGoToYear = useCallback(
     (year: number) => {
@@ -278,6 +302,32 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     [setSearchParams]
   );
 
+  const handleGoToGenre = useCallback(
+    (genre: string) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        // Clear other filters but keep genre
+        next.delete('artist');
+        next.delete('album');
+        next.delete('genre');
+        next.delete('yearFrom');
+        next.delete('yearTo');
+        next.delete('energyMin');
+        next.delete('energyMax');
+        next.delete('valenceMin');
+        next.delete('valenceMax');
+        next.delete('albumDetailArtist');
+        next.delete('albumDetailAlbum');
+        next.delete('artistDetail');
+        // Explicitly switch to track-list to show filtered tracks
+        next.set('view', 'track-list');
+        next.set('genre', genre);
+        return next;
+      });
+    },
+    [setSearchParams]
+  );
+
   const handleFilterChange = useCallback(
     (newFilters: Partial<LibraryFilters>) => {
       setFilters({ ...filters, ...newFilters });
@@ -336,6 +386,25 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     );
   }
 
+  // Show album detail view if an album is selected
+  if (selectedAlbum) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto p-4">
+          <AlbumDetail
+            artistName={selectedAlbum.artist}
+            albumName={selectedAlbum.album}
+            onBack={handleBackFromAlbum}
+            onGoToArtist={handleGoToArtist}
+            onGoToAlbum={handleGoToAlbum}
+            onGoToYear={handleGoToYear}
+            onGoToGenre={handleGoToGenre}
+          />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Selection toolbar (appears when tracks selected) */}
@@ -355,7 +424,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
       </div>
 
       {/* Filter breadcrumbs */}
-      {(filters.artist || filters.album || filters.yearFrom || filters.energyMin !== undefined) && (
+      {(filters.artist || filters.album || filters.genre || filters.yearFrom || filters.energyMin !== undefined) && (
         <div className="flex items-center gap-2 px-4 py-2 text-sm bg-zinc-800/50">
           <span className="text-zinc-400">Viewing:</span>
           {filters.artist && (
@@ -373,6 +442,11 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
                 {filters.album}
               </span>
             </>
+          )}
+          {filters.genre && (
+            <span className="px-2 py-0.5 bg-zinc-700 rounded text-white">
+              {filters.genre}
+            </span>
           )}
           {filters.yearFrom && (
             <span className="px-2 py-0.5 bg-zinc-700 rounded text-white">
@@ -413,6 +487,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
             onGoToAlbum={handleGoToAlbum}
             onGoToYear={handleGoToYear}
             onGoToYearRange={handleGoToYearRange}
+            onGoToGenre={handleGoToGenre}
             onGoToMood={handleGoToMood}
             onPlayTrack={handlePlayTrack}
             onPlayTrackAt={handlePlayTrackAt}

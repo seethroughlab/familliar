@@ -79,6 +79,7 @@ export interface BrowserProps {
   onGoToAlbum: (artistName: string, albumName: string) => void;
   onGoToYear: (year: number) => void;
   onGoToYearRange: (yearFrom: number, yearTo: number) => void;
+  onGoToGenre: (genre: string) => void;
   onGoToMood: (energyMin: number, energyMax: number, valenceMin: number, valenceMax: number) => void;
 
   // Playback

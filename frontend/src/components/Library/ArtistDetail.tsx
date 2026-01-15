@@ -14,15 +14,91 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronUp,
+  Heart,
+  Download,
+  Check,
 } from 'lucide-react';
 import { libraryApi, tracksApi } from '../../api/client';
 import { AlbumArtwork } from '../AlbumArtwork';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useFavorites } from '../../hooks/useFavorites';
+import { useOfflineTrack } from '../../hooks/useOfflineTrack';
 import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
 import type { Track } from '../../types';
+import { DiscoverySection } from '../shared';
+
+function OfflineButton({ trackId }: { trackId: string }) {
+  const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
+
+  if (isDownloading) {
+    return (
+      <div
+        className="relative p-1 text-purple-400"
+        title={`Downloading... ${downloadProgress}%`}
+      >
+        <Loader2 className="w-4 h-4 animate-spin" />
+        {downloadProgress > 0 && downloadProgress < 100 && (
+          <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 text-[8px] font-medium">
+            {downloadProgress}%
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (isOffline) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          remove();
+        }}
+        className="p-1 text-green-500 hover:text-red-400 transition-colors"
+        title="Remove offline copy"
+      >
+        <Check className="w-4 h-4" />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        download();
+      }}
+      className="p-1 text-zinc-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+      title="Download for offline"
+    >
+      <Download className="w-4 h-4" />
+    </button>
+  );
+}
+
+function FavoriteButton({ trackId }: { trackId: string }) {
+  const { isFavorite, toggle } = useFavorites();
+  const favorited = isFavorite(trackId);
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        toggle(trackId);
+      }}
+      className={`p-1 transition-colors ${
+        favorited
+          ? 'text-pink-500 hover:text-pink-400'
+          : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+      }`}
+      title={favorited ? 'Remove from favorites' : 'Add to favorites'}
+    >
+      <Heart className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
+    </button>
+  );
+}
 
 interface Props {
   artistName: string;
@@ -369,7 +445,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
               <div
                 key={album.name}
                 className="group bg-zinc-800/50 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors cursor-pointer"
-                onClick={() => onGoToAlbum ? onGoToAlbum(artist.name, album.name) : handlePlayAlbum(album.name)}
+                onClick={() => onGoToAlbum?.(artist.name, album.name)}
               >
                 <div className="aspect-square relative overflow-hidden">
                   <AlbumArtwork
@@ -379,9 +455,16 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
                     size="thumb"
                     className="w-full h-full"
                   />
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                  <button
+                    className="absolute inset-0 flex items-center justify-center bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity z-20"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePlayAlbum(album.name);
+                      onGoToAlbum?.(artist.name, album.name);
+                    }}
+                  >
                     <Play className="w-10 h-10" fill="currentColor" />
-                  </div>
+                  </button>
                 </div>
                 <div className="p-3">
                   <div className="font-medium truncate">{album.name}</div>
@@ -473,116 +556,39 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
               <div className="text-sm text-zinc-500">
                 {formatDuration(track.duration_seconds)}
               </div>
+
+              <FavoriteButton trackId={track.id} />
+              <OfflineButton trackId={track.id} />
             </div>
             );
           })}
         </div>
       </div>
 
-      {/* Similar artists (if available) */}
-      {artist.similar_artists.length > 0 && (() => {
-        const inLibrary = artist.similar_artists.filter(s => s.in_library);
-        const toDiscover = artist.similar_artists.filter(s => !s.in_library);
-
-        return (
-          <div className="space-y-6">
-            {/* In Your Library */}
-            {inLibrary.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Similar Artists in Your Library</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {inLibrary.slice(0, 10).map((similar) => (
-                    <button
-                      key={similar.name}
-                      onClick={() => setSearchParams({ artistDetail: similar.name })}
-                      className="flex flex-col items-center p-3 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors text-left group"
-                    >
-                      <div className="relative w-16 h-16 mb-2">
-                        <img
-                          src={libraryApi.getArtistImageUrl(similar.name, 'large')}
-                          alt={similar.name}
-                          className="w-16 h-16 rounded-full object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden');
-                          }}
-                        />
-                        <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center hidden absolute inset-0">
-                          <Users className="w-6 h-6 text-zinc-500" />
-                        </div>
-                      </div>
-                      <span className="text-sm font-medium text-center truncate w-full group-hover:text-white">
-                        {similar.name}
-                      </span>
-                      <span className="text-xs text-zinc-500">
-                        {similar.track_count} {similar.track_count === 1 ? 'track' : 'tracks'}
-                      </span>
-                      <span className="text-xs text-emerald-500">
-                        {Math.round(similar.match_score * 100)}% match
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Discover */}
-            {toDiscover.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold mb-3">Discover Similar Artists</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {toDiscover.slice(0, 10).map((similar) => (
-                    <div
-                      key={similar.name}
-                      className="flex flex-col items-center p-3 bg-zinc-800/50 rounded-lg"
-                    >
-                      {similar.image_url ? (
-                        <img
-                          src={similar.image_url}
-                          alt={similar.name}
-                          className="w-16 h-16 rounded-full object-cover mb-2 opacity-75"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center mb-2">
-                          <Users className="w-6 h-6 text-zinc-500" />
-                        </div>
-                      )}
-                      <span className="text-sm font-medium text-center truncate w-full text-zinc-300">
-                        {similar.name}
-                      </span>
-                      <span className="text-xs text-zinc-500 mb-2">
-                        {Math.round(similar.match_score * 100)}% match
-                      </span>
-                      <div className="flex gap-1">
-                        {similar.bandcamp_url && (
-                          <a
-                            href={similar.bandcamp_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 text-xs bg-teal-600/20 text-teal-400 hover:bg-teal-600/40 rounded transition-colors"
-                          >
-                            Bandcamp
-                          </a>
-                        )}
-                        {similar.lastfm_url && (
-                          <a
-                            href={similar.lastfm_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-2 py-1 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded transition-colors"
-                          >
-                            Last.fm
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })()}
+      {/* Similar artists */}
+      {artist.similar_artists.length > 0 && (
+        <DiscoverySection
+          title="Similar Artists"
+          type="artist"
+          collapsible
+          items={artist.similar_artists.slice(0, 20).map((similar) => ({
+            name: similar.name,
+            subtitle: similar.in_library
+              ? `${similar.track_count} ${similar.track_count === 1 ? 'track' : 'tracks'}`
+              : undefined,
+            imageUrl: similar.in_library
+              ? libraryApi.getArtistImageUrl(similar.name, 'large')
+              : similar.image_url || undefined,
+            matchScore: similar.match_score,
+            inLibrary: similar.in_library,
+            externalLinks: similar.in_library ? undefined : {
+              bandcamp: similar.bandcamp_url || undefined,
+              lastfm: similar.lastfm_url || undefined,
+            },
+          }))}
+          onItemClick={(item) => item.inLibrary && setSearchParams({ artistDetail: item.name })}
+        />
+      )}
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (

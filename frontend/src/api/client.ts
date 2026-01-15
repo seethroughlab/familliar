@@ -1192,6 +1192,11 @@ export const playlistsApi = {
     await api.delete(`/playlists/${id}/tracks/${trackId}`);
   },
 
+  reorderTracks: async (id: string, trackIds: string[]): Promise<PlaylistDetail> => {
+    const { data } = await api.put(`/playlists/${id}/tracks/reorder`, { track_ids: trackIds });
+    return data;
+  },
+
   getRecommendations: async (
     id: string,
     params?: { artist_limit?: number; track_limit?: number }

@@ -343,6 +343,64 @@ async def add_tracks_to_playlist(
     return await get_playlist(playlist_id, db, profile)
 
 
+class ReorderTracksRequest(BaseModel):
+    """Request to reorder tracks in a playlist."""
+
+    track_ids: list[str] = Field(..., description="Track IDs in the new order")
+
+
+@router.put("/{playlist_id}/tracks/reorder", response_model=PlaylistDetailResponse)
+async def reorder_playlist_tracks(
+    playlist_id: UUID,
+    request: ReorderTracksRequest,
+    db: DbSession,
+    profile: RequiredProfile,
+) -> PlaylistDetailResponse:
+    """Reorder tracks in a playlist.
+
+    The track_ids list should contain all track IDs in the playlist in their new order.
+    Tracks not in the list will be removed, and invalid track IDs will be ignored.
+    """
+    playlist = await db.get(Playlist, playlist_id)
+
+    if not playlist or playlist.profile_id != profile.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Playlist not found",
+        )
+
+    # Get current tracks in playlist
+    result = await db.execute(
+        select(PlaylistTrack.track_id).where(PlaylistTrack.playlist_id == playlist_id)
+    )
+    current_track_ids = {str(row[0]) for row in result.all()}
+
+    # Filter to only valid track IDs that exist in the playlist
+    valid_track_ids = [tid for tid in request.track_ids if tid in current_track_ids]
+
+    # Update positions for each track
+    for position, track_id_str in enumerate(valid_track_ids):
+        try:
+            track_id = UUID(track_id_str)
+        except ValueError:
+            continue
+
+        # Update the position
+        await db.execute(
+            PlaylistTrack.__table__.update()
+            .where(
+                PlaylistTrack.playlist_id == playlist_id,
+                PlaylistTrack.track_id == track_id,
+            )
+            .values(position=position)
+        )
+
+    await db.commit()
+
+    # Return updated playlist
+    return await get_playlist(playlist_id, db, profile)
+
+
 @router.delete("/{playlist_id}/tracks/{track_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_track_from_playlist(
     playlist_id: UUID,

@@ -199,6 +199,10 @@ export function useAudioEngine() {
   const animationFrameRef = useRef<number | undefined>(undefined);
   const isLoadingRef = useRef(false);
   const preloadingTrackIdRef = useRef<string | null>(null);
+  const loadedTrackIdRef = useRef<string | null>(null);
+  const loadIdRef = useRef(0);
+  const errorCountRef = useRef(0);
+  const lastErrorTrackRef = useRef<string | null>(null);
 
   const {
     currentTrack,
@@ -246,17 +250,30 @@ export function useAudioEngine() {
         nextElement.src = url;
         nextElement.load();
 
-        // Wait for enough data to play
+        // Wait for enough data to play (with timeout)
         return new Promise((resolve) => {
-          const onCanPlay = () => {
+          const cleanup = () => {
+            clearTimeout(timeout);
             nextElement.removeEventListener('canplay', onCanPlay);
             nextElement.removeEventListener('error', onError);
+          };
+
+          const timeout = setTimeout(() => {
+            cleanup();
+            console.warn('Preload timeout for track:', trackId);
+            preloadingTrackIdRef.current = null;
+            resolve(false);
+          }, 10000);
+
+          const onCanPlay = () => {
+            cleanup();
+            preloadingTrackIdRef.current = null; // Clear on success
             resolve(true);
           };
           const onError = () => {
-            nextElement.removeEventListener('canplay', onCanPlay);
-            nextElement.removeEventListener('error', onError);
+            cleanup();
             console.error('Failed to preload next track');
+            preloadingTrackIdRef.current = null;
             resolve(false);
           };
           nextElement.addEventListener('canplay', onCanPlay);
@@ -350,6 +367,12 @@ export function useAudioEngine() {
 
     // Reset preloading state
     preloadingTrackIdRef.current = null;
+
+    // Update loaded track ref to the track that just became current via crossfade
+    const currentId = usePlayerStore.getState().currentTrack?.id;
+    if (currentId) {
+      loadedTrackIdRef.current = currentId;
+    }
 
     // Update store
     setCrossfadeState('idle');
@@ -478,11 +501,27 @@ export function useAudioEngine() {
     globalAudioElementA?.addEventListener('ended', handleEndedA);
     globalAudioElementB?.addEventListener('ended', handleEndedB);
 
-    // Error handlers
+    // Error handlers with retry/skip logic
     const handleError = (e: Event) => {
       const target = e.target as HTMLAudioElement;
       if (!target.src || target.src === window.location.href) return;
       console.error('Audio error:', e);
+
+      const currentId = usePlayerStore.getState().currentTrack?.id;
+      if (currentId === lastErrorTrackRef.current) {
+        errorCountRef.current++;
+        if (errorCountRef.current >= 3) {
+          console.error('Skipping track after repeated errors:', currentId);
+          errorCountRef.current = 0;
+          lastErrorTrackRef.current = null;
+          playNext();
+          return;
+        }
+      } else {
+        errorCountRef.current = 1;
+        lastErrorTrackRef.current = currentId ?? null;
+      }
+
       setIsPlaying(false);
     };
 
@@ -511,28 +550,18 @@ export function useAudioEngine() {
         revokeOfflineTrackUrl(currentOfflineUrl);
         currentOfflineUrl = null;
       }
+      loadedTrackIdRef.current = null;
       return;
     }
 
-    // Skip if this track is already playing (happens after crossfade advance)
-    if (
-      currentElement?.src &&
-      !currentElement.src.endsWith('/') &&
-      currentElement.src !== window.location.href
-    ) {
-      // Check if we're already playing the right track by comparing
-      // This is a heuristic - if duration matches, probably same track
-      const loadedDuration = currentElement.duration;
-      if (
-        loadedDuration &&
-        currentTrack.duration_seconds &&
-        Math.abs(loadedDuration - currentTrack.duration_seconds) < 1
-      ) {
-        return; // Same track already loaded
-      }
+    // Skip if this track is already loaded (happens after crossfade advance)
+    if (loadedTrackIdRef.current === currentTrack.id) {
+      return; // Already loaded this track
     }
 
     isLoadingRef.current = true;
+    const currentLoadId = ++loadIdRef.current;
+    const trackIdToLoad = currentTrack.id;
 
     const loadTrack = async () => {
       // Clean up previous
@@ -541,7 +570,16 @@ export function useAudioEngine() {
         currentOfflineUrl = null;
       }
 
-      const { url, isOffline } = await getTrackUrl(currentTrack.id);
+      const { url, isOffline } = await getTrackUrl(trackIdToLoad);
+
+      // Check if this load is still valid (track may have changed)
+      if (loadIdRef.current !== currentLoadId) {
+        if (isOffline) {
+          revokeOfflineTrackUrl(url); // Clean up the URL we just created
+        }
+        return;
+      }
+
       if (isOffline) {
         currentOfflineUrl = url;
       }
@@ -552,6 +590,7 @@ export function useAudioEngine() {
 
         // Wait for ready then play if isPlaying
         const playWhenReady = () => {
+          if (loadIdRef.current !== currentLoadId) return; // Stale load
           const shouldPlay = usePlayerStore.getState().isPlaying;
           if (shouldPlay) {
             currentElement.play().catch((err) => {
@@ -564,7 +603,9 @@ export function useAudioEngine() {
         };
 
         const handleMetadata = () => {
+          if (loadIdRef.current !== currentLoadId) return; // Stale load
           setDuration(currentElement.duration);
+          loadedTrackIdRef.current = trackIdToLoad;
           currentElement.removeEventListener('loadedmetadata', handleMetadata);
         };
 

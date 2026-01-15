@@ -78,16 +78,20 @@ Explore your music in multiple ways:
 - **Duplicate artist detection** - Find and merge artists with variant spellings (e.g., "Artist_Name" vs "Artist and Name")
 
 ### Audio Visualizers
-Seven built-in visualizers with real-time audio reactivity:
+Six built-in visualizers with real-time audio reactivity:
 - **Cosmic Orb** - GPU particle system with glowing orb and waveform ring
 - **Frequency Bars** - Classic spectrum analyzer with 128 gradient bars
 - **Album Kaleidoscope** - Shader-based kaleidoscope from album artwork
 - **Color Flow** - Flowing particles using colors extracted from artwork
 - **Lyric Storm** - 3D floating lyrics with depth and motion blur
-- **Lyric Pulse** - Current lyrics with BPM-synced glow effects
 - **Typography Wave** - Animated text waves
 
 **[Create Your Own Visualizers](docs/VISUALIZER_API.md)** - Open API for community contributions with access to track metadata, audio features, real-time frequency data, and timed lyrics.
+
+### Community Plugins
+Extend Familiar with community-created visualizers:
+- **[Lyric Pulse](https://github.com/seethroughlab/familiar-plugin-lyric-pulse)** - BPM-synced lyric display with glowing pulse effects
+- **[Timeline](https://github.com/seethroughlab/familiar-plugin-timeline)** - Visual timeline showing track position and upcoming lyrics
 
 ## Screenshots
 

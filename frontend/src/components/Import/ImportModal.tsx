@@ -24,6 +24,9 @@ interface TrackPreview {
   format: string;
   duration_seconds: number | null;
   file_size_bytes: number;
+  // Duplicate detection
+  duplicate_of: string | null;
+  duplicate_info: string | null;
 }
 
 interface PreviewResponse {
@@ -44,6 +47,9 @@ interface EditableTrack extends TrackPreview {
   title: string;
   track_num: number | null;
   year: number | null;
+  // Duplicate detection (inherited but making explicit)
+  duplicate_of: string | null;
+  duplicate_info: string | null;
 }
 
 interface ImportModalProps {
@@ -86,6 +92,7 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
   const [mp3Quality, setMp3Quality] = useState(320);
   const [organization, setOrganization] = useState<OrganizationOption>('organized');
   const [queueAnalysis, setQueueAnalysis] = useState(true);
+  const [skipDuplicates, setSkipDuplicates] = useState(true);
 
   // UI state
   const [expandedTracks, setExpandedTracks] = useState(false);
@@ -195,6 +202,17 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
   const executeImport = async () => {
     if (!sessionId) return;
 
+    // Filter out duplicates if skipDuplicates is enabled
+    const tracksToImport = skipDuplicates
+      ? tracks.filter((t) => !t.duplicate_of)
+      : tracks;
+
+    if (tracksToImport.length === 0) {
+      setError('All tracks are duplicates and were skipped');
+      setState('error');
+      return;
+    }
+
     setState('importing');
     setImportProgress(0);
     setImportErrors([]);
@@ -205,7 +223,7 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           session_id: sessionId,
-          tracks: tracks.map(t => ({
+          tracks: tracksToImport.map(t => ({
             filename: t.filename,
             relative_path: t.relative_path,
             artist: t.artist || t.detected_artist,
@@ -267,6 +285,14 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
     return estimatedSizes.original;
   };
 
+  // Get count of tracks that will actually be imported
+  const getImportCount = (): number => {
+    if (skipDuplicates) {
+      return tracks.filter((t) => !t.duplicate_of).length;
+    }
+    return tracks.length;
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -321,6 +347,23 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                 </span>
               </div>
 
+              {/* Duplicate warning */}
+              {tracks.some((t) => t.duplicate_of) && (
+                <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="text-amber-200 font-medium">
+                      {tracks.filter((t) => t.duplicate_of).length} track
+                      {tracks.filter((t) => t.duplicate_of).length !== 1 ? 's' : ''} may
+                      already exist in your library
+                    </p>
+                    <p className="text-amber-200/70 text-xs mt-1">
+                      Matching by artist, album, and title
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Track list */}
               <div>
                 <button
@@ -336,15 +379,24 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                     {tracks.map((track, index) => (
                       <div
                         key={track.relative_path}
-                        className="bg-zinc-800/50 rounded-lg p-3 space-y-2"
+                        className={`bg-zinc-800/50 rounded-lg p-3 space-y-2 ${
+                          track.duplicate_of ? 'border border-amber-500/30' : ''
+                        }`}
                       >
                         <div className="flex items-center gap-2 text-sm text-zinc-400">
-                          {track.format === 'zip' ? (
+                          {track.duplicate_of ? (
+                            <AlertCircle className="w-4 h-4 text-amber-400" title="May already exist in library" />
+                          ) : track.format === 'zip' ? (
                             <FileArchive className="w-4 h-4" />
                           ) : (
                             <Music className="w-4 h-4" />
                           )}
                           <span className="truncate">{track.filename}</span>
+                          {track.duplicate_of && (
+                            <span className="text-xs text-amber-400 bg-amber-500/20 px-1.5 py-0.5 rounded">
+                              duplicate
+                            </span>
+                          )}
                           <span className="ml-auto">{formatDuration(track.duration_seconds)}</span>
                         </div>
                         <div className="grid grid-cols-4 gap-2">
@@ -384,8 +436,14 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                   <div className="bg-zinc-800/50 rounded-lg p-3 max-h-32 overflow-y-auto">
                     {tracks.slice(0, 5).map((track) => (
                       <div key={track.relative_path} className="flex items-center gap-2 text-sm text-zinc-300 py-1">
-                        <Music className="w-3 h-3 text-zinc-500" />
-                        <span className="truncate">{track.title || track.filename}</span>
+                        {track.duplicate_of ? (
+                          <AlertCircle className="w-3 h-3 text-amber-400" />
+                        ) : (
+                          <Music className="w-3 h-3 text-zinc-500" />
+                        )}
+                        <span className={`truncate ${track.duplicate_of ? 'text-amber-200' : ''}`}>
+                          {track.title || track.filename}
+                        </span>
                         <span className="ml-auto text-zinc-500">{formatDuration(track.duration_seconds)}</span>
                       </div>
                     ))}
@@ -528,7 +586,20 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
               </div>
 
               {/* Additional options */}
-              <div>
+              <div className="space-y-3">
+                {tracks.some((t) => t.duplicate_of) && (
+                  <label className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={skipDuplicates}
+                      onChange={(e) => setSkipDuplicates(e.target.checked)}
+                      className="rounded text-amber-500"
+                    />
+                    <span className="text-sm text-zinc-300">
+                      Skip tracks that already exist in library
+                    </span>
+                  </label>
+                )}
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
@@ -627,10 +698,11 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
               </button>
               <button
                 onClick={executeImport}
-                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-2"
+                disabled={getImportCount() === 0}
+                className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload className="w-4 h-4" />
-                Import {tracks.length} track{tracks.length !== 1 ? 's' : ''}
+                Import {getImportCount()} track{getImportCount() !== 1 ? 's' : ''}
               </button>
             </>
           )}
