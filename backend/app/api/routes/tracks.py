@@ -314,7 +314,6 @@ async def get_track_discover(
     - Similar artists (Last.fm, with library status)
     - External purchase/discovery links
     """
-    from datetime import datetime, timedelta
 
     from app.db.models import ArtistInfo, TrackStatus
     from app.services.lastfm import get_lastfm_service

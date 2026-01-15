@@ -11,7 +11,6 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from uuid import UUID
 
 import httpx
 from pydantic import BaseModel, Field
@@ -19,7 +18,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Plugin, PluginType
-
 
 # Current plugin API version supported by this app
 CURRENT_API_VERSION = 1
@@ -405,7 +403,7 @@ class PluginService:
             query = query.where(Plugin.plugin_type == plugin_type)
 
         if enabled_only:
-            query = query.where(Plugin.enabled == True)
+            query = query.where(Plugin.enabled.is_(True))
 
         result = await db.execute(query)
         return list(result.scalars().all())

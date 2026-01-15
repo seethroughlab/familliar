@@ -10,7 +10,6 @@ from app.api.deps import DbSession
 from app.db.models import PluginType
 from app.services.plugins import get_plugin_service
 
-
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
 
