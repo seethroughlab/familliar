@@ -49,8 +49,8 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
-  // Pan and zoom state
-  const [zoom, setZoom] = useState(1);
+  // Pan and zoom state - start zoomed in so map fills view
+  const [zoom, setZoom] = useState(1.5);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -210,7 +210,7 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   }, []);
 
   const handleReset = useCallback(() => {
-    setZoom(1);
+    setZoom(1.5);
     setPan({ x: 0, y: 0 });
   }, []);
 
