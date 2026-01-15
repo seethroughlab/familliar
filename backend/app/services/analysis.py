@@ -201,6 +201,53 @@ def extract_embedding(file_path: Path, target_sr: int = 48000) -> list[float] | 
         raise AnalysisError(f"Embedding extraction failed: {e}") from e
 
 
+def extract_text_embedding(text: str) -> list[float] | None:
+    """Extract CLAP text embedding from a text description.
+
+    CLAP embeds text and audio into the same 512-dimensional space,
+    enabling text-to-audio semantic search.
+
+    Args:
+        text: Natural language description (e.g., "gloomy with Eastern influences")
+
+    Returns:
+        512-dimensional embedding as list of floats, or None if CLAP is disabled
+    """
+    if not _torch_available:
+        logger.debug("CLAP text embeddings disabled (torch not available)")
+        return None
+
+    from app.services.app_settings import get_app_settings_service
+    clap_enabled, reason = get_app_settings_service().is_clap_embeddings_enabled()
+    if not clap_enabled:
+        logger.debug(f"CLAP text embeddings disabled: {reason}")
+        return None
+
+    try:
+        model, processor = load_clap_model()
+        device = get_device()
+
+        # Process text input
+        inputs = processor(
+            text=[text],  # CLAP expects a list of texts
+            return_tensors="pt",
+            padding=True,
+        )
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        # Get text embedding
+        with torch.no_grad():
+            text_embed = model.get_text_features(**inputs)
+
+        # Convert to list
+        embedding = text_embed.cpu().numpy().flatten().tolist()
+        return embedding
+
+    except Exception as e:
+        logger.error(f"Error extracting text embedding for '{text}': {e}")
+        return None
+
+
 def _extract_features_impl(file_path_str: str) -> dict[str, float | str | None]:
     """Internal implementation of feature extraction.
 

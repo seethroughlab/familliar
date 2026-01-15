@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.9] - 2026-01-14
+
+### Added
+
+- **Semantic search** for natural language music queries
+  - New `semantic_search` LLM tool uses CLAP text embeddings
+  - Ask for "gloomy with Eastern influences" or "dreamy atmospheric synths" and find sonically matching tracks
+  - Works by encoding your text description into the same embedding space as the audio
+  - Gracefully falls back to metadata search when CLAP is disabled
+
 ## [0.1.0-alpha.8] - 2026-01-14
 
 ### Added
@@ -236,7 +246,9 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...HEAD
+[0.1.0-alpha.9]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
+[0.1.0-alpha.8]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
 [0.1.0-alpha.6]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.4...v0.1.0-alpha.5

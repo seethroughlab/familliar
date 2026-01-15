@@ -49,6 +49,7 @@ class ToolExecutor:
         handlers = {
             "search_library": self._search_library,
             "find_similar_tracks": self._find_similar_tracks,
+            "semantic_search": self._semantic_search,
             "filter_tracks_by_features": self._filter_tracks_by_features,
             "get_library_stats": self._get_library_stats,
             "get_library_genres": self._get_library_genres,
@@ -314,6 +315,57 @@ Respond with ONLY the playlist name, nothing else."""
             "tracks": [self._track_to_dict(t) for t in selected],
             "count": len(selected),
             "note": f"Similar tracks from {len(set(t.artist for t in selected))} different artists",
+        }
+
+    async def _semantic_search(self, description: str, limit: int = 20) -> dict[str, Any]:
+        """Search for tracks using text-to-audio semantic similarity via CLAP embeddings."""
+        from app.services.analysis import extract_text_embedding, get_analysis_capabilities
+
+        # Convert limit to int (LLM may pass string)
+        try:
+            limit = int(float(limit)) if limit else 20
+        except (ValueError, TypeError):
+            limit = 20
+
+        # Check if semantic search is available
+        caps = get_analysis_capabilities()
+        if not caps["embeddings_enabled"]:
+            return {
+                "error": f"Semantic search unavailable: {caps['embeddings_disabled_reason']}",
+                "tracks": [],
+                "fallback_suggestion": "Try search_library or filter_tracks_by_features instead",
+            }
+
+        # Get text embedding
+        embedding = extract_text_embedding(description)
+        if embedding is None:
+            return {
+                "error": "Failed to generate text embedding",
+                "tracks": [],
+                "fallback_suggestion": "Try search_library or filter_tracks_by_features instead",
+            }
+
+        # Query for similar tracks using cosine distance
+        similar_stmt = (
+            select(Track)
+            .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
+            .where(TrackAnalysis.embedding.isnot(None))
+            .order_by(TrackAnalysis.embedding.cosine_distance(embedding))
+            .limit(limit * 4)  # Fetch extra for diversity filtering
+        )
+        result = await self.db.execute(similar_stmt)
+        all_tracks = list(result.scalars().all())
+
+        # Apply diversity filtering
+        diverse_tracks = self._apply_diversity(all_tracks, max_per_artist=2, max_per_album=3)
+        random.shuffle(diverse_tracks)
+        selected = diverse_tracks[:limit]
+
+        return {
+            "tracks": [self._track_to_dict(t) for t in selected],
+            "count": len(selected),
+            "description": description,
+            "note": f"Found {len(selected)} tracks matching '{description}' from {len(set(t.artist for t in selected))} artists",
         }
 
     async def _filter_tracks_by_features(

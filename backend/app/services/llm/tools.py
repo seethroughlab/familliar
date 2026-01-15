@@ -43,6 +43,25 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
         }
     },
     {
+        "name": "semantic_search",
+        "description": "Search for tracks using natural language descriptions of sound, mood, or style. Uses AI audio embeddings to find tracks that sonically match descriptions like 'dreamy atmospheric synths', 'aggressive heavy guitars', 'mellow jazz with piano', 'gloomy with Eastern influences'. Best for abstract or mood-based queries where metadata search won't work well.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "Natural language description of the sound, mood, or style you're looking for"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results to return (default 20)",
+                    "default": 20
+                }
+            },
+            "required": ["description"]
+        }
+    },
+    {
         "name": "filter_tracks_by_features",
         "description": "Filter tracks by audio features like BPM, energy, danceability, or musical key. Use for requests like 'upbeat songs', 'something around 120 BPM', or 'songs in the key of F'.",
         "input_schema": {
@@ -417,7 +436,12 @@ DO NOT keep searching repeatedly. If your first search returns tracks, USE THEM.
 2. If found: queue_tracks immediately
 3. If not found: search for similar genres/styles ONCE, then queue what you find
 
-**"Play something chill/upbeat/etc"**:
+**"Play something [abstract mood/vibe]"** (e.g., "dreamy", "ethereal", "aggressive", "gloomy with Eastern influences"):
+1. semantic_search with the description
+2. If unavailable, fall back to filter_tracks_by_features or search_library
+3. queue_tracks immediately
+
+**"Play something chill/upbeat/etc"** (simple mood words that map to audio features):
 1. filter_tracks_by_features with appropriate values
 2. queue_tracks immediately
 
