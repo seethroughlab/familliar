@@ -39,6 +39,7 @@ import { useMetadataEnrichment } from './hooks/useMetadataEnrichment';
 // import { useListeningSession } from './hooks/useListeningSession';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { initSyncListeners } from './services/syncService';
+import { pluginLoader } from './services/pluginLoader';
 import { usePlayerStore } from './stores/playerStore';
 import { useSelectionStore } from './stores/selectionStore';
 import { useThemeStore } from './stores/themeStore';
@@ -454,6 +455,17 @@ function App() {
       window.removeEventListener('profile-invalidated', handleInvalidated);
     };
   }, [checkProfile]);
+
+  // Initialize plugin system and load plugins
+  useEffect(() => {
+    // Initialize the global Familiar API for plugins
+    pluginLoader.initializeGlobalAPI();
+
+    // Load all enabled plugins
+    pluginLoader.loadAllPlugins().catch((err) => {
+      console.error('Failed to load plugins:', err);
+    });
+  }, []);
 
   // Show loading spinner while checking profile
   if (checkingProfile) {

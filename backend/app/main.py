@@ -33,6 +33,7 @@ from app.api.routes import (
     organizer,
     outputs,
     playlists,
+    plugins,
     profiles,
     proposed_changes,
     sessions,
@@ -316,6 +317,7 @@ app.include_router(new_releases.router, prefix="/api/v1")
 app.include_router(artwork.router, prefix="/api/v1")
 app.include_router(background.router, prefix="/api/v1")
 app.include_router(diagnostics.router, prefix="/api/v1")
+app.include_router(plugins.router, prefix="/api/v1")
 
 
 # Serve frontend static files in production

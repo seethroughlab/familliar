@@ -9,7 +9,6 @@
 import './TrackListBrowser';
 import './ArtistList';
 import './AlbumGrid';
-import './Timeline';
 import './MoodGrid';
 import './EgoMusicMap';
 import './UMAPExplorer';
