@@ -41,6 +41,8 @@ export default defineConfig({
       workbox: {
         // Cache app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // Allow larger chunks to be cached (default is 2 MiB)
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024, // 4 MiB
         // Don't serve SPA for API routes (especially OAuth callbacks)
         navigateFallbackDenylist: [/^\/api\//],
         // Runtime caching strategies

@@ -385,7 +385,9 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                       >
                         <div className="flex items-center gap-2 text-sm text-zinc-400">
                           {track.duplicate_of ? (
-                            <AlertCircle className="w-4 h-4 text-amber-400" title="May already exist in library" />
+                            <span title="May already exist in library">
+                              <AlertCircle className="w-4 h-4 text-amber-400" />
+                            </span>
                           ) : track.format === 'zip' ? (
                             <FileArchive className="w-4 h-4" />
                           ) : (

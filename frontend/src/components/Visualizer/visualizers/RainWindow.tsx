@@ -67,7 +67,7 @@ function updateDroplet(droplet: Droplet, canvasHeight: number): boolean {
 function drawDroplet(
   ctx: CanvasRenderingContext2D,
   droplet: Droplet,
-  glassColor: string
+  _glassColor: string
 ) {
   // Draw trail
   if (droplet.trail.length > 1) {
@@ -76,7 +76,6 @@ function drawDroplet(
 
     for (let i = 1; i < droplet.trail.length; i++) {
       const point = droplet.trail[i];
-      const alpha = (1 - point.age / 30) * droplet.opacity * 0.3;
       ctx.lineTo(point.x, point.y);
     }
 
@@ -217,7 +216,6 @@ export function RainWindow({ artworkUrl }: VisualizerProps) {
   const bokehRef = useRef<BokehCircle[]>([]);
   const timeRef = useRef(0);
   const smoothedBassRef = useRef(0);
-  const lastSpawnRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -330,7 +328,10 @@ export function RainWindow({ artworkUrl }: VisualizerProps) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [audioData, palette]);
+    // Note: audioData is intentionally excluded - we read it inside the animation loop
+    // and don't want to recreate bokeh when it changes every frame
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [palette]);
 
   return (
     <div className="w-full h-full bg-[#0a1020]">

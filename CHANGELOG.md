@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.10] - 2026-01-15
+
+### Added
+
+- **Non-Places visualizer enhancements** - inspired by "Islands: Non-Places" game
+  - New objects with glowing parts: vending machine, ATM, streetlight, exit sign
+  - New palm tree silhouette with detailed fronds
+  - Ground plane with parallax depth and subtle horizon line
+  - Shadows beneath objects (darker/sharper for closer objects)
+  - Gentle swaying animation on plant fronds
+- **Rain Window visualizer** - new calm visualizer for ambient music
+  - Rain droplets with physics-based trails sliding down glass
+  - Soft bokeh lights in background using album artwork colors
+  - Subtle bass reactivity for spawn rate and brightness
+
+### Fixed
+
+- **Visualizer stability** - fixed useEffect dependency bug causing objects to flicker/respawn every frame
+  - Affected both Rain Window (bokeh lights) and Non-Places (silhouettes)
+  - Root cause: `audioData` in dependency array caused effect to re-run on every frame
+- **Plant frond rotation** - fronds now point upward correctly instead of sideways
+  - Added -π/2 offset to canvas rotation so angle 0 means "up" not "right"
+  - Affects both potted plant and palm tree shapes
+
+### Changed
+
+- **Non-Places object distribution** - weighted toward iconic glowing objects
+  - Vending machines, ATMs, streetlights appear 2x as often
+  - Palm trees appear 3x as often (good silhouette)
+  - Removed abstract "ring" shape (didn't fit aesthetic)
+
 ## [0.1.0-alpha.9] - 2026-01-14
 
 ### Added

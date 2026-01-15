@@ -20,9 +20,13 @@ type ShapeType =
   | 'plant'
   | 'escalator'
   | 'sign'
-  | 'ring'
   | 'cube'
-  | 'pillar';
+  | 'pillar'
+  | 'vendingMachine'
+  | 'atm'
+  | 'streetlight'
+  | 'exitSign'
+  | 'palmTree';
 
 interface Silhouette {
   type: ShapeType;
@@ -117,7 +121,9 @@ function drawPlant(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
-  scale: number
+  scale: number,
+  time: number,
+  phase: number
 ) {
   ctx.save();
   ctx.translate(x, y);
@@ -133,9 +139,12 @@ function drawPlant(
   ctx.fill();
 
   // Leaves (palm-like fronds)
-  const drawFrond = (angle: number, length: number) => {
+  const drawFrond = (angle: number, length: number, swayOffset: number) => {
+    // Gentle sway based on time, with each frond slightly offset
+    const sway = Math.sin(time * 0.3 + phase + swayOffset) * 0.08;
     ctx.save();
-    ctx.rotate(angle);
+    // Offset by -π/2 so angle 0 points UP instead of RIGHT
+    ctx.rotate(angle + sway - Math.PI / 2);
     ctx.beginPath();
     ctx.moveTo(0, 0);
     ctx.quadraticCurveTo(length * 0.3, -length * 0.5, length, -length * 0.2);
@@ -145,12 +154,12 @@ function drawPlant(
   };
 
   ctx.translate(0, -5);
-  drawFrond(-0.8, 50);
-  drawFrond(-0.3, 55);
-  drawFrond(0.2, 52);
-  drawFrond(0.7, 48);
-  drawFrond(-1.2, 40);
-  drawFrond(1.1, 42);
+  drawFrond(-0.8, 50, 0);
+  drawFrond(-0.3, 55, 0.5);
+  drawFrond(0.2, 52, 1.0);
+  drawFrond(0.7, 48, 1.5);
+  drawFrond(-1.2, 40, 2.0);
+  drawFrond(1.1, 42, 2.5);
 
   ctx.restore();
 }
@@ -222,39 +231,6 @@ function drawSign(
   ctx.restore();
 }
 
-function drawRing(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  scale: number,
-  glowIntensity: number,
-  glowColor: string
-) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(scale, scale);
-
-  // Outer glow
-  if (glowIntensity > 0) {
-    const gradient = ctx.createRadialGradient(0, 0, 25, 0, 0, 60);
-    gradient.addColorStop(0, glowColor);
-    gradient.addColorStop(0.5, glowColor.replace('1)', `${glowIntensity * 0.4})`));
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(0, 0, 60, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Ring
-  ctx.lineWidth = 8;
-  ctx.beginPath();
-  ctx.arc(0, 0, 30, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.restore();
-}
-
 function drawCube(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -320,12 +296,264 @@ function drawPillar(
   ctx.restore();
 }
 
+function drawVendingMachine(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  glowIntensity: number,
+  glowColor: string
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Main body
+  ctx.fillRect(-25, -70, 50, 90);
+
+  // Product display window (glows)
+  if (glowIntensity > 0) {
+    const gradient = ctx.createRadialGradient(0, -30, 0, 0, -30, 50);
+    gradient.addColorStop(0, glowColor);
+    gradient.addColorStop(0.6, glowColor.replace('1)', `${glowIntensity * 0.4})`));
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-35, -65, 70, 55);
+  }
+
+  // Window frame (darker inset)
+  ctx.fillRect(-20, -60, 40, 45);
+
+  // Product shelves (horizontal lines)
+  ctx.fillRect(-18, -48, 36, 2);
+  ctx.fillRect(-18, -35, 36, 2);
+  ctx.fillRect(-18, -22, 36, 2);
+
+  // Coin slot / buttons panel
+  ctx.fillRect(-20, -8, 15, 20);
+  // Dispensing slot
+  ctx.fillRect(0, 0, 18, 15);
+
+  ctx.restore();
+}
+
+function drawAtm(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  glowIntensity: number,
+  glowColor: string
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Main body
+  ctx.fillRect(-22, -50, 44, 70);
+
+  // Screen area (glows)
+  if (glowIntensity > 0) {
+    const gradient = ctx.createRadialGradient(0, -30, 0, 0, -30, 35);
+    gradient.addColorStop(0, glowColor);
+    gradient.addColorStop(0.5, glowColor.replace('1)', `${glowIntensity * 0.5})`));
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-30, -50, 60, 40);
+  }
+
+  // Screen frame
+  ctx.fillRect(-16, -42, 32, 22);
+
+  // Keypad area
+  ctx.fillRect(-14, -15, 28, 20);
+  // Keypad buttons (dots)
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      ctx.beginPath();
+      ctx.arc(-8 + col * 8, -10 + row * 6, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Card slot
+  ctx.fillRect(-10, 8, 20, 4);
+
+  ctx.restore();
+}
+
+function drawStreetlight(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  glowIntensity: number,
+  glowColor: string
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Tall pole
+  ctx.fillRect(-4, -100, 8, 120);
+
+  // Curved arm at top
+  ctx.beginPath();
+  ctx.moveTo(0, -100);
+  ctx.quadraticCurveTo(25, -100, 30, -85);
+  ctx.quadraticCurveTo(35, -70, 30, -70);
+  ctx.quadraticCurveTo(20, -70, 20, -85);
+  ctx.quadraticCurveTo(20, -95, 0, -95);
+  ctx.closePath();
+  ctx.fill();
+
+  // Lamp head
+  ctx.beginPath();
+  ctx.ellipse(30, -68, 12, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Glow from lamp (downward cone)
+  if (glowIntensity > 0) {
+    const gradient = ctx.createRadialGradient(30, -60, 0, 30, -40, 50);
+    gradient.addColorStop(0, glowColor);
+    gradient.addColorStop(0.4, glowColor.replace('1)', `${glowIntensity * 0.5})`));
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.moveTo(20, -65);
+    ctx.lineTo(10, -20);
+    ctx.lineTo(50, -20);
+    ctx.lineTo(40, -65);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawExitSign(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  glowIntensity: number,
+  glowColor: string
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Hanging mount lines
+  ctx.fillRect(-2, -80, 4, 15);
+
+  // Sign body glow
+  if (glowIntensity > 0) {
+    const gradient = ctx.createRadialGradient(0, -55, 0, 0, -55, 45);
+    gradient.addColorStop(0, glowColor);
+    gradient.addColorStop(0.5, glowColor.replace('1)', `${glowIntensity * 0.6})`));
+    gradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(-40, -75, 80, 50);
+  }
+
+  // Sign body
+  ctx.fillRect(-30, -65, 60, 25);
+
+  // Arrow shape cutout (pointing right) - simulated with lighter rect
+  ctx.globalAlpha = 0.3;
+  ctx.fillRect(-20, -58, 25, 10);
+  // Arrow head
+  ctx.beginPath();
+  ctx.moveTo(8, -63);
+  ctx.lineTo(18, -53);
+  ctx.lineTo(8, -43);
+  ctx.closePath();
+  ctx.fill();
+  ctx.globalAlpha = 1.0;
+
+  ctx.restore();
+}
+
+function drawPalmTree(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  scale: number,
+  time: number,
+  phase: number
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Trunk (slightly curved)
+  ctx.beginPath();
+  ctx.moveTo(-8, 20);
+  ctx.quadraticCurveTo(-12, -30, -5, -80);
+  ctx.lineTo(5, -80);
+  ctx.quadraticCurveTo(12, -30, 8, 20);
+  ctx.closePath();
+  ctx.fill();
+
+  // Trunk texture (horizontal lines)
+  for (let i = 0; i < 8; i++) {
+    const ty = 10 - i * 12;
+    ctx.fillRect(-10, ty, 20, 2);
+  }
+
+  // Fronds
+  const drawFrond = (angle: number, length: number, droop: number, swayOffset: number) => {
+    // Gentle sway based on time, with each frond slightly offset
+    const sway = Math.sin(time * 0.25 + phase + swayOffset) * 0.06;
+    ctx.save();
+    ctx.translate(0, -80);
+    // Offset by -π/2 so angle 0 points UP instead of RIGHT
+    ctx.rotate(angle + sway - Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    // Main frond curve
+    ctx.quadraticCurveTo(length * 0.5, -length * 0.3 + droop, length, droop);
+    // Return path (leaf width)
+    ctx.quadraticCurveTo(length * 0.5, -length * 0.2 + droop, 0, 0);
+    ctx.fill();
+
+    // Add leaflets along the frond
+    for (let i = 1; i < 6; i++) {
+      const t = i / 6;
+      const fx = t * length * 0.9;
+      const fy = -t * length * 0.2 + droop * t;
+      ctx.save();
+      ctx.translate(fx, fy);
+      ctx.rotate(0.3);
+      ctx.fillRect(0, 0, 15, 3);
+      ctx.rotate(-0.6);
+      ctx.fillRect(0, 0, 15, 3);
+      ctx.restore();
+    }
+    ctx.restore();
+  };
+
+  // Multiple fronds radiating out
+  drawFrond(-1.2, 70, 20, 0);
+  drawFrond(-0.7, 80, 15, 0.4);
+  drawFrond(-0.2, 85, 10, 0.8);
+  drawFrond(0.3, 82, 12, 1.2);
+  drawFrond(0.8, 75, 18, 1.6);
+  drawFrond(1.3, 65, 25, 2.0);
+  // Back fronds (shorter)
+  drawFrond(-1.6, 50, 30, 2.4);
+  drawFrond(1.6, 55, 28, 2.8);
+
+  ctx.restore();
+}
+
 function drawSilhouette(
   ctx: CanvasRenderingContext2D,
   silhouette: Silhouette,
   y: number,
   glowIntensity: number,
-  glowColor: string
+  glowColor: string,
+  time: number
 ) {
   const glow = silhouette.hasGlow ? glowIntensity : 0;
 
@@ -337,7 +565,7 @@ function drawSilhouette(
       drawLamp(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
       break;
     case 'plant':
-      drawPlant(ctx, silhouette.x, y, silhouette.scale);
+      drawPlant(ctx, silhouette.x, y, silhouette.scale, time, silhouette.bobPhase);
       break;
     case 'escalator':
       drawEscalator(ctx, silhouette.x, y, silhouette.scale);
@@ -345,31 +573,84 @@ function drawSilhouette(
     case 'sign':
       drawSign(ctx, silhouette.x, y, silhouette.scale);
       break;
-    case 'ring':
-      drawRing(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
-      break;
     case 'cube':
       drawCube(ctx, silhouette.x, y, silhouette.scale);
       break;
     case 'pillar':
       drawPillar(ctx, silhouette.x, y, silhouette.scale);
       break;
+    case 'vendingMachine':
+      drawVendingMachine(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
+      break;
+    case 'atm':
+      drawAtm(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
+      break;
+    case 'streetlight':
+      drawStreetlight(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
+      break;
+    case 'exitSign':
+      drawExitSign(ctx, silhouette.x, y, silhouette.scale, glow, glowColor);
+      break;
+    case 'palmTree':
+      drawPalmTree(ctx, silhouette.x, y, silhouette.scale, time, silhouette.bobPhase);
+      break;
   }
+}
+
+// ============================================================================
+// Shadow Drawing
+// ============================================================================
+
+function drawShadow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  groundY: number,
+  scale: number,
+  depth: number,
+  hue: number
+) {
+  const shadowWidth = 30 * scale;
+  const shadowHeight = 8 * scale;
+  const opacity = 0.25 - depth * 0.15; // Closer = darker shadow
+
+  ctx.save();
+  // Use a darker version of the ground color for shadow
+  ctx.fillStyle = `hsla(${hue}, 30%, 8%, ${opacity})`;
+  ctx.beginPath();
+  ctx.ellipse(x, groundY + 5, shadowWidth, shadowHeight, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }
 
 // ============================================================================
 // Layer Generation
 // ============================================================================
 
+// Ground level as percentage of canvas height (objects sit here)
+const GROUND_LEVEL = 0.78;
+
 const SHAPE_TYPES: ShapeType[] = [
+  // Standard objects
   'chair',
   'lamp',
   'plant',
   'escalator',
   'sign',
-  'ring',
-  'cube',
   'pillar',
+  // Glowing objects (2x weight - iconic Non-Places aesthetic)
+  'vendingMachine',
+  'vendingMachine',
+  'atm',
+  'atm',
+  'streetlight',
+  'streetlight',
+  'exitSign',
+  // Vegetation (3x weight - good silhouette)
+  'palmTree',
+  'palmTree',
+  'palmTree',
+  // Abstract shape (reduced frequency)
+  'cube',
 ];
 
 function createLayer(
@@ -381,14 +662,29 @@ function createLayer(
   const silhouettes: Silhouette[] = [];
 
   // Spread silhouettes across double the canvas width (for seamless scrolling)
+  // Ground Y varies with depth (farther = higher up, closer to horizon)
+  const groundY = canvasHeight * (GROUND_LEVEL - depth * 0.25);
+
   for (let i = 0; i < numSilhouettes; i++) {
     const type = SHAPE_TYPES[Math.floor(Math.random() * SHAPE_TYPES.length)];
-    const hasGlow = type === 'lamp' || type === 'ring' || Math.random() < 0.1;
+    const hasGlow = [
+      'lamp',
+      'vendingMachine',
+      'atm',
+      'streetlight',
+      'exitSign',
+    ].includes(type);
+
+    // Exit signs float higher (hanging from ceiling)
+    const isFloating = type === 'exitSign';
+    const baseY = isFloating
+      ? groundY - 150 - Math.random() * 50
+      : groundY;
 
     silhouettes.push({
       type,
       x: Math.random() * canvasWidth * 2,
-      baseY: canvasHeight * (0.5 + depth * 0.3) + (Math.random() - 0.5) * 100,
+      baseY,
       scale: 0.6 + Math.random() * 0.8,
       bobPhase: Math.random() * Math.PI * 2,
       bobAmount: 3 + Math.random() * 8,
@@ -399,7 +695,7 @@ function createLayer(
 
   return {
     depth,
-    speed: 0.15 + depth * 0.25, // Closer = faster (reversed parallax: we're moving through)
+    speed: 0.08 + depth * 0.12, // Slow, meditative drift
     silhouettes,
     yOffset: 0,
   };
@@ -528,13 +824,31 @@ export function NonPlaces({ artworkUrl }: VisualizerProps) {
       const baseHue = hueRef.current;
       const hue = (baseHue + Math.sin(timeRef.current * 0.02) * 15 + 360) % 360;
 
-      // Create gradient background
+      // Create gradient background (sky)
       const bgGradient = ctx.createLinearGradient(0, 0, 0, height);
       bgGradient.addColorStop(0, `hsl(${hue}, 40%, 18%)`);
-      bgGradient.addColorStop(0.5, `hsl(${hue}, 35%, 22%)`);
-      bgGradient.addColorStop(1, `hsl(${hue}, 45%, 15%)`);
+      bgGradient.addColorStop(0.5, `hsl(${hue}, 35%, 20%)`);
+      bgGradient.addColorStop(0.7, `hsl(${hue}, 38%, 16%)`);
+      bgGradient.addColorStop(1, `hsl(${hue}, 45%, 12%)`);
       ctx.fillStyle = bgGradient;
       ctx.fillRect(0, 0, width, height);
+
+      // Draw ground plane
+      const groundY = height * GROUND_LEVEL;
+      const groundGradient = ctx.createLinearGradient(0, groundY - 50, 0, height);
+      groundGradient.addColorStop(0, `hsla(${hue}, 35%, 15%, 0)`);
+      groundGradient.addColorStop(0.3, `hsla(${hue}, 40%, 12%, 0.5)`);
+      groundGradient.addColorStop(1, `hsla(${hue}, 45%, 8%, 0.8)`);
+      ctx.fillStyle = groundGradient;
+      ctx.fillRect(0, groundY - 50, width, height - groundY + 50);
+
+      // Subtle horizon line
+      ctx.strokeStyle = `hsla(${hue}, 30%, 25%, 0.3)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      ctx.lineTo(width, groundY);
+      ctx.stroke();
 
       // Draw layers back to front
       layersRef.current.forEach((layer) => {
@@ -551,6 +865,9 @@ export function NonPlaces({ artworkUrl }: VisualizerProps) {
         const glowIntensity = 0.4 + smoothedBass * 0.6;
         const glowColor = `hsla(${hue}, 70%, 60%, 1)`;
 
+        // Calculate layer's ground Y (varies with depth for parallax)
+        const layerGroundY = height * (GROUND_LEVEL - layer.depth * 0.25);
+
         // Update and draw each silhouette
         layer.silhouettes.forEach((silhouette) => {
           // Update X position (scroll)
@@ -561,11 +878,23 @@ export function NonPlaces({ artworkUrl }: VisualizerProps) {
             silhouette.x += width * 2 + 200;
           }
 
-          // Calculate bobbing Y
+          // Calculate bobbing Y (very slow, gentle)
           const bob =
-            Math.sin(timeRef.current * 0.5 + silhouette.bobPhase) *
+            Math.sin(timeRef.current * 0.15 + silhouette.bobPhase) *
             silhouette.bobAmount;
           const y = silhouette.baseY + bob;
+
+          // Draw shadow (only for grounded objects, not exit signs)
+          if (silhouette.type !== 'exitSign') {
+            drawShadow(
+              ctx,
+              silhouette.x,
+              layerGroundY,
+              silhouette.scale,
+              layer.depth,
+              hue
+            );
+          }
 
           // Draw the silhouette
           drawSilhouette(
@@ -574,10 +903,11 @@ export function NonPlaces({ artworkUrl }: VisualizerProps) {
             y,
             silhouette.hasGlow
               ? glowIntensity *
-                  (0.5 +
-                    Math.sin(timeRef.current * 2 + silhouette.glowPhase) * 0.5)
+                  (0.6 +
+                    Math.sin(timeRef.current * 0.4 + silhouette.glowPhase) * 0.4)
               : 0,
-            glowColor
+            glowColor,
+            timeRef.current
           );
         });
 
@@ -630,7 +960,10 @@ export function NonPlaces({ artworkUrl }: VisualizerProps) {
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [audioData, palette]);
+  // Note: audioData is intentionally excluded - we read it inside the animation loop
+  // and don't want to recreate layers when it changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [palette]);
 
   return (
     <div className="w-full h-full bg-[#1a2830]">
@@ -649,3 +982,15 @@ registerVisualizer(
   },
   NonPlaces
 );
+
+// ============================================================================
+// Future Object Ideas
+// ============================================================================
+// - bench: public seating with armrests
+// - luggageCart: airport/station trolley silhouette
+// - bollard: traffic bollard with reflective stripe (subtle glow)
+// - payphone: standing phone booth with lit panel
+// - trashCan: public waste bin
+// - shoppingCart: abandoned shopping cart
+// - turnstile: transit gate
+// - cctv: security camera on pole
