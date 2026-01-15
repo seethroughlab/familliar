@@ -49,8 +49,9 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
-  // Pan and zoom state - start zoomed in so map fills view
-  const [zoom, setZoom] = useState(1.5);
+  // Pan and zoom state - will be set adaptively when data loads
+  const [zoom, setZoom] = useState(1);
+  const [hasAutoZoomed, setHasAutoZoomed] = useState(false);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
@@ -210,8 +211,8 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
   }, []);
 
   const handleReset = useCallback(() => {
-    setZoom(1.5);
     setPan({ x: 0, y: 0 });
+    setHasAutoZoomed(false); // Triggers recalculation of optimal zoom
   }, []);
 
   // Pan handlers
@@ -296,6 +297,42 @@ export function MusicMap({ onGoToArtist, onGoToAlbum }: BrowserProps) {
 
     return { nodePositions: positions, maxTrackCount: maxCount };
   }, [data]);
+
+  // Auto-zoom to fit nodes when data first loads
+  useEffect(() => {
+    if (!data?.nodes?.length || hasAutoZoomed) return;
+
+    // Calculate bounding box of all nodes (coordinates are in [0,1] range)
+    let minX = 1, maxX = 0, minY = 1, maxY = 0;
+    for (const node of data.nodes) {
+      minX = Math.min(minX, node.x);
+      maxX = Math.max(maxX, node.x);
+      minY = Math.min(minY, node.y);
+      maxY = Math.max(maxY, node.y);
+    }
+
+    // Calculate the span of data
+    const dataWidth = maxX - minX;
+    const dataHeight = maxY - minY;
+
+    if (dataWidth > 0 && dataHeight > 0) {
+      // Calculate zoom to fill ~85% of view (leave some margin)
+      const targetFill = 0.85;
+      const zoomX = targetFill / dataWidth;
+      const zoomY = targetFill / dataHeight;
+      // Use the smaller zoom to ensure everything fits
+      const optimalZoom = Math.min(zoomX, zoomY, 3); // Cap at 3x
+
+      setZoom(Math.max(optimalZoom, 1)); // At least 1x
+    }
+
+    setHasAutoZoomed(true);
+  }, [data, hasAutoZoomed]);
+
+  // Reset auto-zoom flag when entity type changes
+  useEffect(() => {
+    setHasAutoZoomed(false);
+  }, [entityType]);
 
   if (isLoading) {
     return (
