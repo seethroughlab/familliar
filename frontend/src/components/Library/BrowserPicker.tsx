@@ -13,6 +13,7 @@ import {
   Smile,
   Map,
   Activity,
+  Sparkles,
 } from 'lucide-react';
 import { getBrowsers, getBrowsersByCategory, type BrowserMetadata } from './types';
 
@@ -25,6 +26,7 @@ const browserIcons: Record<string, typeof List> = {
   'mood-grid': Smile,
   'music-map': Map,
   'tempo-spectrum': Activity,
+  'discover': Sparkles,
 };
 
 // Category labels
@@ -32,6 +34,7 @@ const categoryLabels: Record<BrowserMetadata['category'], string> = {
   traditional: 'Traditional Views',
   temporal: 'Timeline Views',
   spatial: 'Spatial Views',
+  discovery: 'Discovery',
 };
 
 interface BrowserPickerProps {

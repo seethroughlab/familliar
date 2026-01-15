@@ -12,6 +12,7 @@ import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
 import { useVisibleTracksStore } from '../../../stores/visibleTracksStore';
 import { useFavorites } from '../../../hooks/useFavorites';
+import { useArtworkPrefetchBatch } from '../../../hooks/useArtworkPrefetch';
 import { useColumnStore, getVisibleColumns } from '../../../stores/columnStore';
 import { COLUMN_DEFINITIONS, getColumnDef, getAnalysisColumns } from '../columnDefinitions';
 import { useOfflineTrack } from '../../../hooks/useOfflineTrack';
@@ -492,6 +493,20 @@ export function TrackListBrowser({
       setVisibleTracks(visibleTracks, total, filterDescription);
     }
   }, [allTracks, total, filters, setVisibleTracks]);
+
+  // Prefetch artwork for visible albums
+  const prefetchArtworkBatch = useArtworkPrefetchBatch();
+  useEffect(() => {
+    if (allTracks.length > 0) {
+      prefetchArtworkBatch(
+        allTracks.map((t) => ({
+          artist: t.artist,
+          album: t.album,
+          trackId: t.id,
+        }))
+      );
+    }
+  }, [allTracks, prefetchArtworkBatch]);
 
   const handlePlayTrack = useCallback(
     (track: Track, index: number) => {

@@ -13,7 +13,6 @@ import {
   Undo2,
   Trash2,
   ClipboardList,
-  CheckSquare,
   X,
   ChevronDown,
   AlertCircle,
@@ -30,7 +29,6 @@ import { registerBrowser, type BrowserProps } from '../types';
 
 const STATUS_LABELS: Record<ChangeStatus, string> = {
   pending: 'Pending',
-  approved: 'Approved',
   rejected: 'Rejected',
   applied: 'Applied',
 };
@@ -154,7 +152,6 @@ function PreviewModal({ preview, onClose }: PreviewModalProps) {
 interface ChangeCardProps {
   change: ProposedChange;
   onPreview: () => void;
-  onApprove: () => void;
   onReject: () => void;
   onApply: (scope: ChangeScope) => void;
   onUndo: () => void;
@@ -165,7 +162,6 @@ interface ChangeCardProps {
 function ChangeCard({
   change,
   onPreview,
-  onApprove,
   onReject,
   onApply,
   onUndo,
@@ -176,7 +172,6 @@ function ChangeCard({
   const [showScopeDropdown, setShowScopeDropdown] = useState(false);
 
   const isPending = change.status === 'pending';
-  const isApproved = change.status === 'approved';
   const isApplied = change.status === 'applied';
   const isRejected = change.status === 'rejected';
 
@@ -185,11 +180,9 @@ function ChangeCard({
       className={`rounded-lg border p-4 space-y-3 ${
         isPending
           ? 'bg-zinc-900/50 border-zinc-700'
-          : isApproved
-            ? 'bg-blue-900/20 border-blue-800/50'
-            : isApplied
-              ? 'bg-green-900/20 border-green-800/50'
-              : 'bg-zinc-900/30 border-zinc-700/50'
+          : isApplied
+            ? 'bg-green-900/20 border-green-800/50'
+            : 'bg-zinc-900/30 border-zinc-700/50'
       }`}
     >
       {/* Header */}
@@ -214,11 +207,9 @@ function ChangeCard({
             className={`text-xs px-2 py-0.5 rounded ${
               isPending
                 ? 'bg-yellow-900/50 text-yellow-400'
-                : isApproved
-                  ? 'bg-blue-900/50 text-blue-400'
-                  : isApplied
-                    ? 'bg-green-900/50 text-green-400'
-                    : 'bg-zinc-700 text-zinc-400'
+                : isApplied
+                  ? 'bg-green-900/50 text-green-400'
+                  : 'bg-zinc-700 text-zinc-400'
             }`}
           >
             {STATUS_LABELS[change.status]}
@@ -248,8 +239,8 @@ function ChangeCard({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-2 border-t border-zinc-700/50">
-        {/* Scope selector (for pending/approved) */}
-        {(isPending || isApproved) && (
+        {/* Scope selector (for pending) */}
+        {isPending && (
           <div className="relative">
             <button
               onClick={() => setShowScopeDropdown(!showScopeDropdown)}
@@ -293,27 +284,6 @@ function ChangeCard({
 
         {/* Status-specific actions */}
         {isPending && (
-          <>
-            <button
-              onClick={onApprove}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm transition-colors disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckSquare className="w-4 h-4" />}
-              Approve
-            </button>
-            <button
-              onClick={onReject}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-600 hover:bg-zinc-500 rounded text-sm transition-colors disabled:opacity-50"
-            >
-              <X className="w-4 h-4" />
-              Reject
-            </button>
-          </>
-        )}
-
-        {isApproved && (
           <>
             <button
               onClick={() => onApply(selectedScope)}
@@ -384,14 +354,6 @@ function ProposedChangesBrowser(_props: BrowserProps) {
   });
 
   // Mutations
-  const approveMutation = useMutation({
-    mutationFn: proposedChangesApi.approve,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['proposed-changes'] });
-      queryClient.invalidateQueries({ queryKey: ['proposed-changes-stats'] });
-    },
-  });
-
   const rejectMutation = useMutation({
     mutationFn: proposedChangesApi.reject,
     onSuccess: () => {
@@ -436,13 +398,6 @@ function ProposedChangesBrowser(_props: BrowserProps) {
     }
   };
 
-  const handleApprove = (changeId: string) => {
-    setLoadingChangeId(changeId);
-    approveMutation.mutate(changeId, {
-      onSettled: () => setLoadingChangeId(null),
-    });
-  };
-
   const handleReject = (changeId: string) => {
     setLoadingChangeId(changeId);
     rejectMutation.mutate(changeId, {
@@ -475,7 +430,7 @@ function ProposedChangesBrowser(_props: BrowserProps) {
     });
   };
 
-  const totalChanges = stats ? stats.pending + stats.approved + stats.rejected + stats.applied : 0;
+  const totalChanges = stats ? stats.pending + stats.rejected + stats.applied : 0;
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -522,16 +477,6 @@ function ProposedChangesBrowser(_props: BrowserProps) {
               }`}
             >
               Pending ({stats?.pending || 0})
-            </button>
-            <button
-              onClick={() => setStatusFilter('approved')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                statusFilter === 'approved'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-              }`}
-            >
-              Approved ({stats?.approved || 0})
             </button>
             <button
               onClick={() => setStatusFilter('applied')}
@@ -584,7 +529,6 @@ function ProposedChangesBrowser(_props: BrowserProps) {
                     key={change.id}
                     change={change}
                     onPreview={() => handlePreview(change.id)}
-                    onApprove={() => handleApprove(change.id)}
                     onReject={() => handleReject(change.id)}
                     onApply={(scope) => handleApply(change.id, scope)}
                     onUndo={() => handleUndo(change.id)}

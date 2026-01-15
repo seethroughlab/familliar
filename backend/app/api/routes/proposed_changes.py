@@ -45,7 +45,6 @@ class ProposedChangeResponse(BaseModel):
     scope: str
     status: str
     created_at: str
-    approved_at: str | None
     applied_at: str | None
 
 
@@ -79,7 +78,6 @@ class ChangeStatsResponse(BaseModel):
     """Response model for change statistics."""
 
     pending: int
-    approved: int
     rejected: int
     applied: int
 
@@ -98,12 +96,6 @@ class CreateChangeRequest(BaseModel):
     confidence: float = 1.0
     reason: str | None = None
     scope: str = "db_only"
-
-
-class BatchApproveRequest(BaseModel):
-    """Request for batch approval."""
-
-    change_ids: list[str]
 
 
 class BatchApplyRequest(BaseModel):
@@ -135,7 +127,6 @@ def _change_to_response(change) -> ProposedChangeResponse:
         scope=change.scope.value if hasattr(change.scope, "value") else change.scope,
         status=change.status.value if hasattr(change.status, "value") else change.status,
         created_at=change.created_at.isoformat() if change.created_at else None,
-        approved_at=change.approved_at.isoformat() if change.approved_at else None,
         applied_at=change.applied_at.isoformat() if change.applied_at else None,
     )
 
@@ -172,7 +163,6 @@ def _stats_to_response(stats: ChangeStats) -> ChangeStatsResponse:
     """Convert ChangeStats to response."""
     return ChangeStatsResponse(
         pending=stats.pending,
-        approved=stats.approved,
         rejected=stats.rejected,
         applied=stats.applied,
     )
@@ -202,7 +192,7 @@ async def list_changes(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
     else:
-        changes = await service.get_pending(limit=limit, offset=offset)
+        changes = await service.get_all(limit=limit, offset=offset)
 
     return [_change_to_response(c) for c in changes]
 
@@ -288,21 +278,6 @@ async def create_change(
     return _change_to_response(change)
 
 
-@router.post("/{change_id}/approve", response_model=ProposedChangeResponse)
-async def approve_change(
-    change_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    profile=Depends(get_current_profile),
-) -> ProposedChangeResponse:
-    """Approve a proposed change."""
-    service = ProposedChangesService(db)
-    profile_id = profile.id if profile else None
-    change = await service.approve(change_id, profile_id)
-    if not change:
-        raise HTTPException(status_code=404, detail="Change not found")
-    return _change_to_response(change)
-
-
 @router.post("/{change_id}/reject", response_model=ProposedChangeResponse)
 async def reject_change(
     change_id: UUID,
@@ -358,27 +333,6 @@ async def delete_change(
     if not success:
         raise HTTPException(status_code=404, detail="Change not found")
     return {"status": "deleted"}
-
-
-@router.post("/batch/approve", response_model=list[ProposedChangeResponse])
-async def batch_approve(
-    request: BatchApproveRequest,
-    db: AsyncSession = Depends(get_db),
-    profile=Depends(get_current_profile),
-) -> list[ProposedChangeResponse]:
-    """Approve multiple changes at once."""
-    service = ProposedChangesService(db)
-    profile_id = profile.id if profile else None
-    results = []
-    for change_id_str in request.change_ids:
-        try:
-            change_id = UUID(change_id_str)
-            change = await service.approve(change_id, profile_id)
-            if change:
-                results.append(_change_to_response(change))
-        except ValueError:
-            continue  # Skip invalid UUIDs
-    return results
 
 
 @router.post("/batch/apply", response_model=list[ApplyResultResponse])

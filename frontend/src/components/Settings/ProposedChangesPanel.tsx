@@ -8,7 +8,6 @@ import {
   Undo2,
   Trash2,
   ClipboardList,
-  CheckSquare,
   X,
   ChevronDown,
   AlertCircle,
@@ -23,7 +22,6 @@ import {
 
 const STATUS_LABELS: Record<ChangeStatus, string> = {
   pending: 'Pending',
-  approved: 'Approved',
   rejected: 'Rejected',
   applied: 'Applied',
 };
@@ -128,7 +126,6 @@ function PreviewModal({ preview, onClose }: PreviewModalProps) {
 interface ChangeCardProps {
   change: ProposedChange;
   onPreview: () => void;
-  onApprove: () => void;
   onReject: () => void;
   onApply: (scope: ChangeScope) => void;
   onUndo: () => void;
@@ -139,7 +136,6 @@ interface ChangeCardProps {
 function ChangeCard({
   change,
   onPreview,
-  onApprove,
   onReject,
   onApply,
   onUndo,
@@ -150,7 +146,6 @@ function ChangeCard({
   const [showScopeDropdown, setShowScopeDropdown] = useState(false);
 
   const isPending = change.status === 'pending';
-  const isApproved = change.status === 'approved';
   const isApplied = change.status === 'applied';
   const isRejected = change.status === 'rejected';
 
@@ -159,11 +154,9 @@ function ChangeCard({
       className={`rounded-lg border p-3 space-y-2 ${
         isPending
           ? 'bg-zinc-900/50 border-zinc-700'
-          : isApproved
-            ? 'bg-blue-900/20 border-blue-800/50'
-            : isApplied
-              ? 'bg-green-900/20 border-green-800/50'
-              : 'bg-zinc-900/30 border-zinc-700/50'
+          : isApplied
+            ? 'bg-green-900/20 border-green-800/50'
+            : 'bg-zinc-900/30 border-zinc-700/50'
       }`}
     >
       {/* Header */}
@@ -188,11 +181,9 @@ function ChangeCard({
             className={`text-xs px-2 py-0.5 rounded ${
               isPending
                 ? 'bg-yellow-900/50 text-yellow-400'
-                : isApproved
-                  ? 'bg-blue-900/50 text-blue-400'
-                  : isApplied
-                    ? 'bg-green-900/50 text-green-400'
-                    : 'bg-zinc-700 text-zinc-400'
+                : isApplied
+                  ? 'bg-green-900/50 text-green-400'
+                  : 'bg-zinc-700 text-zinc-400'
             }`}
           >
             {STATUS_LABELS[change.status]}
@@ -222,8 +213,8 @@ function ChangeCard({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1 border-t border-zinc-700/50">
-        {/* Scope selector (for pending/approved) */}
-        {(isPending || isApproved) && (
+        {/* Scope selector (for pending) */}
+        {isPending && (
           <div className="relative">
             <button
               onClick={() => setShowScopeDropdown(!showScopeDropdown)}
@@ -267,27 +258,6 @@ function ChangeCard({
 
         {/* Status-specific actions */}
         {isPending && (
-          <>
-            <button
-              onClick={onApprove}
-              disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs transition-colors disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckSquare className="w-3 h-3" />}
-              Approve
-            </button>
-            <button
-              onClick={onReject}
-              disabled={isLoading}
-              className="flex items-center gap-1 px-2 py-1 bg-zinc-600 hover:bg-zinc-500 rounded text-xs transition-colors disabled:opacity-50"
-            >
-              <X className="w-3 h-3" />
-              Reject
-            </button>
-          </>
-        )}
-
-        {isApproved && (
           <>
             <button
               onClick={() => onApply(selectedScope)}
@@ -358,14 +328,6 @@ export function ProposedChangesPanel() {
   });
 
   // Mutations
-  const approveMutation = useMutation({
-    mutationFn: proposedChangesApi.approve,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['proposed-changes'] });
-      queryClient.invalidateQueries({ queryKey: ['proposed-changes-stats'] });
-    },
-  });
-
   const rejectMutation = useMutation({
     mutationFn: proposedChangesApi.reject,
     onSuccess: () => {
@@ -410,13 +372,6 @@ export function ProposedChangesPanel() {
     }
   };
 
-  const handleApprove = (changeId: string) => {
-    setLoadingChangeId(changeId);
-    approveMutation.mutate(changeId, {
-      onSettled: () => setLoadingChangeId(null),
-    });
-  };
-
   const handleReject = (changeId: string) => {
     setLoadingChangeId(changeId);
     rejectMutation.mutate(changeId, {
@@ -449,7 +404,7 @@ export function ProposedChangesPanel() {
     });
   };
 
-  const totalChanges = stats ? stats.pending + stats.approved + stats.rejected + stats.applied : 0;
+  const totalChanges = stats ? stats.pending + stats.rejected + stats.applied : 0;
 
   if (totalChanges === 0 && !isLoading) {
     return (
@@ -499,16 +454,6 @@ export function ProposedChangesPanel() {
           }`}
         >
           Pending ({stats?.pending || 0})
-        </button>
-        <button
-          onClick={() => setStatusFilter('approved')}
-          className={`px-3 py-1.5 rounded-lg text-sm transition-colors ${
-            statusFilter === 'approved'
-              ? 'bg-blue-600 text-white'
-              : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
-          }`}
-        >
-          Approved ({stats?.approved || 0})
         </button>
         <button
           onClick={() => setStatusFilter('applied')}
@@ -561,7 +506,6 @@ export function ProposedChangesPanel() {
                 key={change.id}
                 change={change}
                 onPreview={() => handlePreview(change.id)}
-                onApprove={() => handleApprove(change.id)}
                 onReject={() => handleReject(change.id)}
                 onApply={(scope) => handleApply(change.id, scope)}
                 onUndo={() => handleUndo(change.id)}

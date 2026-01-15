@@ -58,7 +58,6 @@ class ChangeStats:
     """Summary statistics for proposed changes."""
 
     pending: int
-    approved: int
     rejected: int
     applied: int
 
@@ -138,6 +137,16 @@ class ProposedChangesService:
         )
         return list(result.scalars().all())
 
+    async def get_all(self, limit: int = 50, offset: int = 0) -> list[ProposedChange]:
+        """Get all changes regardless of status, ordered by created_at desc."""
+        result = await self.db.execute(
+            select(ProposedChange)
+            .order_by(ProposedChange.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def get_by_track(self, track_id: UUID) -> list[ProposedChange]:
         """Get all changes affecting a specific track."""
         track_id_str = str(track_id)
@@ -162,32 +171,9 @@ class ProposedChangesService:
             counts[row.status] = row.count  # type: ignore[assignment]
         return ChangeStats(
             pending=counts.get(ChangeStatus.PENDING, 0),
-            approved=counts.get(ChangeStatus.APPROVED, 0),
             rejected=counts.get(ChangeStatus.REJECTED, 0),
             applied=counts.get(ChangeStatus.APPLIED, 0),
         )
-
-    async def approve(
-        self,
-        change_id: UUID,
-        profile_id: UUID | None = None,
-    ) -> ProposedChange | None:
-        """Approve a change (mark it ready to apply)."""
-        change = await self.get_by_id(change_id)
-        if not change:
-            return None
-
-        if change.status != ChangeStatus.PENDING:
-            logger.warning(f"Cannot approve change {change_id}: status is {change.status}")
-            return change
-
-        change.status = ChangeStatus.APPROVED
-        change.approved_at = datetime.utcnow()
-        change.approved_by_profile_id = profile_id
-        await self.db.commit()
-        await self.db.refresh(change)
-        logger.info(f"Approved change {change_id}")
-        return change
 
     async def reject(self, change_id: UUID) -> ProposedChange | None:
         """Reject a change."""
@@ -195,7 +181,7 @@ class ProposedChangesService:
         if not change:
             return None
 
-        if change.status not in (ChangeStatus.PENDING, ChangeStatus.APPROVED):
+        if change.status != ChangeStatus.PENDING:
             logger.warning(f"Cannot reject change {change_id}: status is {change.status}")
             return change
 
@@ -261,7 +247,7 @@ class ProposedChangesService:
                 error="Change not found",
             )
 
-        if change.status not in (ChangeStatus.PENDING, ChangeStatus.APPROVED):
+        if change.status != ChangeStatus.PENDING:
             return ApplyResult(
                 change_id=change_id,
                 success=False,

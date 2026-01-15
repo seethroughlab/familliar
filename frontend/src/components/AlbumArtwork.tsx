@@ -57,41 +57,21 @@ export function AlbumArtwork({
     console.log(`[AlbumArtwork RENDER] ${normalizedArtist} - ${normalizedAlbum}: status=${status}, hash=${hash}, artworkUrl=${artworkUrl}, showPlaceholder=${showPlaceholder}, imageError=${imageError}`);
   }
 
-  // Request artwork when component becomes visible (strictly visible, no margin)
+  // Request artwork immediately on mount if status is unknown
+  // This ensures artwork is fetched even for elements already in view
   useEffect(() => {
-    const element = containerRef.current;
-    console.log(`[AlbumArtwork OBSERVER SETUP] ${normalizedArtist} - ${normalizedAlbum}: element=${!!element}, requestedRef=${requestedRef.current}`);
-
-    if (!element) {
-      console.log(`[AlbumArtwork OBSERVER SKIP] No element for ${normalizedArtist} - ${normalizedAlbum}`);
-      return;
-    }
     if (normalizedArtist === 'Unknown' || normalizedAlbum === 'Unknown') {
-      console.log(`[AlbumArtwork OBSERVER SKIP] Unknown artist/album for ${normalizedArtist} - ${normalizedAlbum}`);
       return;
     }
     if (requestedRef.current) {
-      console.log(`[AlbumArtwork OBSERVER SKIP] Already requested ${normalizedArtist} - ${normalizedAlbum}`);
       return;
     }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        console.log(`[AlbumArtwork OBSERVER CALLBACK] ${normalizedArtist} - ${normalizedAlbum}: isIntersecting=${entries[0]?.isIntersecting}, requestedRef=${requestedRef.current}`);
-        if (entries[0]?.isIntersecting && !requestedRef.current) {
-          requestedRef.current = true;
-          console.log(`[AlbumArtwork VISIBLE] Requesting: ${normalizedArtist} - ${normalizedAlbum}`);
-          requestArtwork([{ artist: normalizedArtist, album: normalizedAlbum, trackId }]);
-          observer.disconnect();
-        }
-      },
-      { rootMargin: '0px', threshold: 0.01 }  // Strictly visible - at least 1% in view
-    );
-
-    observer.observe(element);
-    console.log(`[AlbumArtwork OBSERVER STARTED] Observing ${normalizedArtist} - ${normalizedAlbum}`);
-    return () => observer.disconnect();
-  }, [normalizedArtist, normalizedAlbum, trackId, requestArtwork]);
+    if (status === 'unknown') {
+      requestedRef.current = true;
+      console.log(`[AlbumArtwork] Requesting artwork on mount: ${normalizedArtist} - ${normalizedAlbum}`);
+      requestArtwork([{ artist: normalizedArtist, album: normalizedAlbum, trackId }]);
+    }
+  }, [normalizedArtist, normalizedAlbum, trackId, status, requestArtwork]);
 
   // Reset requested ref when artist/album changes
   useEffect(() => {

@@ -15,7 +15,7 @@ export interface BrowserMetadata {
   name: string;
   description: string;
   icon: string; // Lucide icon name
-  category: 'traditional' | 'spatial' | 'temporal';
+  category: 'traditional' | 'spatial' | 'temporal' | 'discovery';
   requiresFeatures: boolean; // Needs audio analysis data (BPM, energy, etc.)
   requiresEmbeddings: boolean; // Needs CLAP embeddings for similarity
 }

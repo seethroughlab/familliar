@@ -56,7 +56,6 @@ class ChangeStatus(enum.Enum):
     """Status of a proposed metadata change."""
 
     PENDING = "pending"  # Awaiting user review
-    APPROVED = "approved"  # User approved, ready to apply
     REJECTED = "rejected"  # User rejected
     APPLIED = "applied"  # Successfully applied
 
@@ -600,10 +599,4 @@ class ProposedChange(Base):
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime)
-
-    # Who approved it (optional - for multi-profile setups)
-    approved_by_profile_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("profiles.id", ondelete="SET NULL")
-    )

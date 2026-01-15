@@ -13,6 +13,7 @@ import {
   Music,
   Video,
   Type,
+  Compass,
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -21,12 +22,13 @@ import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
+import { DiscoverSection } from './DiscoverSection';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
 import { useArtworkPrefetch } from '../../hooks/useArtworkPrefetch';
 
-type ViewMode = 'visualizer' | 'video' | 'lyrics';
+type ViewMode = 'visualizer' | 'video' | 'lyrics' | 'discover';
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -174,6 +176,17 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             >
               <Type className="w-5 h-5" />
             </button>
+            <button
+              onClick={() => setViewMode('discover')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'discover'
+                  ? 'bg-white/20 text-white'
+                  : 'text-zinc-400 hover:text-white'
+              }`}
+              title="Discover Similar"
+            >
+              <Compass className="w-5 h-5" />
+            </button>
           </div>
 
           {/* Visualizer picker - only show in visualizer mode */}
@@ -201,6 +214,17 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
 
         {viewMode === 'lyrics' && (
           <LyricsDisplay trackId={currentTrack.id} />
+        )}
+
+        {viewMode === 'discover' && (
+          <DiscoverSection
+            trackId={currentTrack.id}
+            onNavigateToArtist={(artistName) => {
+              setSearchParams({ artistDetail: artistName });
+              window.location.hash = 'library';
+            }}
+            onClose={onClose}
+          />
         )}
 
         {/* Album art overlay (bottom left) */}

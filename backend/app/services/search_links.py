@@ -105,3 +105,20 @@ def generate_release_search_urls(artist: str, album: str) -> dict[str, dict[str,
         }
 
     return result
+
+
+def generate_artist_search_url(store_key: str, artist: str) -> str | None:
+    """Generate search URL for an artist on a specific store.
+
+    Args:
+        store_key: Store identifier (bandcamp, discogs, etc.)
+        artist: Artist name
+
+    Returns:
+        Search URL or None if store not found
+    """
+    if store_key not in STORES:
+        return None
+
+    encoded_query = urllib.parse.quote(artist)
+    return STORES[store_key]["url_template"].format(query=encoded_query)

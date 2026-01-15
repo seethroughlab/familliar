@@ -480,21 +480,109 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
       </div>
 
       {/* Similar artists (if available) */}
-      {artist.similar_artists.length > 0 && (
-        <div>
-          <h3 className="text-lg font-semibold mb-3">Similar Artists</h3>
-          <div className="flex flex-wrap gap-2">
-            {artist.similar_artists.slice(0, 10).map((similar) => (
-              <span
-                key={similar.name}
-                className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded-full text-sm hover:bg-zinc-700 transition-colors"
-              >
-                {similar.name}
-              </span>
-            ))}
+      {artist.similar_artists.length > 0 && (() => {
+        const inLibrary = artist.similar_artists.filter(s => s.in_library);
+        const toDiscover = artist.similar_artists.filter(s => !s.in_library);
+
+        return (
+          <div className="space-y-6">
+            {/* In Your Library */}
+            {inLibrary.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Similar Artists in Your Library</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {inLibrary.slice(0, 10).map((similar) => (
+                    <button
+                      key={similar.name}
+                      onClick={() => setSearchParams({ artistDetail: similar.name })}
+                      className="flex flex-col items-center p-3 bg-zinc-800/50 hover:bg-zinc-700/50 rounded-lg transition-colors text-left group"
+                    >
+                      <div className="relative w-16 h-16 mb-2">
+                        <img
+                          src={libraryApi.getArtistImageUrl(similar.name, 'large')}
+                          alt={similar.name}
+                          className="w-16 h-16 rounded-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            (e.currentTarget.nextElementSibling as HTMLElement)?.classList.remove('hidden');
+                          }}
+                        />
+                        <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center hidden absolute inset-0">
+                          <Users className="w-6 h-6 text-zinc-500" />
+                        </div>
+                      </div>
+                      <span className="text-sm font-medium text-center truncate w-full group-hover:text-white">
+                        {similar.name}
+                      </span>
+                      <span className="text-xs text-zinc-500">
+                        {similar.track_count} {similar.track_count === 1 ? 'track' : 'tracks'}
+                      </span>
+                      <span className="text-xs text-emerald-500">
+                        {Math.round(similar.match_score * 100)}% match
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Discover */}
+            {toDiscover.length > 0 && (
+              <div>
+                <h3 className="text-lg font-semibold mb-3">Discover Similar Artists</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  {toDiscover.slice(0, 10).map((similar) => (
+                    <div
+                      key={similar.name}
+                      className="flex flex-col items-center p-3 bg-zinc-800/50 rounded-lg"
+                    >
+                      {similar.image_url ? (
+                        <img
+                          src={similar.image_url}
+                          alt={similar.name}
+                          className="w-16 h-16 rounded-full object-cover mb-2 opacity-75"
+                        />
+                      ) : (
+                        <div className="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center mb-2">
+                          <Users className="w-6 h-6 text-zinc-500" />
+                        </div>
+                      )}
+                      <span className="text-sm font-medium text-center truncate w-full text-zinc-300">
+                        {similar.name}
+                      </span>
+                      <span className="text-xs text-zinc-500 mb-2">
+                        {Math.round(similar.match_score * 100)}% match
+                      </span>
+                      <div className="flex gap-1">
+                        {similar.bandcamp_url && (
+                          <a
+                            href={similar.bandcamp_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 text-xs bg-teal-600/20 text-teal-400 hover:bg-teal-600/40 rounded transition-colors"
+                          >
+                            Bandcamp
+                          </a>
+                        )}
+                        {similar.lastfm_url && (
+                          <a
+                            href={similar.lastfm_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 text-xs bg-red-600/20 text-red-400 hover:bg-red-600/40 rounded transition-colors"
+                          >
+                            Last.fm
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (

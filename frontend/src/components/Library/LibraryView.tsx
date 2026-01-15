@@ -5,7 +5,7 @@
  * Renders the selected browser with BrowserProps.
  * Persists view state in URL for reload support.
  */
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useLibraryViewStore } from '../../stores/libraryViewStore';
@@ -99,6 +99,19 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     },
     [setSearchParams]
   );
+
+  // Auto-switch to artist detail when artist filter is active and Artists view is selected
+  // This provides a more intuitive UX: "I'm looking at this artist, show me their page"
+  useEffect(() => {
+    const artistFilter = searchParams.get('artist');
+    if (artistFilter && currentBrowserId === 'artist-list') {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set('artistDetail', artistFilter);
+        return next;
+      }, { replace: true });
+    }
+  }, [currentBrowserId, searchParams, setSearchParams]);
 
   // Track selection - we need to pass tracks but we don't have them at this level
   // The browser component fetches its own data, so we track selection by ID only

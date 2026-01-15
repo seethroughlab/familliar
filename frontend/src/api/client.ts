@@ -114,6 +114,18 @@ export const tracksApi = {
     const { data } = await api.delete(`/tracks/${id}/artwork`);
     return data;
   },
+
+  // Discovery
+  getDiscover: async (
+    id: string,
+    trackLimit = 6,
+    artistLimit = 6
+  ): Promise<TrackDiscoverResponse> => {
+    const { data } = await api.get(`/tracks/${id}/discover`, {
+      params: { track_limit: trackLimit, artist_limit: artistLimit },
+    });
+    return data;
+  },
 };
 
 // Track metadata types
@@ -213,6 +225,26 @@ export interface LyricsResponse {
   lines: LyricLine[];
   plain_text: string;
   source: string;
+}
+
+export interface TrackDiscoverSimilarArtist {
+  name: string;
+  match_score: number;
+  in_library: boolean;
+  track_count: number | null;
+  image_url: string | null;
+  lastfm_url: string | null;
+  bandcamp_url: string | null;
+}
+
+export interface TrackDiscoverResponse {
+  track_id: string;
+  artist: string | null;
+  title: string | null;
+  similar_tracks: Track[];
+  similar_artists: TrackDiscoverSimilarArtist[];
+  bandcamp_artist_url: string | null;
+  bandcamp_track_url: string | null;
 }
 
 export interface SpotifyStatus {
@@ -555,8 +587,12 @@ export interface ArtistDetailResponse {
   tags: string[];
   similar_artists: Array<{
     name: string;
-    url?: string;
-    image?: Array<{ size: string; '#text': string }>;
+    match_score: number;
+    in_library: boolean;
+    track_count: number | null;
+    image_url: string | null;
+    lastfm_url: string | null;
+    bandcamp_url: string | null;
   }>;
 
   // Library content
@@ -819,7 +855,57 @@ export const libraryApi = {
   ): string => {
     return `/api/v1/library/artists/${encodeURIComponent(artistName)}/image?size=${size}`;
   },
+
+  getDiscover: async (params?: {
+    releases_limit?: number;
+    recommendations_limit?: number;
+    favorites_limit?: number;
+  }): Promise<LibraryDiscoverResponse> => {
+    const { data } = await api.get('/library/discover', { params });
+    return data;
+  },
 };
+
+// Library Discover types
+export interface DiscoverNewRelease {
+  id: string;
+  artist: string;
+  album: string;
+  release_date: string | null;
+  source: string;
+  image_url: string | null;
+  bandcamp_url: string | null;
+  owned_locally: boolean;
+}
+
+export interface DiscoverRecommendedArtist {
+  name: string;
+  match_score: number;
+  in_library: boolean;
+  track_count: number | null;
+  image_url: string | null;
+  lastfm_url: string | null;
+  bandcamp_url: string | null;
+  based_on_artist: string;
+}
+
+export interface DiscoverUnmatchedFavorite {
+  spotify_track_id: string;
+  name: string;
+  artist: string;
+  album: string | null;
+  image_url: string | null;
+  bandcamp_url: string | null;
+}
+
+export interface LibraryDiscoverResponse {
+  new_releases: DiscoverNewRelease[];
+  new_releases_total: number;
+  recommended_artists: DiscoverRecommendedArtist[];
+  unmatched_favorites: DiscoverUnmatchedFavorite[];
+  unmatched_total: number;
+  recently_added_count: number;
+}
 
 // Smart Playlists
 export interface SmartPlaylistRule {
@@ -1526,7 +1612,7 @@ export const backgroundApi = {
 };
 
 // Proposed Changes API
-export type ChangeStatus = 'pending' | 'approved' | 'rejected' | 'applied';
+export type ChangeStatus = 'pending' | 'rejected' | 'applied';
 export type ChangeSource = 'user_request' | 'llm_suggestion' | 'musicbrainz' | 'spotify' | 'auto_enrichment';
 export type ChangeScope = 'db_only' | 'db_and_id3' | 'db_id3_files';
 
@@ -1545,7 +1631,6 @@ export interface ProposedChange {
   scope: ChangeScope;
   status: ChangeStatus;
   created_at: string;
-  approved_at: string | null;
   applied_at: string | null;
 }
 
@@ -1573,7 +1658,6 @@ export interface ApplyResult {
 
 export interface ChangeStats {
   pending: number;
-  approved: number;
   rejected: number;
   applied: number;
 }
@@ -1629,11 +1713,6 @@ export const proposedChangesApi = {
     return data;
   },
 
-  approve: async (changeId: string): Promise<ProposedChange> => {
-    const { data } = await api.post(`/proposed-changes/${changeId}/approve`);
-    return data;
-  },
-
   reject: async (changeId: string): Promise<ProposedChange> => {
     const { data } = await api.post(`/proposed-changes/${changeId}/reject`);
     return data;
@@ -1653,11 +1732,6 @@ export const proposedChangesApi = {
 
   delete: async (changeId: string): Promise<{ status: string }> => {
     const { data } = await api.delete(`/proposed-changes/${changeId}`);
-    return data;
-  },
-
-  batchApprove: async (changeIds: string[]): Promise<ProposedChange[]> => {
-    const { data } = await api.post('/proposed-changes/batch/approve', { change_ids: changeIds });
     return data;
   },
 

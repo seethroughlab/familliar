@@ -269,6 +269,193 @@ async def get_similar_tracks(
     return [TrackResponse.model_validate(t) for t in tracks]
 
 
+class SimilarArtistInfo(BaseModel):
+    """Similar artist with library status and external links."""
+
+    name: str
+    match_score: float
+    in_library: bool
+    track_count: int | None = None
+    image_url: str | None = None
+    lastfm_url: str | None = None
+    bandcamp_url: str | None = None
+
+
+class TrackDiscoverResponse(BaseModel):
+    """Discovery data for a track - similar tracks and artists."""
+
+    # Source track info
+    track_id: str
+    artist: str | None
+    title: str | None
+
+    # Similar tracks in library (from embedding similarity)
+    similar_tracks: list[TrackResponse]
+
+    # Similar artists (from Last.fm, enriched with library status)
+    similar_artists: list[SimilarArtistInfo]
+
+    # External discovery links
+    bandcamp_artist_url: str | None = None
+    bandcamp_track_url: str | None = None
+
+
+@router.get("/{track_id}/discover", response_model=TrackDiscoverResponse)
+async def get_track_discover(
+    db: DbSession,
+    track_id: UUID,
+    track_limit: int = Query(6, ge=1, le=20),
+    artist_limit: int = Query(6, ge=1, le=20),
+) -> TrackDiscoverResponse:
+    """Get discovery recommendations for a track.
+
+    Combines:
+    - Similar tracks from your library (embedding-based)
+    - Similar artists (Last.fm, with library status)
+    - External purchase/discovery links
+    """
+    from datetime import datetime, timedelta
+
+    from app.db.models import ArtistInfo, TrackStatus
+    from app.services.lastfm import get_lastfm_service
+    from app.services.search_links import generate_artist_search_url, generate_search_url
+
+    # Get the source track
+    query = select(Track).where(Track.id == track_id)
+    result = await db.execute(query)
+    track = result.scalar_one_or_none()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    # Get similar tracks (reuse the embedding similarity logic)
+    similar_tracks: list[TrackResponse] = []
+    embedding_query = (
+        select(TrackAnalysis.embedding)
+        .where(TrackAnalysis.track_id == track_id)
+        .order_by(TrackAnalysis.version.desc())
+        .limit(1)
+    )
+    embedding_result = await db.execute(embedding_query)
+    embedding = embedding_result.scalar_one_or_none()
+
+    if embedding is not None:
+        similar_query = (
+            select(Track)
+            .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
+            .where(Track.id != track_id)
+            .where(TrackAnalysis.embedding.isnot(None))
+            .order_by(TrackAnalysis.embedding.cosine_distance(embedding))
+            .limit(track_limit)
+        )
+        sim_result = await db.execute(similar_query)
+        similar_tracks = [TrackResponse.model_validate(t) for t in sim_result.scalars().all()]
+
+    # Get similar artists from Last.fm (if artist is known)
+    similar_artists: list[SimilarArtistInfo] = []
+
+    if track.artist:
+        artist_normalized = track.artist.lower().strip()
+
+        # Check for cached artist info
+        cached = await db.get(ArtistInfo, artist_normalized)
+        raw_similar = cached.similar_artists if cached and cached.similar_artists else []
+
+        # If not cached or stale, try to fetch from Last.fm
+        if not raw_similar:
+            lastfm_service = get_lastfm_service()
+            if lastfm_service.is_configured():
+                try:
+                    info = await lastfm_service.get_artist_info(track.artist)
+                    if info:
+                        raw_similar = info.get("similar", {}).get("artist", [])
+                except Exception:
+                    pass  # Ignore Last.fm errors
+
+        # Enrich similar artists with library status
+        if raw_similar:
+            similar_names = [s.get("name", "") for s in raw_similar if s.get("name")]
+            similar_normalized = [n.lower().strip() for n in similar_names]
+
+            # Batch query to check library status
+            if similar_normalized:
+                library_query = (
+                    select(
+                        func.lower(func.trim(Track.artist)).label("artist_normalized"),
+                        func.count(Track.id).label("track_count"),
+                    )
+                    .where(
+                        func.lower(func.trim(Track.artist)).in_(similar_normalized),
+                        Track.status == TrackStatus.ACTIVE,
+                    )
+                    .group_by(func.lower(func.trim(Track.artist)))
+                )
+                lib_result = await db.execute(library_query)
+                library_map = {row.artist_normalized: row.track_count for row in lib_result.all()}
+            else:
+                library_map = {}
+
+            for similar in raw_similar[:artist_limit]:
+                name = similar.get("name", "")
+                if not name:
+                    continue
+
+                normalized = name.lower().strip()
+                in_library = normalized in library_map
+                track_count = library_map.get(normalized)
+
+                # Extract image URL
+                images = similar.get("image", [])
+                image_url = None
+                for img in images:
+                    if img.get("size") == "large" and img.get("#text"):
+                        image_url = img["#text"]
+                        break
+                if not image_url:
+                    for img in images:
+                        if img.get("#text"):
+                            image_url = img["#text"]
+                            break
+
+                # Parse match score
+                match_str = similar.get("match", "0")
+                try:
+                    match_score = float(match_str)
+                except (ValueError, TypeError):
+                    match_score = 0.0
+
+                similar_artists.append(
+                    SimilarArtistInfo(
+                        name=name,
+                        match_score=match_score,
+                        in_library=in_library,
+                        track_count=track_count,
+                        image_url=image_url,
+                        lastfm_url=similar.get("url"),
+                        bandcamp_url=generate_artist_search_url("bandcamp", name),
+                    )
+                )
+
+    # Generate external discovery links
+    bandcamp_artist_url = None
+    bandcamp_track_url = None
+
+    if track.artist:
+        bandcamp_artist_url = generate_artist_search_url("bandcamp", track.artist)
+    if track.artist and track.title:
+        bandcamp_track_url = generate_search_url("bandcamp", track.artist, track.title)
+
+    return TrackDiscoverResponse(
+        track_id=str(track_id),
+        artist=track.artist,
+        title=track.title,
+        similar_tracks=similar_tracks,
+        similar_artists=similar_artists,
+        bandcamp_artist_url=bandcamp_artist_url,
+        bandcamp_track_url=bandcamp_track_url,
+    )
+
+
 # MIME types for audio formats
 AUDIO_MIME_TYPES = {
     ".mp3": "audio/mpeg",
