@@ -2,12 +2,11 @@
 # Usage: docker compose -f docker-compose.prod.yml up -d
 #
 # Configuration:
-#   - Music library paths are configured via the admin UI (Settings > Library Management)
+#   - Music library is mounted at /music inside the container
 #   - API keys (Anthropic, Spotify, Last.fm) are configured via the admin UI
-#   - MUSIC_LIBRARY_PATH env var is only used for Docker volume mounting
 #
 # Environment variables:
-#   - MUSIC_LIBRARY_PATH: Host path to mount as /data/music (for Docker volume)
+#   - MUSIC_LIBRARY_PATH: Host path to mount as /music (e.g., /srv/music or /volume1/music)
 #   - FAMILIAR_VERSION: Docker image version (default: latest)
 #   - FRONTEND_URL: Base URL for OAuth callbacks (e.g., http://myserver:4400)
 
@@ -81,20 +80,13 @@ services:
       options:
         tag: "familiar-api"
     volumes:
-      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - ${MUSIC_LIBRARY_PATH:-/data/music}:/music:rw  # Single library mount, rw for imports
       - app_data:/app/data  # Persists settings.json
       - art_data:/data/art
       - videos_data:/data/videos
-      # Common NAS storage locations for folder browser
-      - /srv:/srv:ro               # OpenMediaVault
-      - /media:/media:ro           # Common Linux mount point
-      - /mnt:/mnt:ro               # Another common mount point
-      - /volume1:/volume1:ro       # Synology primary volume
-      - /volume2:/volume2:ro       # Synology secondary volume
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
-      - MUSIC_LIBRARY_PATH=/data/music
       - ART_PATH=/data/art
       - VIDEOS_PATH=/data/videos
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

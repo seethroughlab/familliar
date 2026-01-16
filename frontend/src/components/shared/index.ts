@@ -1,1 +1,1 @@
-export { DiscoverySection, type DiscoveryItem } from './DiscoverySection';
+export { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from './DiscoverySection';

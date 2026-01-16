@@ -28,7 +28,7 @@ import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
 import type { Track } from '../../types';
-import { DiscoverySection } from '../shared';
+import { DiscoverySection, type DiscoveryGroup } from '../shared';
 
 function OfflineButton({ trackId }: { trackId: string }) {
   const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
@@ -566,12 +566,12 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
       </div>
 
       {/* Similar artists */}
-      {artist.similar_artists.length > 0 && (
-        <DiscoverySection
-          title="Similar Artists"
-          type="artist"
-          collapsible
-          items={artist.similar_artists.slice(0, 20).map((similar) => ({
+      {artist.similar_artists.length > 0 && (() => {
+        const sections: DiscoveryGroup[] = [{
+          id: 'similar-artists',
+          title: 'Similar Artists',
+          type: 'artist',
+          items: artist.similar_artists.slice(0, 20).map((similar) => ({
             name: similar.name,
             subtitle: similar.in_library
               ? `${similar.track_count} ${similar.track_count === 1 ? 'track' : 'tracks'}`
@@ -585,10 +585,18 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
               bandcamp: similar.bandcamp_url || undefined,
               lastfm: similar.lastfm_url || undefined,
             },
-          }))}
-          onItemClick={(item) => item.inLibrary && setSearchParams({ artistDetail: item.name })}
-        />
-      )}
+          })),
+        }];
+
+        return (
+          <DiscoverySection
+            title="Discover"
+            sections={sections}
+            collapsible
+            onItemClick={(item) => item.inLibrary && setSearchParams({ artistDetail: item.name })}
+          />
+        );
+      })()}
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (
@@ -621,7 +629,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
           }}
           onAddToPlaylist={() => {
             // TODO: Open playlist picker modal
-            console.log('Add to playlist:', contextMenu.track?.id);
+            
           }}
           onMakePlaylist={() => {
             if (contextMenu.track) {

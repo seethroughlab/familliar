@@ -6,7 +6,7 @@ import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
-import { RecommendationsPanel } from './RecommendationsPanel';
+import { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from '../shared';
 import * as offlineService from '../../services/offlineService';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
@@ -55,6 +55,15 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const { data: playlist, isLoading } = useQuery({
     queryKey: ['playlist', playlistId],
     queryFn: () => playlistsApi.get(playlistId),
+  });
+
+  // Fetch recommendations for AI-generated playlists
+  const { data: recommendations, isLoading: recommendationsLoading } = useQuery({
+    queryKey: ['playlist-recommendations', playlistId],
+    queryFn: () => playlistsApi.getRecommendations(playlistId),
+    staleTime: 1000 * 60 * 10, // 10 minutes
+    retry: 1,
+    enabled: !!playlist?.is_auto_generated,
   });
 
   // Check which tracks are already offline
@@ -549,9 +558,102 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       )}
 
       {/* Recommendations (only for AI-generated playlists) */}
-      {playlist.is_auto_generated && (
-        <RecommendationsPanel playlistId={playlistId} />
-      )}
+      {playlist.is_auto_generated && (() => {
+        // Map artists to DiscoveryItem format
+        const artistItems: DiscoveryItem[] = (recommendations?.artists || []).map((artist) => ({
+          name: artist.name,
+          subtitle: artist.local_track_count > 0
+            ? `${artist.local_track_count} tracks in library`
+            : 'Not in library',
+          imageUrl: artist.image_url || undefined,
+          matchScore: artist.match_score,
+          inLibrary: artist.local_track_count > 0,
+          externalLinks: artist.local_track_count > 0 ? undefined : {
+            lastfm: artist.external_url || undefined,
+          },
+        }));
+
+        // Map tracks to DiscoveryItem format
+        const trackItems: DiscoveryItem[] = (recommendations?.tracks || []).map((track) => ({
+          id: track.local_track_id || undefined,
+          name: track.title,
+          subtitle: track.artist,
+          matchScore: track.match_score,
+          inLibrary: !!track.local_track_id,
+          artist: track.artist,
+          externalLinks: track.local_track_id ? undefined : {
+            lastfm: track.external_url || undefined,
+          },
+        }));
+
+        // Build sections
+        const discoverySections: DiscoveryGroup[] = [];
+        if (artistItems.length > 0) {
+          discoverySections.push({
+            id: 'artists',
+            title: 'Artists',
+            type: 'artist',
+            items: artistItems,
+          });
+        }
+        if (trackItems.length > 0) {
+          discoverySections.push({
+            id: 'tracks',
+            title: 'Tracks',
+            type: 'track',
+            items: trackItems,
+          });
+        }
+
+        // Don't render if no recommendations
+        if (!recommendationsLoading && discoverySections.length === 0) {
+          return null;
+        }
+
+        return (
+          <div className="mt-6 border-t border-zinc-800 pt-4">
+            <DiscoverySection
+              title="Discover More"
+              sections={discoverySections}
+              sources={recommendations?.sources_used}
+              loading={recommendationsLoading}
+              collapsible
+              defaultExpanded={true}
+              onItemClick={(item, type) => {
+                if (type === 'artist' && item.inLibrary) {
+                  setSearchParams({ artistDetail: item.name });
+                }
+              }}
+              onPlay={(item, type) => {
+                if (type === 'track' && item.id) {
+                  // If clicking on the currently playing track, toggle play/pause
+                  if (currentTrack?.id === item.id) {
+                    setIsPlaying(!isPlaying);
+                    return;
+                  }
+                  // Play the local track
+                  setQueue([{
+                    id: item.id,
+                    file_path: '',
+                    title: item.name,
+                    artist: item.artist || item.subtitle || null,
+                    album: null,
+                    album_artist: null,
+                    album_type: 'album' as const,
+                    track_number: null,
+                    disc_number: null,
+                    year: null,
+                    genre: null,
+                    duration_seconds: null,
+                    format: null,
+                    analysis_version: 0,
+                  }]);
+                }
+              }}
+            />
+          </div>
+        );
+      })()}
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (
@@ -586,7 +688,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
           }}
           onAddToPlaylist={() => {
             // TODO: Open playlist picker modal
-            console.log('Add to playlist:', contextMenu.track?.id);
+            
           }}
           onMakePlaylist={() => {
             if (contextMenu.track) {

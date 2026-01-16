@@ -52,11 +52,6 @@ export function AlbumArtwork({
   // For backwards compatibility, try the old track-based URL if we have a fallback
   const fallbackUrl = fallbackTrackId ? `/api/v1/tracks/${fallbackTrackId}/artwork?size=${size}` : null;
 
-  // Debug: log render with current state (only when status changes from initial)
-  if (status !== 'unknown') {
-    console.log(`[AlbumArtwork RENDER] ${normalizedArtist} - ${normalizedAlbum}: status=${status}, hash=${hash}, artworkUrl=${artworkUrl}, showPlaceholder=${showPlaceholder}, imageError=${imageError}`);
-  }
-
   // Request artwork immediately on mount if status is unknown
   // This ensures artwork is fetched even for elements already in view
   useEffect(() => {
@@ -68,7 +63,6 @@ export function AlbumArtwork({
     }
     if (status === 'unknown') {
       requestedRef.current = true;
-      console.log(`[AlbumArtwork] Requesting artwork on mount: ${normalizedArtist} - ${normalizedAlbum}`);
       requestArtwork([{ artist: normalizedArtist, album: normalizedAlbum, trackId }]);
     }
   }, [normalizedArtist, normalizedAlbum, trackId, status, requestArtwork]);
@@ -100,13 +94,7 @@ export function AlbumArtwork({
           src={imageUrl}
           alt={`${normalizedArtist} - ${normalizedAlbum}`}
           className="w-full h-full object-cover"
-          onLoad={() => {
-            console.log(`[AlbumArtwork IMG LOADED] ${normalizedArtist} - ${normalizedAlbum}: ${imageUrl}`);
-          }}
-          onError={(e) => {
-            console.log(`[AlbumArtwork IMG ERROR] ${normalizedArtist} - ${normalizedAlbum}: ${imageUrl}`, e);
-            setImageError(true);
-          }}
+          onError={() => setImageError(true)}
         />
       )}
       {/* Fallback icon - shown behind the image */}

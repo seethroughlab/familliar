@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Unified Discovery Section** - consolidated discovery/recommendation UI into single component
+  - All views (Playlist, Artist, Album, Full Player) now use identical discovery UI
+  - Tab interface for switching between content types (Artists, Albums, Tracks)
+  - Consistent styling with purple header icon and "via {sources}" metadata
+  - Eliminated wrapper components (RecommendationsPanel, FullPlayer/DiscoverSection)
+  - Data fetching moved to parent components for cleaner architecture
+- **Improved album artwork fallbacks** - tracks and albums now use AlbumArtwork component with hash-based fallback
+- **Filtered Last.fm placeholder images** - generic Last.fm placeholder URLs no longer shown, prefer our icons instead
+
 ## [0.1.0-alpha.10] - 2026-01-15
 
 ### Added

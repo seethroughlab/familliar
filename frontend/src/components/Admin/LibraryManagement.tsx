@@ -12,8 +12,17 @@ import {
   HardDrive,
   FileAudio,
   Trash2,
+  FolderOpen,
 } from 'lucide-react';
 import { LibraryOrganizer } from '../Settings/LibraryOrganizer';
+
+interface LibraryStatus {
+  path: string;
+  exists: boolean;
+  readable: boolean;
+  audio_file_count: number | null;
+  error: string | null;
+}
 
 // Check if a timestamp is stale (older than threshold in seconds)
 function isStale(timestamp: string | null | undefined, thresholdSeconds: number = 120): boolean {
@@ -102,6 +111,7 @@ function getOverallProgress(progress: SyncProgress): number {
 export function LibraryManagement() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [libraryStats, setLibraryStats] = useState<LibraryStats | null>(null);
+  const [libraryStatus, setLibraryStatus] = useState<LibraryStatus | null>(null);
   const [missingTracks, setMissingTracks] = useState<MissingTrack[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -112,10 +122,11 @@ export function LibraryManagement() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const [syncRes, statsRes, missingRes] = await Promise.all([
+      const [syncRes, statsRes, missingRes, settingsRes] = await Promise.all([
         fetch('/api/v1/library/sync/status'),
         fetch('/api/v1/library/stats'),
         fetch('/api/v1/library/missing'),
+        fetch('/api/v1/settings'),
       ]);
 
       if (syncRes.ok) {
@@ -132,6 +143,11 @@ export function LibraryManagement() {
       if (missingRes.ok) {
         const data = await missingRes.json();
         setMissingTracks(data.tracks?.slice(0, 10) || []);
+      }
+
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setLibraryStatus(data.library_status);
       }
 
       setError(null);
@@ -228,6 +244,47 @@ export function LibraryManagement() {
 
   return (
     <div className="space-y-6">
+      {/* Library Mount Status */}
+      <section className="bg-zinc-900 rounded-xl p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className={`p-2 rounded-lg ${libraryStatus?.readable ? 'bg-blue-500/20' : 'bg-amber-500/20'}`}>
+            <FolderOpen className={`w-5 h-5 ${libraryStatus?.readable ? 'text-blue-400' : 'text-amber-400'}`} />
+          </div>
+          <div className="flex-1">
+            <h2 className="font-medium text-white">Library Management</h2>
+            <p className="text-sm text-zinc-500">Scan and organize your music collection</p>
+          </div>
+        </div>
+
+        {/* Library path status line */}
+        <div className={`flex items-center gap-3 p-3 rounded-lg ${
+          libraryStatus?.readable ? 'bg-zinc-800' : 'bg-amber-900/20 border border-amber-800'
+        }`}>
+          {libraryStatus?.readable ? (
+            <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+          ) : (
+            <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          )}
+          <code className="text-sm text-zinc-300">{libraryStatus?.path || '/music'}</code>
+          <span className="text-zinc-600">•</span>
+          {libraryStatus?.readable ? (
+            <span className="text-sm text-zinc-400">
+              {libraryStatus.audio_file_count != null && libraryStatus.audio_file_count >= 10000
+                ? '10,000+ audio files'
+                : `${libraryStatus.audio_file_count?.toLocaleString() || 0} audio files`}
+            </span>
+          ) : (
+            <span className="text-sm text-amber-400">{libraryStatus?.error || 'Not mounted'}</span>
+          )}
+        </div>
+
+        {!libraryStatus?.readable && (
+          <p className="text-xs text-zinc-500 mt-2">
+            Configure MUSIC_LIBRARY_PATH in docker-compose.yml to mount your music folder.
+          </p>
+        )}
+      </section>
+
       {/* Library Stats */}
       <section className="bg-zinc-900 rounded-xl p-6">
         <div className="flex items-center gap-3 mb-4">

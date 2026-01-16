@@ -58,6 +58,12 @@ export interface OfflineTrack {
   cachedAt: Date;
 }
 
+export interface OfflineArtwork {
+  hash: string; // Album hash (from computeAlbumHash)
+  artwork: Blob;
+  cachedAt: Date;
+}
+
 export interface PendingAction {
   id?: number; // Auto-increment
   profileId: string; // Profile that queued this action
@@ -86,6 +92,7 @@ export class FamiliarDB extends Dexie {
   chatSessions!: Table<ChatSession>;
   cachedTracks!: Table<CachedTrack>;
   offlineTracks!: Table<OfflineTrack>;
+  offlineArtwork!: Table<OfflineArtwork>;
   pendingActions!: Table<PendingAction>;
   playerState!: Table<PersistedPlayerState>;
 
@@ -129,6 +136,17 @@ export class FamiliarDB extends Dexie {
       offlineTracks: 'id, cachedAt',
       pendingActions: '++id, profileId, type, createdAt',
       playerState: 'id', // id is now profileId
+    });
+
+    // Version 6: Add offline artwork storage
+    this.version(6).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      offlineArtwork: 'hash, cachedAt',
+      pendingActions: '++id, profileId, type, createdAt',
+      playerState: 'id',
     });
   }
 }

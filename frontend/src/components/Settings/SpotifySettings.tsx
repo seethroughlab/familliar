@@ -97,17 +97,13 @@ export function SpotifySettings() {
   const connectMutation = useMutation({
     mutationFn: spotifyApi.getAuthUrl,
     onSuccess: (data) => {
-      console.log('[SpotifySettings] Auth URL response:', data);
       if (data.auth_url) {
-        console.log('[SpotifySettings] Redirecting to:', data.auth_url);
         window.location.href = data.auth_url;
       } else {
-        console.error('[SpotifySettings] No auth_url in response');
         setSyncMessage('Error: No auth URL received');
       }
     },
     onError: (error: Error) => {
-      console.error('[SpotifySettings] Auth URL error:', error);
       setSyncMessage(`Failed to get auth URL: ${error.message}`);
     },
   });
@@ -248,7 +244,6 @@ export function SpotifySettings() {
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log('[SpotifySettings] Connect button clicked');
                   connectMutation.mutate();
                 }}
                 disabled={connectMutation.isPending}

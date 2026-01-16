@@ -35,8 +35,9 @@ from pydantic import BaseModel
 class AppSettings(BaseModel):
     """User-configurable app settings."""
 
-    # Music Library
-    music_library_paths: list[str] = []  # List of paths to music libraries
+    # Music Library (deprecated - now configured via docker-compose volume mount)
+    # Kept for backwards compatibility with existing settings.json files
+    music_library_paths: list[str] = []
 
     # Spotify
     spotify_client_id: str | None = None
@@ -161,9 +162,10 @@ class AppSettingsService:
         return bool(settings.lastfm_api_key and settings.lastfm_api_secret)
 
     def has_music_library_configured(self) -> bool:
-        """Check if at least one music library path is configured."""
-        settings = self.get()
-        return bool(settings.music_library_paths)
+        """Check if the music library is accessible at /music."""
+        from app.config import MUSIC_LIBRARY_PATH
+
+        return MUSIC_LIBRARY_PATH.exists() and MUSIC_LIBRARY_PATH.is_dir()
 
     def get_effective(self, key: str) -> Any:
         """Get the effective value for a setting with proper precedence.

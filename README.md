@@ -24,7 +24,7 @@ The AI understands your library's metadata, audio features (BPM, key, energy), a
 - **Audio analysis** - Automatic BPM, key detection, and audio feature extraction via librosa
 - **CLAP embeddings** - Semantic audio search powered by LAION's CLAP model (optional)
 - **AcoustID fingerprinting** - Identify unknown tracks
-- **Multiple library paths** - Scan from multiple directories
+- **Simple configuration** - Single library path configured via Docker volume mount
 - **Format support** - MP3, FLAC, AAC, OGG, WAV, AIFF, and more
 
 ### Spotify Integration
@@ -155,7 +155,7 @@ cd familliar/docker
 
 # Copy and configure environment
 cp .env.example .env
-# Edit .env: set MUSIC_LIBRARY_PATH and FRONTEND_URL
+# Edit .env: set MUSIC_LIBRARY_PATH to your music folder and FRONTEND_URL to your server URL
 
 # Start all services
 docker compose -f docker-compose.prod.yml up -d
@@ -165,6 +165,8 @@ docker exec familiar-api python -m app.db.init_db
 ```
 
 Access the web UI at http://localhost:4400, then go to `/admin` to configure API keys and start a library scan.
+
+**Music Library Configuration:** Your music folder is mounted at `/music` inside the container. Set `MUSIC_LIBRARY_PATH` in your `.env` file to point to your music folder on the host (e.g., `/srv/music`, `/volume1/music`, or `~/Music`).
 
 ## Installation
 
@@ -190,10 +192,10 @@ Access the web UI at http://localhost:4400, then go to `/admin` to configure API
    ```
 
    Edit `.env` and set:
-   - `MUSIC_LIBRARY_PATH` - path to your music library
+   - `MUSIC_LIBRARY_PATH` - path to your music library on the host
    - `FRONTEND_URL` - your server's URL (e.g., `http://myserver:4400`)
 
-   > **Note:** `MUSIC_LIBRARY_PATH` is only used for the Docker volume mount. API keys are configured via the Admin UI at `/admin` after startup.
+   > **Note:** Your music folder is mounted at `/music` inside the container. API keys are configured via the Admin UI at `/admin` after startup.
 
 3. **Start the services:**
    ```bash
@@ -273,7 +275,7 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
        ports:
          - "4400:8000"
        volumes:
-         - /path/to/music:/data/music:ro
+         - /path/to/music:/music:rw  # Your music library (rw allows imports)
          - /path/to/familiar/data:/app/data
          - /path/to/familiar/art:/data/art
          - /path/to/familiar/videos:/data/videos
@@ -287,6 +289,8 @@ Familiar works great on OpenMediaVault NAS systems. Here's how to set it up:
          redis:
            condition: service_healthy
    ```
+
+   **Note:** Replace `/path/to/music` with your actual music folder path (e.g., `/srv/dev-disk-by-uuid-.../music` on OpenMediaVault).
 
 4. **Start the stack:**
    - Click the "Up" button in Compose → Files
@@ -353,7 +357,7 @@ docker compose -f docker-compose.prod.yml up -d
 **Permission issues with music files:**
 ```bash
 # Check container can read music
-docker exec familiar-api ls -la /data/music
+docker exec familiar-api ls -la /music
 
 # If permission denied, ensure OMV shared folder permissions allow Docker
 ```
@@ -465,7 +469,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
        ports:
          - "4400:8000"
        volumes:
-         - /volume1/music:/data/music:ro
+         - /volume1/music:/music:rw  # Your music library (rw allows imports)
          - /volume1/docker/familiar/data:/app/data
          - /volume1/docker/familiar/art:/data/art
          - /volume1/docker/familiar/videos:/data/videos
@@ -480,7 +484,7 @@ Familiar supports Synology NAS with Container Manager (DSM 7.2+) or Docker (olde
            condition: service_healthy
    ```
 
-   **Note:** Adjust `/volume1/music` to your music library and `FRONTEND_URL` to your Synology's IP.
+   **Note:** Adjust `/volume1/music` to your music library path and `FRONTEND_URL` to your Synology's IP.
 
 5. **Build and start:**
    - Click "Build" to pull images and start containers
@@ -567,6 +571,7 @@ cp .env.example .env
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| `MUSIC_LIBRARY_PATH` | Host path to your music folder (mounted at `/music`) | `/data/music` |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://...` |
 | `REDIS_URL` | Redis connection string | `redis://localhost:6379/0` |
 | `FRONTEND_URL` | Base URL for OAuth callbacks | `http://localhost:4400` |
@@ -576,7 +581,9 @@ cp .env.example .env
 FRONTEND_URL=http://myserver:4400
 ```
 
-All other settings (API keys, music library paths) are configured via the Admin UI at `/admin`.
+**Music Library:** Your music folder is mounted at `/music` inside the container via the `MUSIC_LIBRARY_PATH` environment variable. To change the library location, update `MUSIC_LIBRARY_PATH` in your `.env` or `docker-compose.yml` file.
+
+All other settings (API keys) are configured via the Admin UI at `/admin`.
 
 ### Getting API Keys
 
@@ -658,7 +665,6 @@ familiar/
 │   │   └── stores/   # Zustand state
 ├── docker/           # Docker configuration
 └── data/             # Runtime data (gitignored)
-    ├── music/        # Music library mount
     ├── art/          # Extracted album art
     └── videos/       # Downloaded music videos
 ```

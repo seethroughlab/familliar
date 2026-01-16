@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Play,
   Pause,
@@ -14,6 +15,7 @@ import {
   Video,
   Type,
   Compass,
+  Loader2,
 } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -22,11 +24,12 @@ import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
-import { DiscoverSection } from './DiscoverSection';
+import { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from '../shared';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
 import { useArtworkPrefetch } from '../../hooks/useArtworkPrefetch';
+import type { Track } from '../../types';
 
 type ViewMode = 'visualizer' | 'video' | 'lyrics' | 'discover';
 
@@ -64,7 +67,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
-  const { addToQueue } = usePlayerStore();
+  const { addToQueue, setQueue } = usePlayerStore();
 
   // Prefetch artwork for the current track
   const prefetchArtwork = useArtworkPrefetch();
@@ -112,6 +115,14 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   useEffect(() => {
     setImageError(false);
   }, [currentTrack?.id]);
+
+  // Fetch discovery data for the current track
+  const { data: discoverData, isLoading: discoverLoading } = useQuery({
+    queryKey: ['track-discover', currentTrack?.id],
+    queryFn: () => tracksApi.getDiscover(currentTrack!.id, 6, 8),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!currentTrack?.id,
+  });
 
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
@@ -216,16 +227,135 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <LyricsDisplay trackId={currentTrack.id} />
         )}
 
-        {viewMode === 'discover' && (
-          <DiscoverSection
-            trackId={currentTrack.id}
-            onNavigateToArtist={(artistName) => {
-              setSearchParams({ artistDetail: artistName });
-              window.location.hash = 'library';
-            }}
-            onClose={onClose}
-          />
-        )}
+        {viewMode === 'discover' && (() => {
+          // Map tracks to DiscoveryItem format
+          const trackItems: DiscoveryItem[] = (discoverData?.similar_tracks || []).map((track) => ({
+            id: track.id,
+            name: track.title || 'Unknown',
+            subtitle: track.artist || 'Unknown',
+            inLibrary: true,
+            artist: track.artist || undefined,
+            album: track.album || undefined,
+          }));
+
+          // Map artists to DiscoveryItem format
+          const artistItems: DiscoveryItem[] = (discoverData?.similar_artists || []).map((artist) => ({
+            name: artist.name,
+            subtitle: artist.in_library
+              ? `${artist.track_count} ${artist.track_count === 1 ? 'track' : 'tracks'}`
+              : undefined,
+            imageUrl: artist.image_url || undefined,
+            matchScore: artist.match_score,
+            inLibrary: artist.in_library,
+            externalLinks: artist.in_library ? undefined : {
+              bandcamp: artist.bandcamp_url || undefined,
+              lastfm: artist.lastfm_url || undefined,
+            },
+          }));
+
+          // Build sections
+          const discoverySections: DiscoveryGroup[] = [];
+          if (trackItems.length > 0) {
+            discoverySections.push({
+              id: 'tracks',
+              title: 'Similar Tracks',
+              type: 'track',
+              items: trackItems,
+            });
+          }
+          if (artistItems.length > 0) {
+            discoverySections.push({
+              id: 'artists',
+              title: 'Similar Artists',
+              type: 'artist',
+              items: artistItems,
+            });
+          }
+
+          if (discoverLoading) {
+            return (
+              <div className="h-full flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+              </div>
+            );
+          }
+
+          if (discoverySections.length === 0) {
+            return (
+              <div className="h-full overflow-y-auto p-6 pb-32">
+                <div className="max-w-4xl mx-auto">
+                  <div className="text-center text-zinc-500 py-12">
+                    <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                    <p>No discovery data available for this track yet.</p>
+                    <p className="text-sm mt-2">
+                      Try playing a track that has been analyzed with audio embeddings.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return (
+            <div className="h-full overflow-y-auto p-6 pb-32">
+              <div className="max-w-4xl mx-auto space-y-6">
+                <DiscoverySection
+                  title="Discover"
+                  sections={discoverySections}
+                  onItemClick={(item, type) => {
+                    if (type === 'artist' && item.inLibrary) {
+                      setSearchParams({ artistDetail: item.name });
+                      window.location.hash = 'library';
+                      onClose();
+                    }
+                  }}
+                  onPlay={(item, type) => {
+                    if (type === 'track' && item.id) {
+                      if (currentTrack?.id === item.id) {
+                        togglePlayPause();
+                        return;
+                      }
+                      // Find the track in similar_tracks to get all tracks for the queue
+                      const trackIndex = discoverData?.similar_tracks.findIndex(t => t.id === item.id) ?? -1;
+                      if (trackIndex !== -1 && discoverData) {
+                        setQueue(discoverData.similar_tracks as Track[], trackIndex);
+                      }
+                    }
+                  }}
+                />
+
+                {/* External Links for Current Track */}
+                {(discoverData?.bandcamp_artist_url || discoverData?.bandcamp_track_url) && (
+                  <section className="pt-4 border-t border-zinc-800">
+                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Find on Bandcamp</h3>
+                    <div className="flex gap-2">
+                      {discoverData.bandcamp_track_url && (
+                        <a
+                          href={discoverData.bandcamp_track_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
+                        >
+                          Search for this track
+                        </a>
+                      )}
+                      {discoverData.bandcamp_artist_url && (
+                        <a
+                          href={discoverData.bandcamp_artist_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
+                        >
+                          More by {discoverData.artist}
+                        </a>
+                      )}
+                    </div>
+                  </section>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Album art overlay (bottom left) */}
         <div className="absolute bottom-32 left-8 z-10">
@@ -390,7 +520,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           }}
           onAddToPlaylist={() => {
             // TODO: Open playlist picker modal
-            console.log('Add to playlist:', contextMenu.track?.id);
+            
           }}
           onMakePlaylist={() => {
             if (contextMenu.track) {

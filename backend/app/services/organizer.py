@@ -11,7 +11,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import MUSIC_LIBRARY_PATH
 from app.db.models import Track
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,7 @@ class LibraryOrganizer:
 
     def __init__(self, db: AsyncSession, library_root: Path | None = None):
         self.db = db
-        self.library_root = library_root or settings.music_library_paths[0]
+        self.library_root = library_root or MUSIC_LIBRARY_PATH
 
     def _has_complete_metadata(self, track: Track) -> bool:
         """Check if track has enough metadata for organization."""

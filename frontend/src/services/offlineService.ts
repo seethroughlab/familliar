@@ -1,7 +1,8 @@
 /**
  * Offline service for managing track downloads and offline playback.
  */
-import { db, type OfflineTrack, type CachedTrack } from '../db';
+import { db, type OfflineTrack, type OfflineArtwork, type CachedTrack } from '../db';
+import { computeAlbumHash } from '../utils/albumHash';
 
 /**
  * Progress callback type for download tracking.
@@ -14,6 +15,7 @@ export type DownloadProgressCallback = (progress: {
 
 /**
  * Download a track for offline playback with optional progress tracking.
+ * Also downloads album artwork if track metadata is available.
  */
 export async function downloadTrackForOffline(
   trackId: string,
@@ -77,6 +79,17 @@ export async function downloadTrackForOffline(
   };
 
   await db.offlineTracks.put(offlineTrack);
+
+  // Also download artwork if we have track metadata
+  const trackInfo = await db.cachedTracks.get(trackId);
+  if (trackInfo?.artist && trackInfo?.album) {
+    // Best-effort artwork download - don't fail if artwork unavailable
+    try {
+      await downloadArtworkForOffline(trackInfo.artist, trackInfo.album);
+    } catch {
+      // Artwork download failed, continue without it
+    }
+  }
 }
 
 /**
@@ -103,6 +116,76 @@ export async function removeOfflineTrack(trackId: string): Promise<void> {
 }
 
 /**
+ * Download artwork for an album for offline use.
+ * Returns the hash if successful, null if artwork unavailable.
+ */
+export async function downloadArtworkForOffline(
+  artist: string,
+  album: string
+): Promise<string | null> {
+  const hash = await computeAlbumHash(artist, album);
+
+  // Check if already downloaded
+  const existing = await db.offlineArtwork.get(hash);
+  if (existing) {
+    return hash;
+  }
+
+  // Try to fetch thumb size (smaller, sufficient for offline)
+  const response = await fetch(`/api/v1/artwork/${hash}/thumb`);
+  if (!response.ok) {
+    // Artwork not available - not an error, just unavailable
+    return null;
+  }
+
+  const blob = await response.blob();
+
+  // Store in IndexedDB
+  const offlineArtwork: OfflineArtwork = {
+    hash,
+    artwork: blob,
+    cachedAt: new Date(),
+  };
+
+  await db.offlineArtwork.put(offlineArtwork);
+  return hash;
+}
+
+/**
+ * Get offline artwork blob by hash.
+ */
+export async function getOfflineArtwork(hash: string): Promise<Blob | null> {
+  const artwork = await db.offlineArtwork.get(hash);
+  return artwork?.artwork || null;
+}
+
+/**
+ * Get offline artwork by artist/album.
+ */
+export async function getOfflineArtworkByAlbum(
+  artist: string,
+  album: string
+): Promise<Blob | null> {
+  const hash = await computeAlbumHash(artist, album);
+  return getOfflineArtwork(hash);
+}
+
+/**
+ * Check if artwork is available offline.
+ */
+export async function isArtworkOffline(hash: string): Promise<boolean> {
+  const count = await db.offlineArtwork.where('hash').equals(hash).count();
+  return count > 0;
+}
+
+/**
+ * Create an object URL for offline artwork.
+ */
+export function createOfflineArtworkUrl(blob: Blob): string {
+  return URL.createObjectURL(blob);
+}
+
+/**
  * Get all offline track IDs.
  */
 export async function getOfflineTrackIds(): Promise<string[]> {
@@ -111,28 +194,36 @@ export async function getOfflineTrackIds(): Promise<string[]> {
 }
 
 /**
- * Get storage usage for offline tracks.
+ * Get storage usage for offline tracks and artwork.
  */
 export async function getOfflineStorageUsage(): Promise<{
   count: number;
   sizeBytes: number;
   sizeFormatted: string;
+  artworkCount: number;
+  artworkSizeBytes: number;
 }> {
   const tracks = await db.offlineTracks.toArray();
-  const sizeBytes = tracks.reduce((total, track) => total + track.audio.size, 0);
+  const artwork = await db.offlineArtwork.toArray();
+
+  const trackSizeBytes = tracks.reduce((total, track) => total + track.audio.size, 0);
+  const artworkSizeBytes = artwork.reduce((total, art) => total + art.artwork.size, 0);
 
   return {
     count: tracks.length,
-    sizeBytes,
-    sizeFormatted: formatBytes(sizeBytes),
+    sizeBytes: trackSizeBytes + artworkSizeBytes,
+    sizeFormatted: formatBytes(trackSizeBytes + artworkSizeBytes),
+    artworkCount: artwork.length,
+    artworkSizeBytes,
   };
 }
 
 /**
- * Clear all offline tracks.
+ * Clear all offline tracks and artwork.
  */
 export async function clearAllOfflineTracks(): Promise<void> {
   await db.offlineTracks.clear();
+  await db.offlineArtwork.clear();
 }
 
 /**

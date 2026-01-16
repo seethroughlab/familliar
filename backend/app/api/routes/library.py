@@ -119,11 +119,13 @@ async def list_artists(
     from sqlalchemy import cast, desc, literal_column
     from sqlalchemy.dialects.postgresql import TEXT
 
-    # Base query: group by artist, count tracks and albums
+    # Base query: group by normalized (lowercase) artist, count tracks and albums
+    # Use max(artist) to pick a canonical display name for each group
     # Cast UUID to text for min() since PostgreSQL doesn't support min(uuid)
     base_query = (
         select(
-            Track.artist.label("name"),
+            func.max(Track.artist).label("name"),  # Pick one display name per group
+            func.lower(Track.artist).label("artist_normalized"),
             func.count(Track.id).label("track_count"),
             func.count(func.distinct(Track.album)).label("album_count"),
             func.min(cast(Track.id, TEXT)).label("first_track_id"),  # Cast to text for min()
@@ -133,7 +135,7 @@ async def list_artists(
             Track.artist != "",
             Track.status == TrackStatus.ACTIVE,
         )
-        .group_by(Track.artist)
+        .group_by(func.lower(Track.artist))
     )
 
     # Filter to only artists with embeddings if requested
@@ -155,13 +157,13 @@ async def list_artists(
     count_query = select(func.count()).select_from(base_query.subquery())
     total = await db.scalar(count_query) or 0
 
-    # Apply sorting
+    # Apply sorting (use artist_normalized for consistent case-insensitive ordering)
     if sort_by == "track_count":
-        base_query = base_query.order_by(desc(literal_column("track_count")), Track.artist)
+        base_query = base_query.order_by(desc(literal_column("track_count")), literal_column("artist_normalized"))
     elif sort_by == "album_count":
-        base_query = base_query.order_by(desc(literal_column("album_count")), Track.artist)
+        base_query = base_query.order_by(desc(literal_column("album_count")), literal_column("artist_normalized"))
     else:
-        base_query = base_query.order_by(func.lower(Track.artist))
+        base_query = base_query.order_by(literal_column("artist_normalized"))
 
     # Apply pagination
     offset = (page - 1) * page_size
@@ -379,11 +381,12 @@ async def get_artist_detail(
                 info = await lastfm_service.get_artist_info(artist_name)
                 if info:
                     # Extract image URL (prefer extralarge)
+                    # Filter out Last.fm's default placeholder image (star icon)
                     images = info.get("image", [])
                     image_urls: dict[str, str] = {
                         img.get("size"): img.get("#text")
                         for img in images
-                        if img.get("#text")
+                        if img.get("#text") and "2a96cbd8b46e442fc41c2b86b821562f" not in img.get("#text", "")
                     }
 
                     # Extract similar artists
@@ -497,17 +500,20 @@ async def get_artist_detail(
             in_library = normalized in library_map
             track_count = library_map.get(normalized)
 
-            # Extract image URL from Last.fm data
+            # Extract image URL from Last.fm data (filter out placeholder)
+            LASTFM_PLACEHOLDER = "2a96cbd8b46e442fc41c2b86b821562f"
             images = similar.get("image", [])
             image_url = None
             for img in images:
-                if img.get("size") == "large" and img.get("#text"):
-                    image_url = img["#text"]
+                url = img.get("#text", "")
+                if img.get("size") == "large" and url and LASTFM_PLACEHOLDER not in url:
+                    image_url = url
                     break
             if not image_url:
                 for img in images:
-                    if img.get("#text"):
-                        image_url = img["#text"]
+                    url = img.get("#text", "")
+                    if url and LASTFM_PLACEHOLDER not in url:
+                        image_url = url
                         break
 
             # Parse match score (Last.fm returns it as string "0.xxx")
@@ -530,6 +536,16 @@ async def get_artist_detail(
             )
 
     # Build response
+    # Filter out Last.fm's placeholder star image from cached data
+    def _filter_placeholder(url: str | None) -> str | None:
+        if url and "2a96cbd8b46e442fc41c2b86b821562f" in url:
+            return None
+        return url
+
+    image_url = None
+    if lastfm_data:
+        image_url = _filter_placeholder(lastfm_data.image_extralarge) or _filter_placeholder(lastfm_data.image_large)
+
     return ArtistDetailResponse(
         name=artist_name,
         track_count=stats.track_count,
@@ -537,11 +553,7 @@ async def get_artist_detail(
         total_duration_seconds=stats.total_duration or 0,
         bio_summary=lastfm_data.bio_summary if lastfm_data else None,
         bio_content=lastfm_data.bio_content if lastfm_data else None,
-        image_url=(
-            lastfm_data.image_extralarge or lastfm_data.image_large
-            if lastfm_data
-            else None
-        ),
+        image_url=image_url,
         lastfm_url=lastfm_data.lastfm_url if lastfm_data else None,
         listeners=lastfm_data.listeners if lastfm_data else None,
         playcount=lastfm_data.playcount if lastfm_data else None,
@@ -604,15 +616,23 @@ async def get_artist_image(
         "extralarge": "image_extralarge",
     }
 
+    # Last.fm placeholder image hash - filter these out
+    LASTFM_PLACEHOLDER = "2a96cbd8b46e442fc41c2b86b821562f"
+
+    def is_valid_image(url: str | None) -> bool:
+        return bool(url and LASTFM_PLACEHOLDER not in url)
+
     # Step 1: Check cached ArtistInfo
     cached = await db.get(ArtistInfo, artist_normalized)
     if cached:
         image_url = getattr(cached, size_field_map[size], None)
-        # Try fallback sizes if requested size not available
-        if not image_url:
+        # Try fallback sizes if requested size not available or is placeholder
+        if not is_valid_image(image_url):
+            image_url = None
             for fallback in ["extralarge", "large", "medium", "small"]:
-                image_url = getattr(cached, size_field_map[fallback], None)
-                if image_url:
+                candidate = getattr(cached, size_field_map[fallback], None)
+                if is_valid_image(candidate):
+                    image_url = candidate
                     break
         if image_url:
             return RedirectResponse(
@@ -627,10 +647,11 @@ async def get_artist_image(
             info = await lastfm_service.get_artist_info(artist_name)
             if info:
                 images = info.get("image", [])
+                # Filter out placeholder images
                 image_urls: dict[str, str] = {
                     img.get("size"): img.get("#text")
                     for img in images
-                    if img.get("#text")
+                    if img.get("#text") and LASTFM_PLACEHOLDER not in img.get("#text", "")
                 }
 
                 # Get requested size or fallback to available

@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from app.config import AUDIO_EXTENSIONS, settings
+from app.config import AUDIO_EXTENSIONS, MUSIC_LIBRARY_PATH
 from app.services.artwork import extract_artwork
 from app.services.metadata import extract_metadata
 
@@ -33,12 +33,7 @@ class ImportService:
     """Handles importing music files from zip archives or folders."""
 
     def __init__(self, library_path: Path | None = None):
-        if library_path:
-            self.library_path = library_path
-        elif settings.music_library_paths:
-            self.library_path = settings.music_library_paths[0]
-        else:
-            raise MusicImportError("No music library path configured. Please configure a library path in Settings.")
+        self.library_path = library_path or MUSIC_LIBRARY_PATH
         self.imports_dir = self.library_path / "_imports"
 
     def create_import_dir(self) -> Path:
@@ -543,12 +538,7 @@ class ImportExecuteService:
     """Handles executing an import with user-specified options."""
 
     def __init__(self, library_path: Path | None = None):
-        if library_path:
-            self.library_path = library_path
-        elif settings.music_library_paths:
-            self.library_path = settings.music_library_paths[0]
-        else:
-            raise MusicImportError("No music library path configured. Please configure a library path in Settings.")
+        self.library_path = library_path or MUSIC_LIBRARY_PATH
 
     def execute_import(
         self,

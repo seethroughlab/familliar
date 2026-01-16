@@ -828,7 +828,7 @@ export function TrackListBrowser({
           }}
           onAddToPlaylist={() => {
             // TODO: Open playlist picker modal
-            console.log('Add to playlist:', contextMenu.track?.id);
+            
           }}
           onMakePlaylist={() => {
             if (contextMenu.track) {

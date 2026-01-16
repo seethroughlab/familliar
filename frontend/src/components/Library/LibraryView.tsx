@@ -157,7 +157,6 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   const selectAll = useCallback(() => {
     // This would need track data from the browser - for now, it's a no-op
     // The browser can implement its own select-all
-    console.log('Select all - needs implementation in browser');
   }, []);
 
   const clearSelection = useCallback(() => {
@@ -336,19 +335,16 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   );
 
   // Playback handlers
-  const handlePlayTrack = useCallback((trackId: string) => {
+  const handlePlayTrack = useCallback((_trackId: string) => {
     // This is handled by the browser component directly
-    console.log('Play track:', trackId);
   }, []);
 
-  const handlePlayTrackAt = useCallback((trackId: string, index: number) => {
+  const handlePlayTrackAt = useCallback((_trackId: string, _index: number) => {
     // This is handled by the browser component directly
-    console.log('Play track at:', trackId, index);
   }, []);
 
-  const handleQueueTrack = useCallback((trackId: string) => {
+  const handleQueueTrack = useCallback((_trackId: string) => {
     // TODO: Implement queue functionality
-    console.log('Queue track:', trackId);
   }, []);
 
   const handleEditTrack = useCallback((trackId: string) => {

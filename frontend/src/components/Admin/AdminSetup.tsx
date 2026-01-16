@@ -22,15 +22,10 @@ import {
   Bot,
   RefreshCw,
   Copy,
-  FolderOpen,
-  Plus,
-  Trash2,
-  AlertTriangle,
-  FolderSearch,
   Upload,
   Database,
+  Trash2,
 } from 'lucide-react';
-import { FolderBrowser } from './FolderBrowser';
 import { LibraryManagement } from './LibraryManagement';
 
 interface SettingsData {
@@ -45,26 +40,9 @@ interface SettingsData {
   ollama_model: string;
   spotify_configured: boolean;
   lastfm_configured: boolean;
-  music_library_paths: string[];
-  music_library_paths_valid: boolean[];
   community_cache_enabled: boolean;
   community_cache_contribute: boolean;
   community_cache_url: string;
-}
-
-interface PathInfo {
-  path: string;
-  valid: boolean;
-  audioCount?: number;
-  error?: string;
-}
-
-interface ValidationResult {
-  path: string;
-  exists: boolean;
-  is_directory: boolean;
-  audio_file_count: number | null;
-  error: string | null;
 }
 
 export function AdminSetup() {
@@ -103,13 +81,6 @@ export function AdminSetup() {
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [ollamaLoading, setOllamaLoading] = useState(false);
 
-  // Library paths
-  const [libraryPaths, setLibraryPaths] = useState<PathInfo[]>([]);
-  const [newLibraryPath, setNewLibraryPath] = useState('');
-  const [validatingPath, setValidatingPath] = useState(false);
-  const [pathStatus, setPathStatus] = useState<string | null>(null);
-  const [showFolderBrowser, setShowFolderBrowser] = useState(false);
-
   useEffect(() => {
     loadSettings();
   }, []);
@@ -125,15 +96,6 @@ export function AdminSetup() {
         setLlmProvider(data.llm_provider || 'claude');
         setOllamaUrl(data.ollama_url || 'http://localhost:11434');
         setOllamaModel(data.ollama_model || 'llama3.2');
-        // Load library paths
-        const paths = data.music_library_paths || [];
-        const pathsValid = data.music_library_paths_valid || [];
-        setLibraryPaths(
-          paths.map((path: string, i: number) => ({
-            path,
-            valid: pathsValid[i] ?? false,
-          }))
-        );
       }
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -168,85 +130,6 @@ export function AdminSetup() {
     }
   }
 
-  // Library path management
-  async function validatePath(pathToValidate: string): Promise<ValidationResult | null> {
-    try {
-      const response = await fetch('/api/v1/settings/validate-path', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: pathToValidate }),
-      });
-      if (response.ok) {
-        return await response.json();
-      }
-    } catch {
-      console.error('Failed to validate path');
-    }
-    return null;
-  }
-
-  async function handleAddLibraryPath() {
-    const trimmedPath = newLibraryPath.trim();
-    if (!trimmedPath) return;
-
-    // Check for duplicates
-    if (libraryPaths.some((p) => p.path === trimmedPath)) {
-      setPathStatus('Path already added');
-      setTimeout(() => setPathStatus(null), 3000);
-      return;
-    }
-
-    setValidatingPath(true);
-    const result = await validatePath(trimmedPath);
-    setValidatingPath(false);
-
-    const newPathInfo: PathInfo = {
-      path: trimmedPath,
-      valid: result?.exists && result?.is_directory ? true : false,
-      audioCount: result?.audio_file_count ?? undefined,
-      error: result?.error ?? undefined,
-    };
-
-    const updatedPaths = [...libraryPaths, newPathInfo];
-    setLibraryPaths(updatedPaths);
-    setNewLibraryPath('');
-
-    // Auto-save
-    await saveLibraryPaths(updatedPaths);
-  }
-
-  async function handleRemoveLibraryPath(index: number) {
-    const updatedPaths = libraryPaths.filter((_, i) => i !== index);
-    setLibraryPaths(updatedPaths);
-    await saveLibraryPaths(updatedPaths);
-  }
-
-  async function handleFolderSelect(path: string) {
-    // Check for duplicates
-    if (libraryPaths.some((p) => p.path === path)) {
-      setPathStatus('Path already added');
-      setTimeout(() => setPathStatus(null), 3000);
-      return;
-    }
-
-    setValidatingPath(true);
-    const result = await validatePath(path);
-    setValidatingPath(false);
-
-    const newPathInfo: PathInfo = {
-      path,
-      valid: result?.exists && result?.is_directory ? true : false,
-      audioCount: result?.audio_file_count ?? undefined,
-      error: result?.error ?? undefined,
-    };
-
-    const updatedPaths = [...libraryPaths, newPathInfo];
-    setLibraryPaths(updatedPaths);
-
-    // Auto-save
-    await saveLibraryPaths(updatedPaths);
-  }
-
   async function clearApiKey(keyName: string) {
     const confirmed = window.confirm(`Are you sure you want to remove this API key?`);
     if (!confirmed) return;
@@ -268,36 +151,6 @@ export function AdminSetup() {
     } catch {
       setStatus({ type: 'error', message: 'Error removing API key' });
     }
-  }
-
-  async function saveLibraryPaths(pathsToSave: PathInfo[]) {
-    setPathStatus('Saving...');
-    try {
-      const response = await fetch('/api/v1/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          music_library_paths: pathsToSave.map((p) => p.path),
-        }),
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        const pathsValid = data.music_library_paths_valid || [];
-        setLibraryPaths(
-          pathsToSave.map((p, i) => ({
-            ...p,
-            valid: pathsValid[i] ?? false,
-          }))
-        );
-        setPathStatus('Saved');
-      } else {
-        setPathStatus('Failed to save');
-      }
-    } catch {
-      setPathStatus('Error saving');
-    }
-    setTimeout(() => setPathStatus(null), 3000);
   }
 
   // Per-section save functions
@@ -986,116 +839,6 @@ export function AdminSetup() {
             </div>
           </section>
 
-          {/* Music Library Paths */}
-          <section className="bg-zinc-900 rounded-xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <div className={`p-2 rounded-lg ${libraryPaths.length > 0 ? 'bg-blue-500/20' : 'bg-zinc-800'}`}>
-                <FolderOpen className={`w-5 h-5 ${libraryPaths.length > 0 ? 'text-blue-400' : 'text-zinc-500'}`} />
-              </div>
-              <div className="flex-1">
-                <h2 className="font-medium text-white">Music Library Paths</h2>
-                <p className="text-sm text-zinc-500">Directories containing your music files</p>
-              </div>
-              {libraryPaths.length > 0 ? (
-                <span className="flex items-center gap-1 text-sm text-green-400">
-                  <CheckCircle className="w-4 h-4" /> {libraryPaths.length} path{libraryPaths.length !== 1 ? 's' : ''}
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-sm text-amber-400">
-                  <AlertTriangle className="w-4 h-4" /> Not configured
-                </span>
-              )}
-            </div>
-
-            <div className="space-y-3">
-              {/* Current paths */}
-              {libraryPaths.length === 0 ? (
-                <div className="flex items-start gap-2 p-3 bg-amber-900/20 border border-amber-800 rounded-lg">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-                  <div>
-                    <p className="text-sm text-amber-400">No library paths configured</p>
-                    <p className="text-xs text-zinc-500 mt-1">
-                      Add a path to your music library to enable scanning.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {libraryPaths.map((pathInfo, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-2 p-2 bg-zinc-800 rounded-lg border border-zinc-700"
-                    >
-                      {pathInfo.valid ? (
-                        <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white truncate font-mono">{pathInfo.path}</p>
-                        {pathInfo.valid && pathInfo.audioCount !== undefined && (
-                          <p className="text-xs text-zinc-500">{pathInfo.audioCount.toLocaleString()} audio files</p>
-                        )}
-                        {pathInfo.error && <p className="text-xs text-red-400">{pathInfo.error}</p>}
-                      </div>
-                      <button
-                        onClick={() => handleRemoveLibraryPath(index)}
-                        className="p-1 text-zinc-400 hover:text-red-400 transition-colors"
-                        title="Remove path"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Browse for folder */}
-              <button
-                onClick={() => setShowFolderBrowser(true)}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors text-white font-medium"
-              >
-                <FolderSearch className="w-5 h-5" />
-                Browse Folders
-              </button>
-
-              {/* Manual path entry (collapsible) */}
-              <details className="group">
-                <summary className="cursor-pointer text-sm text-zinc-500 hover:text-zinc-300 transition-colors">
-                  Or enter path manually...
-                </summary>
-                <div className="flex gap-2 mt-2">
-                  <input
-                    type="text"
-                    value={newLibraryPath}
-                    onChange={(e) => setNewLibraryPath(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleAddLibraryPath()}
-                    placeholder="/path/to/music"
-                    className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                  />
-                  <button
-                    onClick={handleAddLibraryPath}
-                    disabled={validatingPath || !newLibraryPath.trim()}
-                    className="px-4 py-3 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-lg transition-colors flex items-center gap-2"
-                    title="Add path"
-                  >
-                    {validatingPath ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                  </button>
-                </div>
-              </details>
-
-              <p className="text-xs text-zinc-500">
-                Don't see your music folder? Make sure it's mounted as a volume in docker-compose.yml
-              </p>
-
-              {pathStatus && (
-                <p className={`text-sm ${pathStatus.includes('Error') || pathStatus.includes('Failed') ? 'text-red-400' : 'text-green-400'}`}>
-                  {pathStatus}
-                </p>
-              )}
-            </div>
-          </section>
-
           {/* Library Management */}
           <LibraryManagement />
 
@@ -1106,14 +849,6 @@ export function AdminSetup() {
           </p>
         </div>
       </div>
-
-      {/* Folder Browser Modal */}
-      <FolderBrowser
-        isOpen={showFolderBrowser}
-        onClose={() => setShowFolderBrowser(false)}
-        onSelect={handleFolderSelect}
-        existingPaths={libraryPaths.map((p) => p.path)}
-      />
     </div>
   );
 }

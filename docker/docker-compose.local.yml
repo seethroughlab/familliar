@@ -44,18 +44,13 @@ services:
     ports:
       - "${API_PORT:-4400}:8000"
     volumes:
-      - ${MUSIC_LIBRARY_PATH:-/data/music}:/data/music:ro
+      - ${MUSIC_LIBRARY_PATH:-/data/music}:/music:rw  # Single library mount, rw for imports
       - art_data:/data/art
       - videos_data:/data/videos
       - app_data:/app/data  # Persists settings.json
-      # Common storage locations for folder browser
-      - /srv:/srv:ro        # OMV storage
-      - /media:/media:ro    # Common Linux mount point
-      - /mnt:/mnt:ro        # Another common mount point
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
-      - MUSIC_LIBRARY_PATH=/data/music
       - ART_PATH=/data/art
       - VIDEOS_PATH=/data/videos
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

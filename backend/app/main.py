@@ -43,7 +43,7 @@ from app.api.routes import (
     videos,
 )
 from app.api.routes import settings as settings_routes
-from app.config import get_app_version
+from app.config import AUDIO_EXTENSIONS, MUSIC_LIBRARY_PATH, get_app_version
 from app.config import settings as app_config
 from app.logging_config import get_logger, setup_logging
 
@@ -83,71 +83,35 @@ def create_error_response(
     return JSONResponse(status_code=status_code, content=content)
 
 
-def migrate_env_to_settings() -> None:
-    """One-time migration of MUSIC_LIBRARY_PATH env var to AppSettings."""
-    from app.services.app_settings import get_app_settings_service
+def validate_library_path() -> None:
+    """Validate library path on startup and log warnings for issues."""
+    path = MUSIC_LIBRARY_PATH
 
-    service = get_app_settings_service()
-    app_settings = service.get()
-
-    # If music library paths already configured in settings, skip migration
-    if app_settings.music_library_paths:
-        return
-
-    # Check for MUSIC_LIBRARY_PATH environment variable
-    env_path = app_config.music_library_path
-    if env_path:
-        # User has a path configured via env var - migrate it to settings
-        paths = [p.strip() for p in env_path.split(",") if p.strip()]
-        if paths:
-            service.update(music_library_paths=paths)
-            logging.info(f"Migrated MUSIC_LIBRARY_PATH to settings: {paths}")
-
-
-def validate_library_paths() -> None:
-    """Validate library paths on startup and log warnings for issues."""
-    from app.config import AUDIO_EXTENSIONS
-
-    paths = app_config.music_library_paths
-
-    if not paths:
+    if not path.exists():
         logging.warning(
-            "⚠️  NO MUSIC LIBRARY CONFIGURED. "
-            "Go to /admin to set up your music library path."
+            f"⚠️  Library path does not exist: {path}. "
+            "Configure MUSIC_LIBRARY_PATH in docker-compose.yml"
         )
         return
 
-    all_empty = True
-    for path in paths:
-        if not path.exists():
-            logging.warning(
-                f"⚠️  Library path does not exist: {path}. "
-                "Check that the volume is mounted correctly in docker-compose.yml"
-            )
-        elif not path.is_dir():
-            logging.warning(f"⚠️  Library path is not a directory: {path}")
-        else:
-            # Check if directory has any audio files (quick check)
-            has_audio = False
-            try:
-                for ext in AUDIO_EXTENSIONS:
-                    if any(path.rglob(f"*{ext}")):
-                        has_audio = True
-                        all_empty = False
-                        break
-                if not has_audio:
-                    logging.warning(
-                        f"⚠️  Library path appears empty (no audio files): {path}. "
-                        "This may indicate a volume mount issue - check docker-compose.yml"
-                    )
-            except PermissionError:
-                logging.warning(f"⚠️  Cannot read library path (permission denied): {path}")
+    if not path.is_dir():
+        logging.warning(f"⚠️  Library path is not a directory: {path}")
+        return
 
-    if all_empty and paths:
-        logging.error(
-            "❌ ALL LIBRARY PATHS ARE EMPTY OR INACCESSIBLE. "
-            "Library scan will find no files. Check your docker-compose volume mounts."
-        )
+    # Check if directory has any audio files (quick check)
+    try:
+        has_audio = False
+        for ext in AUDIO_EXTENSIONS:
+            if any(path.rglob(f"*{ext}")):
+                has_audio = True
+                break
+        if not has_audio:
+            logging.warning(
+                f"⚠️  Library path appears empty (no audio files): {path}. "
+                "Check that MUSIC_LIBRARY_PATH in docker-compose.yml points to your music folder"
+            )
+    except PermissionError:
+        logging.warning(f"⚠️  Cannot read library path (permission denied): {path}")
 
 
 @asynccontextmanager
@@ -156,11 +120,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     print(f"Starting Familiar API (debug={app_config.debug})")
 
-    # Migrate env vars to settings on first run
-    migrate_env_to_settings()
-
-    # Validate library paths and log warnings
-    validate_library_paths()
+    # Validate library path and log warnings
+    validate_library_path()
 
     # Check analysis capabilities (warns if embeddings disabled)
     from app.services.analysis import check_analysis_capabilities

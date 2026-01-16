@@ -2,6 +2,9 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Fixed library path inside container - configure host path via docker-compose volume mount
+MUSIC_LIBRARY_PATH = Path("/music")
+
 
 def get_app_version() -> str:
     """Get app version from VERSION file (set at Docker build time) or fallback."""
@@ -24,41 +27,13 @@ class Settings(BaseSettings):
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 
-    # Music library (comma-separated paths supported)
-    # NOTE: No default - must be configured via admin UI or MUSIC_LIBRARY_PATH env var
-    music_library_path: str = ""
-
     @property
     def music_library_paths(self) -> list[Path]:
-        """Get list of music library paths.
+        """Fixed music library path at /music.
 
-        Priority:
-        1. AppSettings (settings.json) if configured via admin UI
-        2. Environment variable MUSIC_LIBRARY_PATH (comma-separated)
-        3. Empty list (user must configure via /admin)
-
-        There is intentionally NO default path - the user must explicitly
-        configure their music library location via the admin UI.
+        Configure host path via docker-compose volume mount.
         """
-        # Check AppSettings first (configured via admin UI)
-        from app.services.app_settings import get_app_settings_service
-
-        app_settings = get_app_settings_service().get()
-        if app_settings.music_library_paths:
-            return [Path(p) for p in app_settings.music_library_paths if p]
-
-        # Fall back to environment variable (for backwards compatibility)
-        if self.music_library_path:
-            paths = []
-            for p in self.music_library_path.split(","):
-                p = p.strip()
-                if p:
-                    paths.append(Path(p))
-            if paths:
-                return paths
-
-        # No default - user must configure via admin UI
-        return []
+        return [MUSIC_LIBRARY_PATH]
 
     # Data paths
     art_path: Path = Path("data/art")

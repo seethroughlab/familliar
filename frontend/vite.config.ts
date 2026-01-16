@@ -58,8 +58,20 @@ export default defineConfig({
             handler: 'NetworkOnly',
           },
           {
-            // Cache album artwork
+            // Cache album artwork (legacy track-based)
             urlPattern: /\/api\/v1\/tracks\/.*\/artwork/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'artwork-cache',
+              expiration: {
+                maxEntries: 500,
+                maxAgeSeconds: 60 * 60 * 24 * 30, // 30 days
+              },
+            },
+          },
+          {
+            // Cache album artwork (hash-based)
+            urlPattern: /\/api\/v1\/artwork\/[a-f0-9]+\/(full|thumb)/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'artwork-cache',

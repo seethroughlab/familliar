@@ -73,7 +73,6 @@ export const useArtworkStore = create<ArtworkState>((set, get) => ({
   pollIntervalId: null,
 
   requestArtwork: async (albums: ArtworkAlbum[]) => {
-    console.log('[artworkStore] requestArtwork called with:', albums.length, 'albums');
     if (albums.length === 0) return;
 
     const state = get();
@@ -86,12 +85,9 @@ export const useArtworkStore = create<ArtworkState>((set, get) => ({
         newAlbums.push(album);
         // Mark as checking immediately
         state.status.set(key, 'checking');
-      } else {
-        console.log('[artworkStore] Skipping (already has status):', album.artist, '-', album.album, 'status:', state.status.get(key));
       }
     }
 
-    console.log('[artworkStore] New albums to request:', newAlbums.length);
     if (newAlbums.length === 0) return;
 
     // Update state to show checking status
@@ -114,7 +110,6 @@ export const useArtworkStore = create<ArtworkState>((set, get) => ({
       set({ hashes: newHashes });
 
       // Queue artwork downloads
-      console.log('[artworkStore] Calling /api/v1/artwork/queue/batch with', newAlbums.length, 'albums');
       const response = await fetch('/api/v1/artwork/queue/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,27 +127,22 @@ export const useArtworkStore = create<ArtworkState>((set, get) => ({
       }
 
       const data: QueueBatchResponse = await response.json();
-      console.log('[artworkStore] API response:', data);
 
       // Update status based on response
       const newStatus = new Map(get().status);
       const newPending = new Set(get().pendingHashes);
       for (const { album, hash } of albumsWithHashes) {
         const key = cacheKey(album.artist, album.album);
-        console.log(`[artworkStore] Checking hash ${hash} for ${album.artist} - ${album.album}`);
-        console.log(`[artworkStore] existing_hashes:`, data.existing_hashes, 'includes:', data.existing_hashes.includes(hash));
         if (data.queued_hashes.includes(hash) || data.pending_hashes.includes(hash)) {
           // Newly queued or already in progress from previous request - poll for completion
           newStatus.set(key, 'pending');
           newPending.add(hash);
         } else if (data.existing_hashes.includes(hash)) {
           newStatus.set(key, 'ready');
-          console.log(`[artworkStore] Marked as ready: ${album.artist} - ${album.album}`);
         } else {
           // Not queued and doesn't exist - mark as missing
           // This handles cases where backend skipped (failed cache, etc.)
           newStatus.set(key, 'missing');
-          console.log(`[artworkStore] Marked as missing: ${album.artist} - ${album.album}`);
         }
       }
 
