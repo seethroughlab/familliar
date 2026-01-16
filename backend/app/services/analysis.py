@@ -479,6 +479,97 @@ def lookup_acoustid(file_path: Path) -> dict | None:
         return None
 
 
+class AcoustIDError(Exception):
+    """Raised when AcoustID lookup fails."""
+
+    def __init__(self, message: str, error_type: str = "unknown"):
+        super().__init__(message)
+        self.error_type = error_type
+
+
+def lookup_acoustid_candidates(
+    file_path: Path,
+    min_score: float = 0.5,
+    limit: int = 5,
+) -> list[dict]:
+    """Look up all track candidates from AcoustID database.
+
+    Returns all matches above min_score, sorted by score descending.
+    This is used for the auto-populate feature where users choose from candidates.
+
+    Args:
+        file_path: Path to audio file
+        min_score: Minimum confidence score (0.0-1.0) to include
+        limit: Maximum number of candidates to return
+
+    Returns:
+        List of dicts with: acoustid_score, musicbrainz_recording_id, title, artist
+
+    Raises:
+        AcoustIDError: If fingerprinting or API lookup fails
+    """
+    api_key = get_acoustid_api_key()
+    if not api_key:
+        raise AcoustIDError(
+            "AcoustID not configured. Add API key in Settings > API Keys",
+            error_type="not_configured",
+        )
+
+    try:
+        results = acoustid.match(
+            api_key,
+            str(file_path),
+            meta="recordings releases",
+        )
+
+        candidates = []
+        seen_recordings = set()  # Deduplicate by recording ID
+
+        for score, recording_id, title, artist in results:
+            if score < min_score:
+                continue
+            if recording_id in seen_recordings:
+                continue
+
+            seen_recordings.add(recording_id)
+            candidates.append({
+                "acoustid_score": float(score),
+                "musicbrainz_recording_id": recording_id,
+                "title": title,
+                "artist": artist,
+            })
+
+            if len(candidates) >= limit:
+                break
+
+        # Sort by score descending
+        candidates.sort(key=lambda x: x["acoustid_score"], reverse=True)
+        return candidates
+
+    except acoustid.NoBackendError:
+        raise AcoustIDError(
+            "Audio fingerprinting requires chromaprint. Install via: "
+            "brew install chromaprint (macOS) or apt install libchromaprint-tools (Linux)",
+            error_type="chromaprint_missing",
+        )
+    except acoustid.FingerprintGenerationError as e:
+        raise AcoustIDError(
+            f"Failed to generate audio fingerprint: {e}",
+            error_type="fingerprint_error",
+        )
+    except acoustid.WebServiceError as e:
+        raise AcoustIDError(
+            f"AcoustID API error: {e}",
+            error_type="api_error",
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in AcoustID lookup: {e}")
+        raise AcoustIDError(
+            f"Unexpected error: {e}",
+            error_type="unknown",
+        )
+
+
 def identify_track(file_path: Path) -> dict:
     """Full track identification using AcoustID.
 

@@ -126,6 +126,76 @@ export const tracksApi = {
     });
     return data;
   },
+
+  // Audio fingerprint identification
+  identify: async (
+    id: string,
+    params?: { min_score?: number; limit?: number }
+  ): Promise<IdentifyTrackResponse> => {
+    const { data } = await api.post(`/tracks/${id}/identify`, null, {
+      params,
+    });
+    return data;
+  },
+};
+
+// Audio fingerprint identification types
+export interface IdentifyCandidate {
+  acoustid_score: number;
+  musicbrainz_recording_id: string;
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  album_artist: string | null;
+  year: number | null;
+  track_number: number | null;
+  disc_number: number | null;
+  genre: string | null;
+  composer: string | null;
+  artwork_url: string | null;
+  features: Record<string, number | string | null>;
+  musicbrainz_url: string;
+}
+
+export interface IdentifyTrackResponse {
+  track_id: string;
+  fingerprint_generated: boolean;
+  error: string | null;
+  error_type: string | null;
+  candidates: IdentifyCandidate[];
+}
+
+// Bulk identification types
+export interface BulkIdentifyTaskResponse {
+  task_id: string;
+  status: string;
+  message: string;
+}
+
+export interface BulkIdentifyProgress {
+  task_id: string;
+  status: 'running' | 'completed' | 'error';
+  phase: string;
+  total_tracks: number;
+  processed_tracks: number;
+  current_track: string | null;
+  results: IdentifyTrackResponse[];
+  errors: string[];
+  started_at: string | null;
+}
+
+export const bulkTracksApi = {
+  startIdentify: async (trackIds: string[]): Promise<BulkIdentifyTaskResponse> => {
+    const { data } = await api.post('/tracks/bulk/identify', {
+      track_ids: trackIds,
+    });
+    return data;
+  },
+
+  getIdentifyProgress: async (taskId: string): Promise<BulkIdentifyProgress> => {
+    const { data } = await api.get(`/tracks/bulk/identify/${taskId}`);
+    return data;
+  },
 };
 
 // Track metadata types

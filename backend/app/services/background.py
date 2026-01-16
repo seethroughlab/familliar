@@ -730,6 +730,113 @@ class BackgroundManager:
         except Exception as e:
             logger.error(f"Daily new releases check failed: {e}", exc_info=True)
 
+    async def run_bulk_identify(
+        self,
+        task_id: str,
+        track_ids: list[str],
+    ) -> dict[str, Any]:
+        """Run bulk audio fingerprint identification.
+
+        Processes tracks sequentially to respect API rate limits:
+        - AcoustID: 3 requests/second
+        - MusicBrainz: 1 request/second
+
+        Progress is stored in Redis for polling.
+        """
+        from datetime import datetime
+        from uuid import UUID
+
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+        from app.config import settings
+        from app.services.audio_identification import get_audio_identification_service
+
+        logger.info(f"Starting bulk identify task {task_id} for {len(track_ids)} tracks")
+
+        # Initialize progress in Redis
+        progress = {
+            "status": "running",
+            "phase": "identifying",
+            "total_tracks": len(track_ids),
+            "processed_tracks": 0,
+            "current_track": None,
+            "results": [],
+            "errors": [],
+            "started_at": datetime.utcnow().isoformat(),
+        }
+        self.redis.set(
+            f"familiar:identify:{task_id}",
+            json.dumps(progress),
+            ex=3600,  # 1 hour expiry
+        )
+
+        # Create database session
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, class_=AsyncSession)
+
+        service = get_audio_identification_service()
+
+        try:
+            async with async_session() as db:
+                for i, track_id_str in enumerate(track_ids):
+                    try:
+                        track_id = UUID(track_id_str)
+
+                        # Update progress
+                        progress["current_track"] = track_id_str
+                        progress["processed_tracks"] = i
+                        self.redis.set(
+                            f"familiar:identify:{task_id}",
+                            json.dumps(progress),
+                            ex=3600,
+                        )
+
+                        # Run identification
+                        result = await service.identify_track(
+                            track_id=track_id,
+                            db=db,
+                            min_score=0.5,
+                            limit=5,
+                        )
+
+                        # Add result
+                        progress["results"].append(result.to_dict())
+
+                    except Exception as e:
+                        logger.error(f"Error identifying track {track_id_str}: {e}")
+                        progress["errors"].append(f"Track {track_id_str}: {e}")
+
+                    # Rate limiting delay (respect MusicBrainz 1/sec limit)
+                    await asyncio.sleep(1.0)
+
+            # Mark complete
+            progress["status"] = "completed"
+            progress["phase"] = "done"
+            progress["processed_tracks"] = len(track_ids)
+            progress["current_track"] = None
+
+        except Exception as e:
+            logger.error(f"Bulk identify task {task_id} failed: {e}", exc_info=True)
+            progress["status"] = "error"
+            progress["phase"] = "error"
+            progress["errors"].append(str(e))
+
+        finally:
+            # Save final progress
+            self.redis.set(
+                f"familiar:identify:{task_id}",
+                json.dumps(progress),
+                ex=3600,
+            )
+            await engine.dispose()
+
+        logger.info(
+            f"Bulk identify task {task_id} completed: "
+            f"{len(progress['results'])} results, {len(progress['errors'])} errors"
+        )
+
+        return {"status": progress["status"], "task_id": task_id}
+
     async def run_sync(
         self,
         reread_unchanged: bool = False,

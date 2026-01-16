@@ -1,14 +1,16 @@
 import type { TrackMetadataUpdate } from '../../../api/client';
+import { AutoPopulateButton } from '../AutoPopulateButton';
 import { MusicBrainzLookup } from '../MusicBrainzLookup';
 
 interface Props {
   formData: Partial<TrackMetadataUpdate>;
   onChange: (field: keyof TrackMetadataUpdate, value: unknown) => void;
   isBulkEdit?: boolean;
+  trackId?: string;
 }
 
-export function BasicMetadataTab({ formData, onChange, isBulkEdit }: Props) {
-  // Handle applying metadata from MusicBrainz lookup
+export function BasicMetadataTab({ formData, onChange, isBulkEdit, trackId }: Props) {
+  // Handle applying metadata from lookup (MusicBrainz or AutoPopulate)
   const handleApplyLookup = (metadata: Partial<TrackMetadataUpdate>) => {
     Object.entries(metadata).forEach(([field, value]) => {
       if (value !== null && value !== undefined) {
@@ -119,9 +121,16 @@ export function BasicMetadataTab({ formData, onChange, isBulkEdit }: Props) {
         </div>
       </div>
 
-      {/* MusicBrainz Lookup - only for single track edit */}
-      {!isBulkEdit && (
-        <div className="pt-4 border-t border-zinc-800">
+      {/* Auto-populate and MusicBrainz Lookup - only for single track edit */}
+      {!isBulkEdit && trackId && (
+        <div className="pt-4 border-t border-zinc-800 space-y-3">
+          {/* Primary: Audio fingerprint-based identification */}
+          <AutoPopulateButton
+            trackId={trackId}
+            onApply={handleApplyLookup}
+          />
+
+          {/* Fallback: Text-based search */}
           <MusicBrainzLookup
             title={formData.title}
             artist={formData.artist}

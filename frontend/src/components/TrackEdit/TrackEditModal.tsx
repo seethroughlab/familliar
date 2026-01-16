@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   X,
@@ -12,6 +12,7 @@ import {
   BarChart3,
   AlertCircle,
   CheckCircle,
+  Fingerprint,
 } from 'lucide-react';
 import { tracksApi, type TrackMetadataUpdate } from '../../api/client';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -21,8 +22,9 @@ import { SortFieldsTab } from './tabs/SortFieldsTab';
 import { LyricsTab } from './tabs/LyricsTab';
 import { AnalysisTab } from './tabs/AnalysisTab';
 import { ArtworkTab } from './tabs/ArtworkTab';
+import { BulkAutoPopulatePanel } from './BulkAutoPopulatePanel';
 
-type TabId = 'basic' | 'extended' | 'sort' | 'artwork' | 'lyrics' | 'analysis';
+type TabId = 'basic' | 'extended' | 'sort' | 'artwork' | 'lyrics' | 'analysis' | 'auto-populate';
 
 interface Tab {
   id: TabId;
@@ -39,10 +41,16 @@ const TABS: Tab[] = [
   { id: 'analysis', label: 'Analysis', icon: <BarChart3 className="w-4 h-4" /> },
 ];
 
+const BULK_TABS: Tab[] = [
+  { id: 'auto-populate', label: 'Auto-populate', icon: <Fingerprint className="w-4 h-4" /> },
+  { id: 'basic', label: 'Basic', icon: <Music className="w-4 h-4" /> },
+  { id: 'extended', label: 'Extended', icon: <FileText className="w-4 h-4" /> },
+  { id: 'sort', label: 'Sort', icon: <ArrowUpDown className="w-4 h-4" /> },
+];
+
 export function TrackEditModal() {
   const queryClient = useQueryClient();
   const { editingTrackId, setEditingTrackId, getSelectedIds } = useSelectionStore();
-  const [activeTab, setActiveTab] = useState<TabId>('basic');
   const [formData, setFormData] = useState<Partial<TrackMetadataUpdate>>({});
   const [isDirty, setIsDirty] = useState(false);
   const [writeToFile, setWriteToFile] = useState(true);
@@ -51,6 +59,12 @@ export function TrackEditModal() {
   const selectedIds = getSelectedIds();
   const isBulkEdit = selectedIds.length > 1;
   const trackId = editingTrackId || selectedIds[0];
+
+  // Use different default tab for bulk edit
+  const [activeTab, setActiveTab] = useState<TabId>(isBulkEdit ? 'auto-populate' : 'basic');
+
+  // Get the appropriate tabs based on mode
+  const currentTabs = isBulkEdit ? BULK_TABS : TABS;
 
   // Fetch track metadata
   const { data: metadata, isLoading, error } = useQuery({
@@ -113,6 +127,24 @@ export function TrackEditModal() {
     setActiveTab('basic');
   };
 
+  // Handle applying metadata from bulk auto-populate to a specific track
+  const handleApplyToTrack = useCallback(
+    async (targetTrackId: string, metadata: Partial<TrackMetadataUpdate>) => {
+      try {
+        await tracksApi.updateMetadata(targetTrackId, {
+          ...metadata,
+          write_to_file: writeToFile,
+        });
+        // Invalidate to refresh UI
+        queryClient.invalidateQueries({ queryKey: ['tracks'] });
+        queryClient.invalidateQueries({ queryKey: ['track-metadata', targetTrackId] });
+      } catch (error) {
+        console.error(`Failed to update track ${targetTrackId}:`, error);
+      }
+    },
+    [writeToFile, queryClient]
+  );
+
   const handleFieldChange = (field: keyof TrackMetadataUpdate, value: unknown) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     setIsDirty(true);
@@ -151,7 +183,7 @@ export function TrackEditModal() {
 
         {/* Tabs */}
         <div className="flex gap-1 px-6 py-2 border-b border-zinc-800 overflow-x-auto">
-          {TABS.map((tab) => (
+          {currentTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -180,11 +212,18 @@ export function TrackEditModal() {
             </div>
           ) : (
             <>
+              {activeTab === 'auto-populate' && isBulkEdit && (
+                <BulkAutoPopulatePanel
+                  trackIds={selectedIds}
+                  onApplyToTrack={handleApplyToTrack}
+                />
+              )}
               {activeTab === 'basic' && (
                 <BasicMetadataTab
                   formData={formData}
                   onChange={handleFieldChange}
                   isBulkEdit={isBulkEdit}
+                  trackId={trackId}
                 />
               )}
               {activeTab === 'extended' && (
