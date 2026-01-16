@@ -21,19 +21,45 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add source tracking columns
-    op.add_column(
-        "track_analysis",
-        sa.Column("features_source", sa.String(50), nullable=True),
-    )
-    op.add_column(
-        "track_analysis",
-        sa.Column("embedding_source", sa.String(50), nullable=True),
-    )
+    conn = op.get_bind()
 
-    # Set default value for existing rows
-    op.execute("UPDATE track_analysis SET features_source = 'local' WHERE features IS NOT NULL")
-    op.execute("UPDATE track_analysis SET embedding_source = 'local' WHERE embedding IS NOT NULL")
+    # Check if features_source column exists before adding
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns
+                WHERE table_name = 'track_analysis' AND column_name = 'features_source'
+            )
+            """
+        )
+    )
+    if not result.scalar():
+        op.add_column(
+            "track_analysis",
+            sa.Column("features_source", sa.String(50), nullable=True),
+        )
+        # Set default value for existing rows
+        op.execute("UPDATE track_analysis SET features_source = 'local' WHERE features IS NOT NULL")
+
+    # Check if embedding_source column exists before adding
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns
+                WHERE table_name = 'track_analysis' AND column_name = 'embedding_source'
+            )
+            """
+        )
+    )
+    if not result.scalar():
+        op.add_column(
+            "track_analysis",
+            sa.Column("embedding_source", sa.String(50), nullable=True),
+        )
+        # Set default value for existing rows
+        op.execute("UPDATE track_analysis SET embedding_source = 'local' WHERE embedding IS NOT NULL")
 
 
 def downgrade() -> None:
