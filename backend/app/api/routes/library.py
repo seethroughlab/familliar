@@ -2987,17 +2987,16 @@ async def get_discover_dashboard(
             favorites = unmatched_result.scalars().all()
 
             for fav in favorites:
-                search_urls = generate_release_search_urls(
-                    fav.artist_name or "",
-                    fav.track_name or ""
-                )
+                artist_name = fav.track_data.get("artist") or ""
+                track_name = fav.track_data.get("name") or ""
+                search_urls = generate_release_search_urls(artist_name, track_name)
                 unmatched_favorites.append(
                     DiscoverUnmatchedFavorite(
                         spotify_track_id=fav.spotify_track_id,
-                        name=fav.track_name or "",
-                        artist=fav.artist_name or "",
-                        album=fav.album_name,
-                        image_url=fav.album_image_url,
+                        name=track_name,
+                        artist=artist_name,
+                        album=fav.track_data.get("album"),
+                        image_url=None,  # album_image_url not stored in track_data
                         bandcamp_url=search_urls.get("bandcamp", {}).get("url"),
                     )
                 )

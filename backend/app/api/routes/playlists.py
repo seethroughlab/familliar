@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from app.api.deps import DbSession, RequiredProfile
 from app.db.models import Playlist, PlaylistTrack, Track
@@ -387,7 +387,7 @@ async def reorder_playlist_tracks(
 
         # Update the position
         await db.execute(
-            PlaylistTrack.__table__.update()
+            update(PlaylistTrack)
             .where(
                 PlaylistTrack.playlist_id == playlist_id,
                 PlaylistTrack.track_id == track_id,

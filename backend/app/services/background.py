@@ -707,10 +707,10 @@ class BackgroundManager:
             profile_id = None
             async with async_session() as db:
                 # Get any profile (prefer the one with most recent activity, but for now just get first)
-                result = await db.execute(
+                db_result = await db.execute(
                     select(Profile.id).limit(1)
                 )
-                row = result.scalar_one_or_none()
+                row = db_result.scalar_one_or_none()
                 if row:
                     profile_id = str(row)
 
@@ -720,12 +720,12 @@ class BackgroundManager:
                 logger.warning("No profiles found - skipping daily new releases check")
                 return
 
-            result = await self.run_prioritized_new_releases_check(
+            check_result = await self.run_prioritized_new_releases_check(
                 profile_id=profile_id,
                 batch_size=75,
                 days_back=90,
             )
-            logger.info(f"Daily new releases check completed: {result}")
+            logger.info(f"Daily new releases check completed: {check_result}")
 
         except Exception as e:
             logger.error(f"Daily new releases check failed: {e}", exc_info=True)
