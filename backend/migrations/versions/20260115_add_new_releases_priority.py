@@ -20,14 +20,41 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "artist_check_cache",
-        sa.Column("check_priority", sa.Float(), nullable=False, server_default="0.0"),
+    conn = op.get_bind()
+
+    # Check if check_priority column exists before adding
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns
+                WHERE table_name = 'artist_check_cache' AND column_name = 'check_priority'
+            )
+            """
+        )
     )
-    op.add_column(
-        "artist_check_cache",
-        sa.Column("priority_updated_at", sa.DateTime(), nullable=True),
+    if not result.scalar():
+        op.add_column(
+            "artist_check_cache",
+            sa.Column("check_priority", sa.Float(), nullable=False, server_default="0.0"),
+        )
+
+    # Check if priority_updated_at column exists before adding
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.columns
+                WHERE table_name = 'artist_check_cache' AND column_name = 'priority_updated_at'
+            )
+            """
+        )
     )
+    if not result.scalar():
+        op.add_column(
+            "artist_check_cache",
+            sa.Column("priority_updated_at", sa.DateTime(), nullable=True),
+        )
 
 
 def downgrade() -> None:
