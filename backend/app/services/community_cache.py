@@ -15,6 +15,7 @@ Versioning:
 - Prevents mixing data from incompatible analysis pipelines
 """
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
@@ -25,6 +26,10 @@ import numpy as np
 from app.config import ANALYSIS_VERSION
 
 logger = logging.getLogger(__name__)
+
+# Rate limit handling
+MAX_RETRIES = 3
+DEFAULT_RETRY_DELAY = 5.0  # seconds
 
 # CLAP model identifier for versioning
 CLAP_MODEL_VERSION = "laion/clap-htsat-unfused:v1"
@@ -109,6 +114,60 @@ class CommunityCacheService:
             await self._client.aclose()
             self._client = None
 
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs,
+    ) -> httpx.Response | None:
+        """Make an HTTP request with automatic retry on rate limiting.
+
+        Respects Retry-After header from 429 responses.
+
+        Returns:
+            Response object, or None if all retries exhausted
+        """
+        client = await self._get_client()
+
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await client.request(method, url, **kwargs)
+
+                # Success or expected error (like 404)
+                if response.status_code != 429:
+                    return response
+
+                # Rate limited - check Retry-After header
+                retry_after = response.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = float(retry_after)
+                    except ValueError:
+                        delay = DEFAULT_RETRY_DELAY
+                else:
+                    delay = DEFAULT_RETRY_DELAY
+
+                logger.warning(
+                    f"Rate limited by community cache, waiting {delay}s "
+                    f"(attempt {attempt + 1}/{MAX_RETRIES})"
+                )
+                await asyncio.sleep(delay)
+
+            except httpx.ConnectError:
+                logger.debug("Community cache server unavailable")
+                return None
+            except httpx.TimeoutException:
+                logger.debug("Community cache request timed out")
+                if attempt < MAX_RETRIES - 1:
+                    await asyncio.sleep(1.0)  # Brief delay before retry
+                continue
+            except Exception as e:
+                logger.warning(f"Community cache request failed: {e}")
+                return None
+
+        logger.warning("Community cache: max retries exceeded due to rate limiting")
+        return None
+
     @staticmethod
     def hash_fingerprint(acoustid_fingerprint: str | bytes) -> str:
         """Hash an AcoustID fingerprint for privacy.
@@ -140,21 +199,27 @@ class CommunityCacheService:
 
         fp_hash = self.hash_fingerprint(acoustid_fingerprint)
 
+        response = await self._request_with_retry(
+            "GET",
+            f"{self.cache_url}/v1/embeddings/{fp_hash}",
+            params={
+                "analysis_version": analysis_version,
+                "clap_model_version": CLAP_MODEL_VERSION,
+            },
+        )
+
+        if response is None:
+            return None
+
+        if response.status_code == 404:
+            logger.debug(f"Community cache miss for {fp_hash[:16]}...")
+            return None
+
+        if response.status_code != 200:
+            logger.warning(f"Community cache lookup error: HTTP {response.status_code}")
+            return None
+
         try:
-            client = await self._get_client()
-            response = await client.get(
-                f"{self.cache_url}/v1/embeddings/{fp_hash}",
-                params={
-                    "analysis_version": analysis_version,
-                    "clap_model_version": CLAP_MODEL_VERSION,
-                },
-            )
-
-            if response.status_code == 404:
-                logger.debug(f"Community cache miss for {fp_hash[:16]}...")
-                return None
-
-            response.raise_for_status()
             data = response.json()
 
             # Validate embedding dimension
@@ -177,15 +242,8 @@ class CommunityCacheService:
                 clap_model_version=data.get("clap_model_version", CLAP_MODEL_VERSION),
                 contributor_count=data.get("contributor_count", 1),
             )
-
-        except httpx.ConnectError:
-            logger.debug("Community cache server unavailable")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"Community cache lookup error: {e}")
-            return None
         except Exception as e:
-            logger.warning(f"Community cache lookup failed: {e}")
+            logger.warning(f"Community cache lookup failed to parse response: {e}")
             return None
 
     async def contribute(
@@ -213,38 +271,32 @@ class CommunityCacheService:
 
         fp_hash = self.hash_fingerprint(acoustid_fingerprint)
 
-        try:
-            client = await self._get_client()
+        # Compress to float16 for smaller payload (~1KB vs 2KB)
+        embedding_f16 = np.array(embedding, dtype=np.float16).tolist()
 
-            # Compress to float16 for smaller payload (~1KB vs 2KB)
-            embedding_f16 = np.array(embedding, dtype=np.float16).tolist()
+        response = await self._request_with_retry(
+            "POST",
+            f"{self.cache_url}/v1/embeddings",
+            json={
+                "fingerprint_hash": fp_hash,
+                "embedding": embedding_f16,
+                "analysis_version": analysis_version,
+                "clap_model_version": CLAP_MODEL_VERSION,
+            },
+        )
 
-            response = await client.post(
-                f"{self.cache_url}/v1/embeddings",
-                json={
-                    "fingerprint_hash": fp_hash,
-                    "embedding": embedding_f16,
-                    "analysis_version": analysis_version,
-                    "clap_model_version": CLAP_MODEL_VERSION,
-                },
-            )
-
-            if response.status_code == 201:
-                logger.info(f"Contributed embedding to community cache: {fp_hash[:16]}...")
-                return True
-            elif response.status_code == 200:
-                # Already exists, incremented contributor count
-                logger.debug(f"Embedding already in cache, confirmed: {fp_hash[:16]}...")
-                return True
-            else:
-                logger.warning(f"Community cache contribution rejected: {response.status_code}")
-                return False
-
-        except httpx.ConnectError:
-            logger.debug("Community cache server unavailable for contribution")
+        if response is None:
             return False
-        except Exception as e:
-            logger.warning(f"Community cache contribution failed: {e}")
+
+        if response.status_code == 201:
+            logger.info(f"Contributed embedding to community cache: {fp_hash[:16]}...")
+            return True
+        elif response.status_code == 200:
+            # Already exists, incremented contributor count
+            logger.debug(f"Embedding already in cache, confirmed: {fp_hash[:16]}...")
+            return True
+        else:
+            logger.warning(f"Community cache contribution rejected: {response.status_code}")
             return False
 
     async def lookup_features(
@@ -266,18 +318,24 @@ class CommunityCacheService:
 
         fp_hash = self.hash_fingerprint(acoustid_fingerprint)
 
+        response = await self._request_with_retry(
+            "GET",
+            f"{self.cache_url}/v1/features/{fp_hash}",
+            params={"analysis_version": analysis_version},
+        )
+
+        if response is None:
+            return None
+
+        if response.status_code == 404:
+            logger.debug(f"Community cache features miss for {fp_hash[:16]}...")
+            return None
+
+        if response.status_code != 200:
+            logger.warning(f"Community cache features lookup error: HTTP {response.status_code}")
+            return None
+
         try:
-            client = await self._get_client()
-            response = await client.get(
-                f"{self.cache_url}/v1/features/{fp_hash}",
-                params={"analysis_version": analysis_version},
-            )
-
-            if response.status_code == 404:
-                logger.debug(f"Community cache features miss for {fp_hash[:16]}...")
-                return None
-
-            response.raise_for_status()
             data = response.json()
             features = data.get("features", {})
 
@@ -301,15 +359,8 @@ class CommunityCacheService:
                 loudness=features.get("loudness"),
                 contributor_count=data.get("contributor_count", 1),
             )
-
-        except httpx.ConnectError:
-            logger.debug("Community cache server unavailable")
-            return None
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"Community cache features lookup error: {e}")
-            return None
         except Exception as e:
-            logger.warning(f"Community cache features lookup failed: {e}")
+            logger.warning(f"Community cache features lookup failed to parse response: {e}")
             return None
 
     async def contribute_features(
@@ -334,44 +385,38 @@ class CommunityCacheService:
 
         fp_hash = self.hash_fingerprint(acoustid_fingerprint)
 
-        try:
-            client = await self._get_client()
-
-            response = await client.post(
-                f"{self.cache_url}/v1/features",
-                json={
-                    "fingerprint_hash": fp_hash,
-                    "analysis_version": analysis_version,
-                    "features": {
-                        "bpm": features.get("bpm"),
-                        "key": features.get("key"),
-                        "energy": features.get("energy"),
-                        "danceability": features.get("danceability"),
-                        "valence": features.get("valence"),
-                        "acousticness": features.get("acousticness"),
-                        "instrumentalness": features.get("instrumentalness"),
-                        "speechiness": features.get("speechiness"),
-                        "liveness": features.get("liveness"),
-                        "loudness": features.get("loudness"),
-                    },
+        response = await self._request_with_retry(
+            "POST",
+            f"{self.cache_url}/v1/features",
+            json={
+                "fingerprint_hash": fp_hash,
+                "analysis_version": analysis_version,
+                "features": {
+                    "bpm": features.get("bpm"),
+                    "key": features.get("key"),
+                    "energy": features.get("energy"),
+                    "danceability": features.get("danceability"),
+                    "valence": features.get("valence"),
+                    "acousticness": features.get("acousticness"),
+                    "instrumentalness": features.get("instrumentalness"),
+                    "speechiness": features.get("speechiness"),
+                    "liveness": features.get("liveness"),
+                    "loudness": features.get("loudness"),
                 },
-            )
+            },
+        )
 
-            if response.status_code == 201:
-                logger.info(f"Contributed features to community cache: {fp_hash[:16]}...")
-                return True
-            elif response.status_code == 200:
-                logger.debug(f"Features already in cache, confirmed: {fp_hash[:16]}...")
-                return True
-            else:
-                logger.warning(f"Community cache features contribution rejected: {response.status_code}")
-                return False
-
-        except httpx.ConnectError:
-            logger.debug("Community cache server unavailable for features contribution")
+        if response is None:
             return False
-        except Exception as e:
-            logger.warning(f"Community cache features contribution failed: {e}")
+
+        if response.status_code == 201:
+            logger.info(f"Contributed features to community cache: {fp_hash[:16]}...")
+            return True
+        elif response.status_code == 200:
+            logger.debug(f"Features already in cache, confirmed: {fp_hash[:16]}...")
+            return True
+        else:
+            logger.warning(f"Community cache features contribution rejected: {response.status_code}")
             return False
 
     async def health_check(self) -> dict:
