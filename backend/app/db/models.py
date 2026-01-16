@@ -578,23 +578,25 @@ class ProposedChange(Base):
     field: Mapped[str | None] = mapped_column(
         String(50)
     )  # "artist", "album_artist", "year", etc.
-    old_value: Mapped[Any] = mapped_column(JSONB)  # Can be dict mapping track_id -> value
-    new_value: Mapped[Any] = mapped_column(JSONB)  # The proposed new value
+    old_value: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # Can be dict mapping track_id -> value
+    new_value: Mapped[Any | None] = mapped_column(JSONB, nullable=True)  # The proposed new value
 
     # Where the change came from
     source: Mapped[ChangeSource] = mapped_column(
         Enum(ChangeSource, values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
+        index=True,
     )
     source_detail: Mapped[str | None] = mapped_column(
         String(500)
     )  # e.g., "MusicBrainz release: abc123"
-    confidence: Mapped[float] = mapped_column(Float, default=1.0)  # 0.0-1.0
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True, default=1.0)  # 0.0-1.0
     reason: Mapped[str | None] = mapped_column(Text)  # Why this change is suggested
 
     # How to apply the change
-    scope: Mapped[ChangeScope] = mapped_column(
+    scope: Mapped[ChangeScope | None] = mapped_column(
         Enum(ChangeScope, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=True,
         default=ChangeScope.DB_ONLY,
     )
 
@@ -606,7 +608,7 @@ class ProposedChange(Base):
     )
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, server_default=func.now(), index=True)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -637,6 +639,7 @@ class Plugin(Base):
     plugin_type: Mapped[PluginType] = mapped_column(
         Enum(PluginType, values_callable=lambda obj: [e.value for e in obj]),
         nullable=False,
+        index=True,
     )
     description: Mapped[str | None] = mapped_column(Text)
 
@@ -653,19 +656,19 @@ class Plugin(Base):
     bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)  # SHA256
 
     # Compatibility
-    api_version: Mapped[int] = mapped_column(Integer, default=1)
+    api_version: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     min_familiar_version: Mapped[str | None] = mapped_column(String(20))
 
     # Status
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool | None] = mapped_column(Boolean, nullable=True, default=True)
     load_error: Mapped[str | None] = mapped_column(Text)  # Last error if failed to load
 
     # Full manifest (JSONB for flexibility)
-    manifest: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+    manifest: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True, default=dict)
 
     # Timestamps
-    installed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
+    installed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, server_default=func.now())
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, server_default=func.now(), onupdate=func.now()
     )
     last_update_check: Mapped[datetime | None] = mapped_column(DateTime)

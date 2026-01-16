@@ -5,9 +5,9 @@ Revises: add_new_releases_priority
 Create Date: 2026-01-15
 """
 
-from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB, UUID, ENUM
+from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 
 # revision identifiers
 revision = "add_plugins_table"

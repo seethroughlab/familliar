@@ -10,8 +10,8 @@ Tracks where audio features and embeddings came from:
 - "community_cache" - Retrieved from community embedding cache
 """
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 # revision identifiers
 revision = "add_analysis_source"

@@ -20,8 +20,9 @@ depends_on = None
 
 def upgrade() -> None:
     # First, update any existing 'approved' status to 'pending'
+    # Use text cast to avoid enum comparison issues on fresh installs
     op.execute(
-        "UPDATE proposed_changes SET status = 'pending' WHERE status = 'approved'"
+        "UPDATE proposed_changes SET status = 'pending' WHERE status::text = 'approved'"
     )
 
     # Drop the approved_at column
