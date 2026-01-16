@@ -12,4 +12,4 @@ import './ColorFlow';
 import './TypographyWave';
 import './LyricStorm';
 import './RainWindow';
-import './NonPlaces';
+// NonPlaces moved to external plugin: familiar-plugin-non-places

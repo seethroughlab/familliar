@@ -62,6 +62,14 @@ class AppSettings(BaseModel):
     # Analysis settings
     clap_embeddings_enabled: bool | None = None  # None = auto-detect based on RAM (6GB+ required)
 
+    # External feature lookup (skip local librosa analysis when possible)
+    external_features_enabled: bool = True  # Look up features from external services
+
+    # Community embedding cache (share CLAP embeddings with other users)
+    community_cache_enabled: bool = True  # Look up embeddings from community cache
+    community_cache_contribute: bool = False  # Contribute computed embeddings (opt-in)
+    community_cache_url: str = "http://openmediavault:8000"  # Cache server URL
+
 
 class AppSettingsService:
     """Service for managing user-configurable app settings."""

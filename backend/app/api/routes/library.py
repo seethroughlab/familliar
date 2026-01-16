@@ -965,11 +965,15 @@ async def get_album_detail(
     artist_normalized = artist_name.lower().strip()
     album_normalized = album_name.lower().strip()
 
+    # Use album_artist (with fallback to artist) to match how list_albums groups albums
+    # This ensures compilation/soundtrack albums are found correctly
+    album_artist_col = func.coalesce(func.nullif(Track.album_artist, ""), Track.artist)
+
     # Get album metadata and tracks
     album_query = (
         select(Track)
         .where(
-            func.lower(func.trim(Track.artist)) == artist_normalized,
+            func.lower(func.trim(album_artist_col)) == artist_normalized,
             func.lower(func.trim(Track.album)) == album_normalized,
             Track.status == TrackStatus.ACTIVE,
         )
@@ -1000,17 +1004,17 @@ async def get_album_detail(
         for t in tracks_list
     ]
 
-    # Get other albums by the same artist
+    # Get other albums by the same artist (using album_artist for consistency)
     other_albums_query = (
         select(
             func.max(Track.album).label("name"),
-            func.max(Track.artist).label("artist"),
+            func.max(album_artist_col).label("artist"),
             func.max(Track.year).label("year"),
             func.count(Track.id).label("track_count"),
             func.min(cast(Track.id, TEXT)).label("first_track_id"),
         )
         .where(
-            func.lower(func.trim(Track.artist)) == artist_normalized,
+            func.lower(func.trim(album_artist_col)) == artist_normalized,
             func.lower(func.trim(Track.album)) != album_normalized,
             Track.album.isnot(None),
             Track.album != "",

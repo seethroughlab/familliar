@@ -653,8 +653,13 @@ def run_track_features(track_id: str) -> dict[str, Any]:
     Phase 1 of analysis: artwork, librosa features, AcoustID, MusicBrainz.
     This is separated from embedding extraction to reduce peak memory usage.
     Each phase runs in its own subprocess that exits after completion.
+
+    External Features Lookup:
+    Before running expensive librosa analysis, checks if pre-computed features
+    are available from external services (e.g., ReccoBeats via Spotify track ID).
     """
     # Configure logging for subprocess (spawned processes don't inherit parent's config)
+    import asyncio
     import logging
     logging.basicConfig(
         level=logging.INFO,
@@ -664,7 +669,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
 
     from sqlalchemy import select
 
-    from app.db.models import Track, TrackAnalysis
+    from app.db.models import SpotifyFavorite, Track, TrackAnalysis
     from app.db.session import sync_session_maker
     from app.services.analysis import (
         AnalysisError,
@@ -672,7 +677,9 @@ def run_track_features(track_id: str) -> dict[str, Any]:
         generate_fingerprint,
         identify_track,
     )
+    from app.services.app_settings import get_app_settings_service
     from app.services.artwork import extract_and_save_artwork
+    from app.services.external_features import get_external_features_service
 
     log_memory("features_start")
 
@@ -733,9 +740,55 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             )
             log_memory("after_artwork")
 
-            # Extract audio features with librosa
-            features: dict[str, Any] = extract_features(file_path)
-            gc.collect()
+            # Try external feature lookup first (ReccoBeats via Spotify ID)
+            features: dict[str, Any] = {}
+            features_source = "local"
+            app_settings = get_app_settings_service().get()
+
+            if app_settings.external_features_enabled:
+                # Look up Spotify track ID from SpotifyFavorite
+                spotify_fav_result = db.execute(
+                    select(SpotifyFavorite.spotify_track_id)
+                    .where(SpotifyFavorite.matched_track_id == track.id)
+                )
+                spotify_fav = spotify_fav_result.scalar_one_or_none()
+
+                if spotify_fav:
+                    logger.info(f"Looking up external features for Spotify ID: {spotify_fav}")
+                    try:
+                        ext_service = get_external_features_service()
+                        ext_features = asyncio.run(
+                            ext_service.lookup_features(spotify_track_id=spotify_fav)
+                        )
+                        if ext_features:
+                            # Convert ExternalFeatures to our features dict format
+                            features = {
+                                "bpm": ext_features.bpm,
+                                "key": ext_features.key,
+                                "energy": ext_features.energy,
+                                "danceability": ext_features.danceability,
+                                "valence": ext_features.valence,
+                                "acousticness": ext_features.acousticness,
+                                "instrumentalness": ext_features.instrumentalness,
+                                "speechiness": ext_features.speechiness,
+                                "liveness": ext_features.liveness,
+                                "loudness": ext_features.loudness,
+                            }
+                            # Remove None values
+                            features = {k: v for k, v in features.items() if v is not None}
+                            features_source = ext_features.source  # "reccobeats"
+                            logger.info(
+                                f"External features found from {features_source}: "
+                                f"BPM={ext_features.bpm}, Key={ext_features.key}"
+                            )
+                    except Exception as e:
+                        logger.warning(f"External feature lookup failed: {e}")
+
+            # Fall back to local librosa extraction if no external features
+            if not features.get("bpm"):
+                features = extract_features(file_path)
+                features_source = "local"
+                gc.collect()
             log_memory("after_features")
 
             # Generate AcoustID fingerprint
@@ -779,6 +832,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
 
             if existing_analysis:
                 existing_analysis.features = features
+                existing_analysis.features_source = features_source
                 existing_analysis.acoustid = acoustid_fingerprint
                 existing_analysis.version = ANALYSIS_VERSION  # Update version
                 # Keep existing embedding if present
@@ -787,6 +841,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
                     track_id=track.id,
                     version=ANALYSIS_VERSION,
                     features=features,
+                    features_source=features_source,
                     embedding=None,  # Embedding extracted in phase 2
                     acoustid=acoustid_fingerprint,
                 )
@@ -802,7 +857,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             log_memory("after_commit")
 
             logger.info(
-                f"Features extracted for {track.title}: "
+                f"Features extracted for {track.title} (source={features_source}): "
                 f"BPM={features.get('bpm')}, Key={features.get('key')}"
             )
 
@@ -816,6 +871,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
                 "phase": "features",
                 "artwork_extracted": artwork_hash is not None,
                 "features_extracted": bool(features.get("bpm")),
+                "features_source": features_source,
                 "bpm": features.get("bpm"),
                 "key": features.get("key"),
             }
@@ -876,7 +932,13 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
     Phase 2 of analysis: CLAP embedding for similarity search.
     This runs in a separate subprocess from feature extraction to reduce peak memory.
     The CLAP model uses ~2-3GB of memory, so isolating it prevents OOM kills.
+
+    Community Cache:
+    Before running expensive CLAP extraction, checks if embedding is available in
+    the community cache (keyed by AcoustID fingerprint hash). If contribution is
+    enabled and we compute locally, the embedding is shared with other users.
     """
+    import asyncio
     import logging
     logging.basicConfig(
         level=logging.INFO,
@@ -889,6 +951,8 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
     from app.db.models import Track, TrackAnalysis
     from app.db.session import sync_session_maker
     from app.services.analysis import AnalysisError, extract_embedding
+    from app.services.app_settings import get_app_settings_service
+    from app.services.community_cache import get_community_cache_service
 
     log_memory("embedding_start")
 
@@ -909,9 +973,64 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
 
             logger.info(f"Extracting embedding: {track.title} by {track.artist}")
 
-            # Generate CLAP embedding for similarity search
-            embedding = extract_embedding(file_path)
-            gc.collect()
+            # Get app settings for community cache
+            app_settings = get_app_settings_service().get()
+            embedding_source = "local"
+            embedding: list[float] | None = None
+            acoustid_fingerprint: str | None = None
+
+            # Get the analysis record to get AcoustID fingerprint
+            analysis_result = db.execute(
+                select(TrackAnalysis)
+                .where(TrackAnalysis.track_id == track.id)
+                .order_by(TrackAnalysis.version.desc())
+            )
+            existing_analysis = analysis_result.scalar_one_or_none()
+
+            if existing_analysis and existing_analysis.acoustid:
+                acoustid_fingerprint = existing_analysis.acoustid
+
+            # Try community cache first if enabled
+            if app_settings.community_cache_enabled and acoustid_fingerprint:
+                try:
+                    cache_service = get_community_cache_service(
+                        cache_url=app_settings.community_cache_url
+                    )
+                    cached = asyncio.run(
+                        cache_service.lookup(acoustid_fingerprint)
+                    )
+                    if cached:
+                        embedding = cached.embedding
+                        embedding_source = "community_cache"
+                        logger.info(
+                            f"Community cache hit for {track.title} "
+                            f"(contributed by {cached.contributor_count} users)"
+                        )
+                except Exception as e:
+                    logger.warning(f"Community cache lookup failed: {e}")
+
+            # Fall back to local CLAP extraction if no cache hit
+            if embedding is None:
+                embedding = extract_embedding(file_path)
+                embedding_source = "local"
+                gc.collect()
+
+                # Contribute to community cache if enabled and we have a fingerprint
+                if (
+                    embedding is not None
+                    and app_settings.community_cache_contribute
+                    and acoustid_fingerprint
+                ):
+                    try:
+                        cache_service = get_community_cache_service(
+                            cache_url=app_settings.community_cache_url
+                        )
+                        asyncio.run(
+                            cache_service.contribute(acoustid_fingerprint, embedding)
+                        )
+                    except Exception as e:
+                        logger.debug(f"Community cache contribution failed: {e}")
+
             log_memory("after_embedding")
 
             if embedding is None:
@@ -925,19 +1044,13 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
                 }
 
             # Update the existing analysis record with embedding
-            # Query by track_id only - NOT by version, to find any existing record
-            existing = db.execute(
-                select(TrackAnalysis)
-                .where(TrackAnalysis.track_id == track.id)
-                .order_by(TrackAnalysis.version.desc())  # Get newest version if multiple
-            )
-            existing_analysis = existing.scalar_one_or_none()
-
+            # We already have existing_analysis from earlier fingerprint lookup
             if existing_analysis:
                 existing_analysis.embedding = embedding
+                existing_analysis.embedding_source = embedding_source
                 existing_analysis.version = ANALYSIS_VERSION  # Ensure version is current
                 db.commit()
-                logger.info(f"Embedding saved for {track.title}")
+                logger.info(f"Embedding saved for {track.title} (source={embedding_source})")
             else:
                 # No analysis record yet - this shouldn't happen if phase 1 ran first
                 logger.warning(f"No analysis record found for {track_id}, skipping embedding save")
@@ -956,6 +1069,7 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
                 "status": "success",
                 "phase": "embedding",
                 "embedding_generated": True,
+                "embedding_source": embedding_source,
             }
 
     except AnalysisError as e:

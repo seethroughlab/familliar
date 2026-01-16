@@ -289,6 +289,10 @@ class TrackAnalysis(Base):
     # Audio fingerprint for identification (base64-encoded, can be very long)
     acoustid: Mapped[str | None] = mapped_column(Text)
 
+    # Source tracking: "local", "reccobeats", "community_cache", etc.
+    features_source: Mapped[str | None] = mapped_column(String(50))
+    embedding_source: Mapped[str | None] = mapped_column(String(50))
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships

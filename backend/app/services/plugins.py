@@ -437,6 +437,27 @@ class PluginService:
             return bundle_path
         return None
 
+    def get_asset_path(self, plugin_id: str, asset_path: str) -> Path | None:
+        """Get the local path to a plugin's asset file.
+
+        Args:
+            plugin_id: The plugin identifier
+            asset_path: Relative path to the asset within the plugin's public/ folder
+
+        Returns:
+            Path to the asset file if it exists, None otherwise
+        """
+        # Normalize path and prevent directory traversal
+        clean_path = Path(asset_path).as_posix().lstrip("/")
+        if ".." in clean_path:
+            return None
+
+        # Look in public/ folder within plugin directory
+        full_path = self.plugins_path / plugin_id / "public" / clean_path
+        if full_path.exists() and full_path.is_file():
+            return full_path
+        return None
+
 
 # Singleton instance
 _plugin_service: PluginService | None = None

@@ -289,3 +289,67 @@ async def report_load_error(
         raise HTTPException(status_code=404, detail="Plugin not found")
 
     return {"success": True}
+
+
+# MIME type mapping for common asset types
+MIME_TYPES = {
+    ".glb": "model/gltf-binary",
+    ".gltf": "model/gltf+json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".ogg": "audio/ogg",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".json": "application/json",
+    ".js": "application/javascript",
+    ".css": "text/css",
+}
+
+
+@router.get("/{plugin_id}/assets/{asset_path:path}")
+async def get_plugin_asset(
+    db: DbSession,
+    plugin_id: str,
+    asset_path: str,
+) -> Response:
+    """Serve a static asset from a plugin's public/ folder.
+
+    This endpoint allows plugins to include static assets like 3D models,
+    images, or other files that are served alongside the plugin bundle.
+
+    Args:
+        plugin_id: The plugin identifier
+        asset_path: Path to the asset within the plugin's public/ folder
+    """
+    service = get_plugin_service()
+
+    # Verify plugin exists
+    plugin = await service.get_plugin(db, plugin_id)
+    if not plugin:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+
+    # Get asset path (handles security checks)
+    file_path = service.get_asset_path(plugin_id, asset_path)
+    if not file_path:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+    # Determine MIME type
+    suffix = file_path.suffix.lower()
+    content_type = MIME_TYPES.get(suffix, "application/octet-stream")
+
+    # Read and return file
+    content = file_path.read_bytes()
+
+    return Response(
+        content=content,
+        media_type=content_type,
+        headers={
+            "Cache-Control": "public, max-age=86400",  # Cache for 1 day
+        },
+    )
