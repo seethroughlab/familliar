@@ -68,7 +68,7 @@ class AppSettings(BaseModel):
     # Community embedding cache (share CLAP embeddings with other users)
     community_cache_enabled: bool = True  # Look up embeddings from community cache
     community_cache_contribute: bool = False  # Contribute computed embeddings (opt-in)
-    community_cache_url: str = "http://openmediavault:8000"  # Cache server URL
+    community_cache_url: str = "https://familiar-cache.fly.dev"  # Cache server URL
 
 
 class AppSettingsService:

@@ -679,6 +679,7 @@ def run_track_features(track_id: str) -> dict[str, Any]:
     )
     from app.services.app_settings import get_app_settings_service
     from app.services.artwork import extract_and_save_artwork
+    from app.services.community_cache import get_community_cache_service
     from app.services.external_features import get_external_features_service
 
     log_memory("features_start")
@@ -740,6 +741,12 @@ def run_track_features(track_id: str) -> dict[str, Any]:
             )
             log_memory("after_artwork")
 
+            # Generate AcoustID fingerprint first (needed for community cache)
+            acoustid_fingerprint = None
+            fp_result = generate_fingerprint(file_path)
+            if fp_result:
+                _, acoustid_fingerprint = fp_result
+
             # Try external feature lookup first (ReccoBeats via Spotify ID)
             features: dict[str, Any] = {}
             features_source = "local"
@@ -784,18 +791,64 @@ def run_track_features(track_id: str) -> dict[str, Any]:
                     except Exception as e:
                         logger.warning(f"External feature lookup failed: {e}")
 
-            # Fall back to local librosa extraction if no external features
+            # Try community cache for features if no external features found
+            if not features.get("bpm") and app_settings.community_cache_enabled and acoustid_fingerprint:
+                try:
+                    cache_service = get_community_cache_service(
+                        cache_url=app_settings.community_cache_url
+                    )
+                    cached_features = asyncio.run(
+                        cache_service.lookup_features(acoustid_fingerprint)
+                    )
+                    if cached_features:
+                        features = {
+                            "bpm": cached_features.bpm,
+                            "key": cached_features.key,
+                            "energy": cached_features.energy,
+                            "danceability": cached_features.danceability,
+                            "valence": cached_features.valence,
+                            "acousticness": cached_features.acousticness,
+                            "instrumentalness": cached_features.instrumentalness,
+                            "speechiness": cached_features.speechiness,
+                            "liveness": cached_features.liveness,
+                            "loudness": cached_features.loudness,
+                        }
+                        # Remove None values
+                        features = {k: v for k, v in features.items() if v is not None}
+                        features_source = "community_cache"
+                        logger.info(
+                            f"Community cache features hit for {track.title} "
+                            f"(contributed by {cached_features.contributor_count} users)"
+                        )
+                except Exception as e:
+                    logger.warning(f"Community cache features lookup failed: {e}")
+
+            # Fall back to local librosa extraction if no external/cached features
+            computed_locally = False
             if not features.get("bpm"):
                 features = extract_features(file_path)
                 features_source = "local"
+                computed_locally = True
                 gc.collect()
-            log_memory("after_features")
 
-            # Generate AcoustID fingerprint
-            acoustid_fingerprint = None
-            fp_result = generate_fingerprint(file_path)
-            if fp_result:
-                _, acoustid_fingerprint = fp_result
+            # Contribute features to community cache if computed locally
+            if (
+                computed_locally
+                and app_settings.community_cache_contribute
+                and acoustid_fingerprint
+                and features.get("bpm")
+            ):
+                try:
+                    cache_service = get_community_cache_service(
+                        cache_url=app_settings.community_cache_url
+                    )
+                    asyncio.run(
+                        cache_service.contribute_features(acoustid_fingerprint, features)
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to contribute features to community cache: {e}")
+
+            log_memory("after_features")
 
             # Try to identify track via AcoustID
             acoustid_metadata = None

@@ -50,6 +50,14 @@ class SettingsResponse(BaseModel):
     clap_embeddings_enabled: bool | None  # None = auto-detect
     clap_status: ClapStatus
 
+    # External features
+    external_features_enabled: bool
+
+    # Community cache
+    community_cache_enabled: bool
+    community_cache_contribute: bool
+    community_cache_url: str
+
     # Computed status fields
     spotify_configured: bool
     lastfm_configured: bool
@@ -81,6 +89,14 @@ class SettingsUpdateRequest(BaseModel):
 
     # Analysis settings
     clap_embeddings_enabled: bool | None = None
+
+    # External features
+    external_features_enabled: bool | None = None
+
+    # Community cache
+    community_cache_enabled: bool | None = None
+    community_cache_contribute: bool | None = None
+    community_cache_url: str | None = None
 
 
 @router.get("", response_model=SettingsResponse)

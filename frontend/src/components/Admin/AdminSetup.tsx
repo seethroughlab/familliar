@@ -27,6 +27,8 @@ import {
   Trash2,
   AlertTriangle,
   FolderSearch,
+  Upload,
+  Database,
 } from 'lucide-react';
 import { FolderBrowser } from './FolderBrowser';
 import { LibraryManagement } from './LibraryManagement';
@@ -45,6 +47,9 @@ interface SettingsData {
   lastfm_configured: boolean;
   music_library_paths: string[];
   music_library_paths_valid: boolean[];
+  community_cache_enabled: boolean;
+  community_cache_contribute: boolean;
+  community_cache_url: string;
 }
 
 interface PathInfo {
@@ -74,6 +79,7 @@ export function AdminSetup() {
   const [savingSpotify, setSavingSpotify] = useState(false);
   const [savingLastfm, setSavingLastfm] = useState(false);
   const [savingAcoustid, setSavingAcoustid] = useState(false);
+  const [savingCommunityCache, setSavingCommunityCache] = useState(false);
 
   // Form state - empty strings for new values, undefined to keep existing
   const [anthropicKey, setAnthropicKey] = useState('');
@@ -884,6 +890,99 @@ export function AdminSetup() {
                   Save
                 </button>
               )}
+            </div>
+          </section>
+
+          {/* Community Cache */}
+          <section className="bg-zinc-900 rounded-xl p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 rounded-lg bg-cyan-500/20">
+                <Database className="w-5 h-5 text-cyan-400" />
+              </div>
+              <div className="flex-1">
+                <h2 className="font-medium text-white">Community Cache</h2>
+                <p className="text-sm text-zinc-500">Share analysis data with other Familiar users</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Lookup toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Cloud className="w-5 h-5 text-blue-400" />
+                  <div>
+                    <p className="text-sm text-white">Use community cache</p>
+                    <p className="text-xs text-zinc-500">Look up pre-computed features and embeddings</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings?.community_cache_enabled ?? true}
+                    onChange={async (e) => {
+                      setSavingCommunityCache(true);
+                      try {
+                        const response = await fetch('/api/v1/settings', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ community_cache_enabled: e.target.checked }),
+                        });
+                        if (response.ok) {
+                          const data = await response.json();
+                          setSettings(data);
+                        }
+                      } finally {
+                        setSavingCommunityCache(false);
+                      }
+                    }}
+                    disabled={savingCommunityCache}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-zinc-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-500 peer-disabled:opacity-50" />
+                </label>
+              </div>
+
+              {/* Contribute toggle */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Upload className="w-5 h-5 text-green-400" />
+                  <div>
+                    <p className="text-sm text-white">Contribute to cache</p>
+                    <p className="text-xs text-zinc-500">Share your computed features and embeddings (anonymous)</p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={settings?.community_cache_contribute ?? false}
+                    onChange={async (e) => {
+                      setSavingCommunityCache(true);
+                      try {
+                        const response = await fetch('/api/v1/settings', {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ community_cache_contribute: e.target.checked }),
+                        });
+                        if (response.ok) {
+                          const data = await response.json();
+                          setSettings(data);
+                        }
+                      } finally {
+                        setSavingCommunityCache(false);
+                      }
+                    }}
+                    disabled={savingCommunityCache}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-zinc-600 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-500 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500 peer-disabled:opacity-50" />
+                </label>
+              </div>
+
+              {/* Privacy note */}
+              <p className="text-xs text-zinc-500">
+                Only audio fingerprint hashes are shared — no filenames, metadata, or personal info.
+                Helps speed up analysis for everyone in the community.
+              </p>
             </div>
           </section>
 

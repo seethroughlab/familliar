@@ -1,17 +1,18 @@
-"""Community cache for sharing CLAP embeddings.
+"""Community cache for sharing CLAP embeddings and audio features.
 
-Allows Familiar users to share pre-computed CLAP embeddings, keyed by
-AcoustID fingerprint hash. This dramatically speeds up analysis for
-tracks that other users have already processed.
+Allows Familiar users to share pre-computed CLAP embeddings and audio
+features, keyed by AcoustID fingerprint hash. This dramatically speeds
+up analysis for tracks that other users have already processed.
 
 Privacy:
 - Fingerprints are hashed (SHA256) before transmission - one-way, anonymous
-- Only embeddings are shared, no track metadata or file information
+- Only embeddings/features are shared, no track metadata or file information
 - Contribution is opt-in
 
 Versioning:
 - Embeddings are versioned by ANALYSIS_VERSION and CLAP model version
-- Prevents mixing embeddings from incompatible analysis pipelines
+- Features are versioned by ANALYSIS_VERSION
+- Prevents mixing data from incompatible analysis pipelines
 """
 
 import hashlib
@@ -30,7 +31,7 @@ CLAP_MODEL_VERSION = "laion/clap-htsat-unfused:v1"
 EMBEDDING_DIM = 512
 
 # Default community cache server
-DEFAULT_CACHE_URL = "http://openmediavault:8000"
+DEFAULT_CACHE_URL = "https://familiar-cache.fly.dev"
 
 
 @dataclass
@@ -44,19 +45,46 @@ class CachedEmbedding:
     contributor_count: int = 1  # How many users have contributed this embedding
 
 
+@dataclass
+class CachedFeatures:
+    """Audio features retrieved from the community cache."""
+
+    fingerprint_hash: str  # SHA256 hash of AcoustID fingerprint
+    analysis_version: int
+    bpm: float | None = None
+    key: str | None = None
+    energy: float | None = None
+    danceability: float | None = None
+    valence: float | None = None
+    acousticness: float | None = None
+    instrumentalness: float | None = None
+    speechiness: float | None = None
+    liveness: float | None = None
+    loudness: float | None = None
+    contributor_count: int = 1
+
+
 class CommunityCacheService:
-    """Client for the community CLAP embedding cache.
+    """Client for the community CLAP embedding and features cache.
 
     Usage:
         cache = CommunityCacheService()
 
-        # Check cache before computing locally
-        cached = await cache.lookup(acoustid_fingerprint, ANALYSIS_VERSION)
+        # Check cache before computing locally (embeddings)
+        cached = await cache.lookup_embedding(acoustid_fingerprint, ANALYSIS_VERSION)
         if cached:
             embedding = cached.embedding
         else:
             embedding = compute_clap_embedding(audio_file)
-            await cache.contribute(acoustid_fingerprint, embedding, ANALYSIS_VERSION)
+            await cache.contribute_embedding(acoustid_fingerprint, embedding, ANALYSIS_VERSION)
+
+        # Check cache for features
+        cached_feat = await cache.lookup_features(acoustid_fingerprint, ANALYSIS_VERSION)
+        if cached_feat:
+            features = cached_feat
+        else:
+            features = extract_features(audio_file)
+            await cache.contribute_features(acoustid_fingerprint, features, ANALYSIS_VERSION)
     """
 
     def __init__(
@@ -82,18 +110,20 @@ class CommunityCacheService:
             self._client = None
 
     @staticmethod
-    def hash_fingerprint(acoustid_fingerprint: str) -> str:
+    def hash_fingerprint(acoustid_fingerprint: str | bytes) -> str:
         """Hash an AcoustID fingerprint for privacy.
 
         Uses SHA256 to create a one-way hash. The original fingerprint
         cannot be recovered, preserving user privacy while still
         allowing cache lookups.
         """
+        if isinstance(acoustid_fingerprint, bytes):
+            return hashlib.sha256(acoustid_fingerprint).hexdigest()
         return hashlib.sha256(acoustid_fingerprint.encode()).hexdigest()
 
     async def lookup(
         self,
-        acoustid_fingerprint: str,
+        acoustid_fingerprint: str | bytes,
         analysis_version: int | None = None,
     ) -> CachedEmbedding | None:
         """Look up an embedding from the community cache.
@@ -160,7 +190,7 @@ class CommunityCacheService:
 
     async def contribute(
         self,
-        acoustid_fingerprint: str,
+        acoustid_fingerprint: str | bytes,
         embedding: list[float],
         analysis_version: int | None = None,
     ) -> bool:
@@ -215,6 +245,133 @@ class CommunityCacheService:
             return False
         except Exception as e:
             logger.warning(f"Community cache contribution failed: {e}")
+            return False
+
+    async def lookup_features(
+        self,
+        acoustid_fingerprint: str | bytes,
+        analysis_version: int | None = None,
+    ) -> CachedFeatures | None:
+        """Look up audio features from the community cache.
+
+        Args:
+            acoustid_fingerprint: The raw AcoustID fingerprint string
+            analysis_version: Version to match (defaults to current ANALYSIS_VERSION)
+
+        Returns:
+            CachedFeatures if found, None otherwise
+        """
+        if analysis_version is None:
+            analysis_version = ANALYSIS_VERSION
+
+        fp_hash = self.hash_fingerprint(acoustid_fingerprint)
+
+        try:
+            client = await self._get_client()
+            response = await client.get(
+                f"{self.cache_url}/v1/features/{fp_hash}",
+                params={"analysis_version": analysis_version},
+            )
+
+            if response.status_code == 404:
+                logger.debug(f"Community cache features miss for {fp_hash[:16]}...")
+                return None
+
+            response.raise_for_status()
+            data = response.json()
+            features = data.get("features", {})
+
+            logger.info(
+                f"Community cache features hit for {fp_hash[:16]}... "
+                f"(contributed by {data.get('contributor_count', 1)} users)"
+            )
+
+            return CachedFeatures(
+                fingerprint_hash=fp_hash,
+                analysis_version=data.get("analysis_version", analysis_version),
+                bpm=features.get("bpm"),
+                key=features.get("key"),
+                energy=features.get("energy"),
+                danceability=features.get("danceability"),
+                valence=features.get("valence"),
+                acousticness=features.get("acousticness"),
+                instrumentalness=features.get("instrumentalness"),
+                speechiness=features.get("speechiness"),
+                liveness=features.get("liveness"),
+                loudness=features.get("loudness"),
+                contributor_count=data.get("contributor_count", 1),
+            )
+
+        except httpx.ConnectError:
+            logger.debug("Community cache server unavailable")
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"Community cache features lookup error: {e}")
+            return None
+        except Exception as e:
+            logger.warning(f"Community cache features lookup failed: {e}")
+            return None
+
+    async def contribute_features(
+        self,
+        acoustid_fingerprint: str | bytes,
+        features: dict[str, float | str | None],
+        analysis_version: int | None = None,
+    ) -> bool:
+        """Contribute audio features to the community cache.
+
+        Args:
+            acoustid_fingerprint: The raw AcoustID fingerprint string
+            features: Dict with keys: bpm, key, energy, danceability, valence,
+                     acousticness, instrumentalness, speechiness, liveness, loudness
+            analysis_version: Version of the analysis (defaults to current)
+
+        Returns:
+            True if contribution was accepted, False otherwise
+        """
+        if analysis_version is None:
+            analysis_version = ANALYSIS_VERSION
+
+        fp_hash = self.hash_fingerprint(acoustid_fingerprint)
+
+        try:
+            client = await self._get_client()
+
+            response = await client.post(
+                f"{self.cache_url}/v1/features",
+                json={
+                    "fingerprint_hash": fp_hash,
+                    "analysis_version": analysis_version,
+                    "features": {
+                        "bpm": features.get("bpm"),
+                        "key": features.get("key"),
+                        "energy": features.get("energy"),
+                        "danceability": features.get("danceability"),
+                        "valence": features.get("valence"),
+                        "acousticness": features.get("acousticness"),
+                        "instrumentalness": features.get("instrumentalness"),
+                        "speechiness": features.get("speechiness"),
+                        "liveness": features.get("liveness"),
+                        "loudness": features.get("loudness"),
+                    },
+                },
+            )
+
+            if response.status_code == 201:
+                logger.info(f"Contributed features to community cache: {fp_hash[:16]}...")
+                return True
+            elif response.status_code == 200:
+                logger.debug(f"Features already in cache, confirmed: {fp_hash[:16]}...")
+                return True
+            else:
+                logger.warning(f"Community cache features contribution rejected: {response.status_code}")
+                return False
+
+        except httpx.ConnectError:
+            logger.debug("Community cache server unavailable for features contribution")
+            return False
+        except Exception as e:
+            logger.warning(f"Community cache features contribution failed: {e}")
             return False
 
     async def health_check(self) -> dict:
