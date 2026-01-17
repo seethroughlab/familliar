@@ -976,7 +976,9 @@ export const libraryApi = {
     artistName: string,
     size: 'small' | 'medium' | 'large' | 'extralarge' = 'large'
   ): string => {
-    return `/api/v1/library/artists/${encodeURIComponent(artistName)}/image?size=${size}`;
+    // Cache version param to bust browser cache when image sources change
+    const cacheVersion = 'v2';
+    return `/api/v1/library/artists/${encodeURIComponent(artistName)}/image?size=${size}&_cv=${cacheVersion}`;
   },
 
   getDiscover: async (params?: {

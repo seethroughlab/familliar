@@ -33,7 +33,12 @@ interface LibraryViewProps {
 export function LibraryView({ initialSearch }: LibraryViewProps) {
   const { setQueue } = usePlayerStore();
   const { selectedBrowserId, setSelectedBrowserId } = useLibraryViewStore();
-  const { setEditingTrackId } = useSelectionStore();
+  const {
+    selectedIds: selectedTrackIds,
+    toggleSelection,
+    clearSelection,
+    setEditingTrackId,
+  } = useSelectionStore();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Browser selection - read from URL, fall back to persisted preference
@@ -117,9 +122,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     }
   }, [currentBrowserId, searchParams, setSearchParams]);
 
-  // Track selection - we need to pass tracks but we don't have them at this level
-  // The browser component fetches its own data, so we track selection by ID only
-  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
+  // Track selection - using selection store for global state
   const [tracksCache] = useState<Map<string, import('../../types').Track>>(new Map());
 
   // Artist detail view state - read from URL
@@ -136,31 +139,20 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   }, [searchParams]);
 
   const selectTrack = useCallback((trackId: string, multi: boolean) => {
-    setSelectedTrackIds((prev) => {
-      if (multi) {
-        const next = new Set(prev);
-        if (next.has(trackId)) {
-          next.delete(trackId);
-        } else {
-          next.add(trackId);
-        }
-        return next;
-      } else {
-        if (prev.size === 1 && prev.has(trackId)) {
-          return new Set();
-        }
-        return new Set([trackId]);
-      }
-    });
-  }, []);
+    if (multi) {
+      // Toggle individual track (Cmd/Ctrl+click)
+      toggleSelection(trackId);
+    } else {
+      // Single select - clear others and select this one
+      // Use clearSelection + toggleSelection to select only this track
+      clearSelection();
+      toggleSelection(trackId);
+    }
+  }, [toggleSelection, clearSelection]);
 
   const selectAll = useCallback(() => {
     // This would need track data from the browser - for now, it's a no-op
     // The browser can implement its own select-all
-  }, []);
-
-  const clearSelection = useCallback(() => {
-    setSelectedTrackIds(new Set());
   }, []);
 
   const getSelectedTracks = useCallback(() => {

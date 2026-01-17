@@ -7,7 +7,7 @@
 import { useState, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { Users, Loader2 } from 'lucide-react';
-import { libraryApi } from '../../../api/client';
+import { libraryApi, tracksApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 
@@ -164,6 +164,7 @@ interface ArtistCardProps {
 
 function ArtistCard({ artist, onClick }: ArtistCardProps) {
   const [imageError, setImageError] = useState(false);
+  const [albumArtError, setAlbumArtError] = useState(false);
 
   return (
     <button
@@ -178,6 +179,14 @@ function ArtistCard({ artist, onClick }: ArtistCardProps) {
             alt={artist.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
             onError={() => setImageError(true)}
+          />
+        ) : !albumArtError ? (
+          // Fallback to album artwork from first track
+          <img
+            src={tracksApi.getArtworkUrl(artist.first_track_id, 'thumb')}
+            alt={artist.name}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={() => setAlbumArtError(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">

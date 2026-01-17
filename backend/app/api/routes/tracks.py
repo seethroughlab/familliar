@@ -1425,66 +1425,11 @@ class IdentifyTrackResponse(BaseModel):
     candidates: list[IdentifyCandidateResponse] = []
 
 
-@router.post("/{track_id}/identify", response_model=IdentifyTrackResponse)
-async def identify_track(
-    db: DbSession,
-    track_id: UUID,
-    min_score: float = Query(0.5, ge=0.0, le=1.0, description="Minimum confidence score"),
-    limit: int = Query(5, ge=1, le=10, description="Maximum candidates to return"),
-) -> IdentifyTrackResponse:
-    """Identify a track using audio fingerprinting (AcoustID).
-
-    Generates an audio fingerprint and looks up matching recordings in the
-    AcoustID/MusicBrainz database. Returns candidate matches with full metadata
-    including title, artist, album, year, genre, artwork URL, etc.
-
-    Use this for the "Auto-populate" feature to fill in track metadata based
-    on the audio content rather than text matching.
-
-    Requires:
-    - chromaprint/fpcalc installed on the system
-    - AcoustID API key configured in Settings > API Keys
-    """
-    from app.services.audio_identification import get_audio_identification_service
-
-    service = get_audio_identification_service()
-    result = await service.identify_track(
-        track_id=track_id,
-        db=db,
-        min_score=min_score,
-        limit=limit,
-    )
-
-    return IdentifyTrackResponse(
-        track_id=result.track_id,
-        fingerprint_generated=result.fingerprint_generated,
-        error=result.error,
-        error_type=result.error_type,
-        candidates=[
-            IdentifyCandidateResponse(
-                acoustid_score=c.acoustid_score,
-                musicbrainz_recording_id=c.musicbrainz_recording_id,
-                title=c.title,
-                artist=c.artist,
-                album=c.album,
-                album_artist=c.album_artist,
-                year=c.year,
-                track_number=c.track_number,
-                disc_number=c.disc_number,
-                genre=c.genre,
-                composer=c.composer,
-                artwork_url=c.artwork_url,
-                features=c.features,
-                musicbrainz_url=c.musicbrainz_url,
-            )
-            for c in result.candidates
-        ],
-    )
-
-
 # ============================================================================
 # Bulk Audio Fingerprint Identification
 # ============================================================================
+# NOTE: These routes MUST be defined before /{track_id}/identify to prevent
+# FastAPI from matching "bulk" as a track_id.
 
 
 class BulkIdentifyRequest(BaseModel):
@@ -1591,3 +1536,65 @@ async def get_bulk_identify_progress(
             status_code=500,
             detail="Failed to parse task progress",
         )
+
+
+# ============================================================================
+# Single Track Identification
+# ============================================================================
+
+
+@router.post("/{track_id}/identify", response_model=IdentifyTrackResponse)
+async def identify_track(
+    db: DbSession,
+    track_id: UUID,
+    min_score: float = Query(0.5, ge=0.0, le=1.0, description="Minimum confidence score"),
+    limit: int = Query(5, ge=1, le=10, description="Maximum candidates to return"),
+) -> IdentifyTrackResponse:
+    """Identify a track using audio fingerprinting (AcoustID).
+
+    Generates an audio fingerprint and looks up matching recordings in the
+    AcoustID/MusicBrainz database. Returns candidate matches with full metadata
+    including title, artist, album, year, genre, artwork URL, etc.
+
+    Use this for the "Auto-populate" feature to fill in track metadata based
+    on the audio content rather than text matching.
+
+    Requires:
+    - chromaprint/fpcalc installed on the system
+    - AcoustID API key configured in Settings > API Keys
+    """
+    from app.services.audio_identification import get_audio_identification_service
+
+    service = get_audio_identification_service()
+    result = await service.identify_track(
+        track_id=track_id,
+        db=db,
+        min_score=min_score,
+        limit=limit,
+    )
+
+    return IdentifyTrackResponse(
+        track_id=result.track_id,
+        fingerprint_generated=result.fingerprint_generated,
+        error=result.error,
+        error_type=result.error_type,
+        candidates=[
+            IdentifyCandidateResponse(
+                acoustid_score=c.acoustid_score,
+                musicbrainz_recording_id=c.musicbrainz_recording_id,
+                title=c.title,
+                artist=c.artist,
+                album=c.album,
+                album_artist=c.album_artist,
+                year=c.year,
+                track_number=c.track_number,
+                disc_number=c.disc_number,
+                genre=c.genre,
+                composer=c.composer,
+                artwork_url=c.artwork_url,
+                features=c.features,
+                musicbrainz_url=c.musicbrainz_url,
+            )
+            for c in result.candidates
+        ],
+    )

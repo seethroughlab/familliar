@@ -17,7 +17,8 @@ import musicbrainzngs
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Track
+from app.config import ANALYSIS_VERSION
+from app.db.models import Track, TrackAnalysis
 from app.services.analysis import AcoustIDError, lookup_acoustid_candidates
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,7 @@ class AudioIdentificationService:
         db: AsyncSession,
         min_score: float = 0.5,
         limit: int = 5,
+        skip_cache: bool = False,
     ) -> IdentifyResult:
         """Identify a track using audio fingerprinting.
 
@@ -112,6 +114,7 @@ class AudioIdentificationService:
             db: Database session
             min_score: Minimum AcoustID score to include (0.0-1.0)
             limit: Maximum number of candidates to return
+            skip_cache: If True, bypass cached results and fetch fresh from API
 
         Returns:
             IdentifyResult with candidates or error
@@ -134,18 +137,35 @@ class AudioIdentificationService:
             result.error_type = "file_not_found"
             return result
 
-        # Get AcoustID candidates
-        try:
-            acoustid_candidates = lookup_acoustid_candidates(
-                file_path,
-                min_score=min_score,
-                limit=limit,
-            )
-            result.fingerprint_generated = True
-        except AcoustIDError as e:
-            result.error = str(e)
-            result.error_type = e.error_type
-            return result
+        # Check for cached AcoustID results in TrackAnalysis
+        analysis = await self._get_current_analysis(track_id, db)
+        acoustid_candidates = None
+
+        if not skip_cache and analysis and analysis.acoustid_lookup:
+            cached = analysis.acoustid_lookup
+            # Use cache if it exists and has candidates
+            if cached.get("candidates"):
+                logger.debug(f"Using cached AcoustID results for track {track_id}")
+                acoustid_candidates = cached["candidates"]
+                result.fingerprint_generated = True
+
+        # If no cache hit, fetch from AcoustID API
+        if acoustid_candidates is None:
+            try:
+                acoustid_candidates = lookup_acoustid_candidates(
+                    file_path,
+                    min_score=min_score,
+                    limit=limit,
+                )
+                result.fingerprint_generated = True
+
+                # Cache the results in the database
+                await self._cache_acoustid_results(track_id, acoustid_candidates, db)
+
+            except AcoustIDError as e:
+                result.error = str(e)
+                result.error_type = e.error_type
+                return result
 
         if not acoustid_candidates:
             # No error, just no matches
@@ -157,6 +177,33 @@ class AudioIdentificationService:
             result.candidates.append(candidate)
 
         return result
+
+    async def _get_current_analysis(
+        self,
+        track_id: UUID,
+        db: AsyncSession,
+    ) -> TrackAnalysis | None:
+        """Get the current analysis record for a track."""
+        query = (
+            select(TrackAnalysis)
+            .where(TrackAnalysis.track_id == track_id)
+            .where(TrackAnalysis.version == ANALYSIS_VERSION)
+        )
+        result = await db.execute(query)
+        return result.scalar_one_or_none()
+
+    async def _cache_acoustid_results(
+        self,
+        track_id: UUID,
+        candidates: list[dict],
+        db: AsyncSession,
+    ) -> None:
+        """Cache AcoustID lookup results in the TrackAnalysis record."""
+        analysis = await self._get_current_analysis(track_id, db)
+        if analysis:
+            analysis.acoustid_lookup = {"candidates": candidates}
+            await db.commit()
+            logger.debug(f"Cached {len(candidates)} AcoustID candidates for track {track_id}")
 
     async def _enrich_candidate(self, acoustid_data: dict) -> IdentifyCandidate:
         """Enrich an AcoustID candidate with MusicBrainz metadata.

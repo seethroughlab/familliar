@@ -289,6 +289,10 @@ class TrackAnalysis(Base):
     # Audio fingerprint for identification (base64-encoded, can be very long)
     acoustid: Mapped[str | None] = mapped_column(Text)
 
+    # Cached AcoustID API lookup results (list of candidates with scores/recording IDs)
+    # Avoids repeated API calls for tracks we've already identified
+    acoustid_lookup: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
     # Source tracking: "local", "reccobeats", "community_cache", etc.
     features_source: Mapped[str | None] = mapped_column(String(50))
     embedding_source: Mapped[str | None] = mapped_column(String(50))

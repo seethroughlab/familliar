@@ -10,6 +10,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen, Clock, Disc } from 'lucide-react';
 import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
+import { useSelectionStore } from '../../../stores/selectionStore';
 import { useVisibleTracksStore } from '../../../stores/visibleTracksStore';
 import { useFavorites } from '../../../hooks/useFavorites';
 import { useArtworkPrefetchBatch } from '../../../hooks/useArtworkPrefetch';
@@ -228,7 +229,13 @@ function TrackRow({
       data-testid="track-row"
       onClick={onClick}
       onContextMenu={onContextMenu}
-      className={`group grid gap-4 px-4 py-2 rounded-md cursor-pointer ${
+      onMouseDown={(e) => {
+        // Prevent text selection when using modifier keys for multi-select
+        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+        }
+      }}
+      className={`group grid gap-4 px-4 py-2 rounded-md cursor-pointer select-none ${
         isSelected
           ? 'bg-purple-500/20 hover:bg-purple-500/30'
           : isCurrentTrack
@@ -323,6 +330,7 @@ export function TrackListBrowser({
 }: BrowserProps) {
   const [, setSearchParams] = useSearchParams();
   const { currentTrack, isPlaying, setIsPlaying, setQueue } = usePlayerStore();
+  const selectRange = useSelectionStore((state) => state.selectRange);
   const columns = useColumnStore((state) => state.columns);
   const reorderColumns = useColumnStore((state) => state.reorderColumns);
 
@@ -521,16 +529,19 @@ export function TrackListBrowser({
 
   const handleRowClick = useCallback(
     (track: Track, e: React.MouseEvent) => {
-      // If not multi-select click, play the track
-      if (!e.metaKey && !e.ctrlKey && !e.shiftKey) {
-        // Single click without modifier - just select (don't play)
-        onSelectTrack(track.id, false);
-      } else {
-        // Multi-select
+      if (e.shiftKey) {
+        // Shift+click: select range from last clicked to this track
+        const allIds = allTracks.map((t) => t.id);
+        selectRange(track.id, allIds);
+      } else if (e.metaKey || e.ctrlKey) {
+        // Cmd/Ctrl+click: toggle individual track selection
         onSelectTrack(track.id, true);
+      } else {
+        // Plain click: select only this track
+        onSelectTrack(track.id, false);
       }
     },
-    [onSelectTrack]
+    [onSelectTrack, selectRange, allTracks]
   );
 
   const handleRowDoubleClick = useCallback(
@@ -812,8 +823,12 @@ export function TrackListBrowser({
             }
           }}
           onGoToAlbum={() => {
-            if (contextMenu.track?.artist && contextMenu.track?.album) {
-              onGoToAlbum(contextMenu.track.artist, contextMenu.track.album);
+            if (contextMenu.track?.album) {
+              // Use album_artist if available (for compilations), fallback to artist
+              const albumArtist = contextMenu.track.album_artist || contextMenu.track.artist;
+              if (albumArtist) {
+                onGoToAlbum(albumArtist, contextMenu.track.album);
+              }
             }
           }}
           onExploreSimilarArtists={() => {

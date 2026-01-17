@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AcoustID result caching** - API responses are now cached in the database
+  - Avoids repeated API calls when identifying the same track multiple times
+  - Cached per analysis version in `TrackAnalysis.acoustid_lookup`
+  - Added `skip_cache` parameter to force fresh lookups when needed
+
 ### Changed
 
 - **Unified Discovery Section** - consolidated discovery/recommendation UI into single component
