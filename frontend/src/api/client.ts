@@ -45,6 +45,12 @@ api.interceptors.response.use(
 export const getOrCreateDeviceProfile = getSelectedProfileId;
 export const clearDeviceProfile = clearSelectedProfile;
 
+// Track IDs response (lightweight for shuffle-all)
+export interface TrackIdsResponse {
+  ids: string[];
+  total: number;
+}
+
 export const tracksApi = {
   list: async (params?: {
     page?: number;
@@ -62,6 +68,36 @@ export const tracksApi = {
     include_features?: boolean;
   }): Promise<TrackListResponse> => {
     const { data } = await api.get('/tracks', { params });
+    return data;
+  },
+
+  /**
+   * Get all track IDs matching filters (lightweight for shuffle-all).
+   * Use shuffle=true to get randomized order.
+   */
+  getIds: async (params?: {
+    shuffle?: boolean;
+    search?: string;
+    artist?: string;
+    album?: string;
+    genre?: string;
+    year_from?: number;
+    year_to?: number;
+    energy_min?: number;
+    energy_max?: number;
+    valence_min?: number;
+    valence_max?: number;
+  }): Promise<TrackIdsResponse> => {
+    const { data } = await api.get('/tracks/ids', { params });
+    return data;
+  },
+
+  /**
+   * Get full track metadata for a batch of IDs.
+   * Preserves order of requested IDs. Limited to 50 tracks.
+   */
+  getBatch: async (ids: string[]): Promise<Track[]> => {
+    const { data } = await api.post('/tracks/batch', { ids });
     return data;
   },
 
@@ -1221,6 +1257,7 @@ export interface RecommendedTrack {
   match_score: number;
   external_url: string | null;
   local_track_id: string | null;
+  album: string | null;
 }
 
 export interface PlaylistRecommendations {

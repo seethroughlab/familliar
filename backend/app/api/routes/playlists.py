@@ -446,6 +446,7 @@ class RecommendedTrackResponse(BaseModel):
     match_score: float
     external_url: str | None
     local_track_id: str | None
+    album: str | None = None
 
 
 class RecommendationsResponse(BaseModel):
@@ -509,6 +510,7 @@ async def get_playlist_recommendations(
                     match_score=t.match_score,
                     external_url=t.external_url,
                     local_track_id=t.local_track_id,
+                    album=t.album,
                 )
                 for t in recs.tracks
             ],

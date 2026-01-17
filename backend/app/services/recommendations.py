@@ -36,6 +36,7 @@ class RecommendedTrack:
     match_score: float  # 0-1 similarity
     external_url: str | None
     local_track_id: str | None  # If track exists in library
+    album: str | None = None  # Album name if track exists in library
 
 
 @dataclass
@@ -200,7 +201,9 @@ class RecommendationsService:
                         match_score = 0.5
 
                     # Check if track exists locally
-                    local_track_id = await self._find_local_track(artist_name, title)
+                    local_track_id, album = await self._find_local_track(
+                        artist_name, title
+                    )
 
                     recommended_tracks.append(
                         RecommendedTrack(
@@ -210,6 +213,7 @@ class RecommendationsService:
                             match_score=match_score,
                             external_url=item.get("url"),
                             local_track_id=local_track_id,
+                            album=album,
                         )
                     )
             except Exception as e:
@@ -265,16 +269,23 @@ class RecommendationsService:
         )
         return result.scalar() or 0
 
-    async def _find_local_track(self, artist: str, title: str) -> str | None:
-        """Find a track in the local library by artist and title."""
+    async def _find_local_track(
+        self, artist: str, title: str
+    ) -> tuple[str | None, str | None]:
+        """Find a track in the local library by artist and title.
+
+        Returns (track_id, album) tuple.
+        """
         result = await self.db.execute(
-            select(Track.id).where(
+            select(Track.id, Track.album).where(
                 func.lower(Track.artist) == artist.lower(),
                 func.lower(Track.title) == title.lower(),
             )
         )
         row = result.first()
-        return str(row[0]) if row else None
+        if row:
+            return str(row[0]), row[1]
+        return None, None
 
     async def _get_sample_tracks(
         self, artists: list[str]

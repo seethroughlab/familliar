@@ -79,6 +79,8 @@ class ToolExecutor:
             "merge_duplicate_artists": self._merge_duplicate_artists,
             # View context tools
             "get_visible_tracks": self._get_visible_tracks,
+            # Discovery tools
+            "get_similar_artists_in_library": self._get_similar_artists_in_library,
         }
 
         handler = handlers.get(tool_name)
@@ -1385,3 +1387,84 @@ Respond with ONLY the playlist name, nothing else."""
             reason=reason,
             source="llm_suggestion",
         )
+
+    # --- Discovery tools ---
+
+    async def _get_similar_artists_in_library(
+        self,
+        artist: str,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """Find artists similar to the given artist that exist in the library.
+
+        Uses Last.fm to get similar artists, then checks which ones are in the library.
+        Also returns Bandcamp search URL for the requested artist if not in library.
+        """
+        from app.services.lastfm import get_lastfm_service
+
+        try:
+            limit = int(float(limit)) if limit else 20
+        except (ValueError, TypeError):
+            limit = 20
+
+        lastfm = get_lastfm_service()
+
+        # Check if the requested artist is in the library
+        artist_in_library_stmt = (
+            select(func.count(Track.id))
+            .where(Track.artist.ilike(f"%{artist}%"))
+        )
+        artist_count = await self.db.scalar(artist_in_library_stmt) or 0
+        requested_artist_in_library = artist_count > 0
+
+        # Get similar artists from Last.fm
+        similar_artists = await lastfm.get_similar_artists(artist, limit=50)
+
+        if not similar_artists:
+            return {
+                "requested_artist": artist,
+                "requested_artist_in_library": requested_artist_in_library,
+                "similar_artists_in_library": [],
+                "count": 0,
+                "bandcamp_search_url": f"https://bandcamp.com/search?q={artist.replace(' ', '+')}" if not requested_artist_in_library else None,
+                "note": "Could not find similar artists via Last.fm. Try semantic_search instead.",
+            }
+
+        # Check which similar artists are in the library
+        similar_names = [a.get("name", "") for a in similar_artists if a.get("name")]
+
+        # Query library for matching artists
+        artists_in_library: list[dict[str, Any]] = []
+        for similar_name in similar_names:
+            stmt = (
+                select(Track.artist, func.count(Track.id).label("track_count"))
+                .where(func.lower(Track.artist) == similar_name.lower())
+                .group_by(Track.artist)
+            )
+            result = await self.db.execute(stmt)
+            row = result.first()
+            if row:
+                # Find the match score from Last.fm data
+                match_score = next(
+                    (float(a.get("match", 0)) for a in similar_artists
+                     if a.get("name", "").lower() == similar_name.lower()),
+                    0.0
+                )
+                artists_in_library.append({
+                    "name": row.artist,
+                    "track_count": row.track_count,
+                    "similarity": round(match_score, 2),
+                })
+
+        # Sort by similarity score
+        artists_in_library.sort(key=lambda x: x["similarity"], reverse=True)
+        artists_in_library = artists_in_library[:limit]
+
+        return {
+            "requested_artist": artist,
+            "requested_artist_in_library": requested_artist_in_library,
+            "similar_artists_in_library": artists_in_library,
+            "count": len(artists_in_library),
+            "bandcamp_search_url": f"https://bandcamp.com/search?q={artist.replace(' ', '+')}" if not requested_artist_in_library else None,
+            "note": f"Found {len(artists_in_library)} similar artists in your library. Search for their tracks to build a playlist." if artists_in_library else "No similar artists found in library.",
+        }

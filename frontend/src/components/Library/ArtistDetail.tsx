@@ -590,7 +590,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
 
         return (
           <DiscoverySection
-            title="Discover"
+            title="Discover More"
             sections={sections}
             collapsible
             onItemClick={(item) => item.inLibrary && setSearchParams({ artistDetail: item.name })}

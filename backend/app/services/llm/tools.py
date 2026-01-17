@@ -273,6 +273,26 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             "required": ["track_ids"]
         }
     },
+    # Discovery tools
+    {
+        "name": "get_similar_artists_in_library",
+        "description": "Find artists similar to a given artist that exist in the user's library. Uses Last.fm to find similar artists, then checks which ones the user actually has. IMPORTANT: Use this when the user asks for music like an artist they may not have. Returns similar artists in the library plus a Bandcamp link if the requested artist isn't in the library.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string",
+                    "description": "Artist name to find similar artists for"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max similar artists to return (default 20)",
+                    "default": 20
+                }
+            },
+            "required": ["artist"]
+        }
+    },
     # Metadata correction tools
     {
         "name": "lookup_correct_metadata",
@@ -442,7 +462,9 @@ DO NOT keep searching repeatedly. If your first search returns tracks, USE THEM.
 **"Play [artist]"** or **"Songs like [artist]"**:
 1. search_library for the artist
 2. If found: queue_tracks immediately
-3. If not found: search for similar genres/styles ONCE, then queue what you find
+3. If NOT found: use get_similar_artists_in_library to find similar artists the user HAS
+4. Search for tracks by those similar artists, then queue_tracks
+5. IMPORTANT: If the artist isn't in the library, include the Bandcamp link from the tool result in your response so the user can discover/purchase it
 
 **"Play something [abstract mood/vibe]"** (e.g., "dreamy", "ethereal", "aggressive", "gloomy with Eastern influences"):
 1. semantic_search with the description
@@ -490,6 +512,19 @@ Changes are NOT applied immediately - they go to a review queue where the user c
 - Preview what will change
 - Approve or reject the change
 - Choose scope: database only, ID3 tags, or file organization
+
+## Discovery Suggestions
+
+When a user asks for an artist that's NOT in their library:
+1. Use get_similar_artists_in_library - this returns a bandcamp_search_url
+2. Build a playlist from similar artists that ARE in the library
+3. In your response, include a "Discovery" section with the Bandcamp link
+
+Example response format when artist not in library:
+"[Artist] isn't in your library, but I found similar artists you have: [list]. I've queued [N] tracks from them.
+
+**Want to add [Artist] to your collection?**
+[Bandcamp link from tool result]"
 
 NEVER make up track names. Only mention tracks returned by tools."""
 

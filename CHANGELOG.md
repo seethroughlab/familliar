@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Avoids repeated API calls when identifying the same track multiple times
   - Cached per analysis version in `TrackAnalysis.acoustid_lookup`
   - Added `skip_cache` parameter to force fresh lookups when needed
+- **Shuffle All for large libraries** - new lazy queue system fetches track metadata on demand
+  - "Shuffle All" button in Tracks view shuffles entire library (or filtered results)
+  - Server-side shuffle via `ORDER BY random()` for true randomization
+  - Track metadata fetched just-in-time with prefetching for seamless playback
+  - New API endpoints: `GET /tracks/ids` (lightweight) and `POST /tracks/batch`
+- **get_similar_artists_in_library LLM tool** - find similar artists that exist in your library
+  - Uses Last.fm for similarity data, checks against local library
+  - Returns Bandcamp search URL when requested artist isn't in library
+  - Updated system prompt with discovery suggestions workflow
+- **README tools reference** - expandable "Available AI Tools (25)" section documenting all LLM capabilities
 
 ### Changed
 
@@ -24,6 +34,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Data fetching moved to parent components for cleaner architecture
 - **Improved album artwork fallbacks** - tracks and albums now use AlbumArtwork component with hash-based fallback
 - **Filtered Last.fm placeholder images** - generic Last.fm placeholder URLs no longer shown, prefer our icons instead
+- **URL state persistence** - playlist selection, visualizer type, and tab state now persist in URL
+  - Playlist detail views survive page refresh
+  - Visualizer type selection persists across navigation
+  - Tab switching clears irrelevant URL params
+- **Discovery section shows album names** for recommended tracks in library
+
+### Fixed
+
+- **Track skipping during queue changes** - fixed race condition where tracks could skip unexpectedly
+  - Added transition tracking to ignore spurious "ended" events during queue/track loading
+  - Prevents double-advancing when rapidly changing tracks
 
 ## [0.1.0-alpha.10] - 2026-01-15
 

@@ -581,6 +581,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
           matchScore: track.match_score,
           inLibrary: !!track.local_track_id,
           artist: track.artist,
+          album: track.album || undefined,
           externalLinks: track.local_track_id ? undefined : {
             lastfm: track.external_url || undefined,
           },
@@ -624,7 +625,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                   setSearchParams({ artistDetail: item.name });
                 }
               }}
-              onPlay={(item, type) => {
+              onPlay={async (item, type) => {
                 if (type === 'track' && item.id) {
                   // If clicking on the currently playing track, toggle play/pause
                   if (currentTrack?.id === item.id) {
@@ -648,6 +649,17 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                     format: null,
                     analysis_version: 0,
                   }]);
+                } else if (type === 'artist' && item.inLibrary) {
+                  // Play tracks by this artist
+                  try {
+                    const { tracksApi } = await import('../../api/client');
+                    const response = await tracksApi.list({ artist: item.name, page_size: 50 });
+                    if (response.items.length > 0) {
+                      setQueue(response.items, 0);
+                    }
+                  } catch (error) {
+                    console.error('Failed to fetch artist tracks:', error);
+                  }
                 }
               }}
             />

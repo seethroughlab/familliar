@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Maximize2, Minimize2, Music } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useVisualizerStore } from '../../stores/visualizerStore';
 import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer } from './AudioVisualizer';
 import { VisualizerPicker } from './VisualizerPicker';
@@ -9,8 +11,31 @@ export function VisualizerView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const { currentTrack, currentTime, duration, isPlaying } = usePlayerStore();
+  const { visualizerId, setVisualizerId } = useVisualizerStore();
+
+  // Sync visualizer type with URL
+  const urlVisualizerType = searchParams.get('type');
+
+  // On mount, apply URL param to store if present
+  useEffect(() => {
+    if (urlVisualizerType && urlVisualizerType !== visualizerId) {
+      setVisualizerId(urlVisualizerType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount to initialize from URL
+  }, []);
+
+  // When visualizer changes in store, update URL
+  useEffect(() => {
+    const currentUrlType = searchParams.get('type');
+    if (visualizerId && visualizerId !== currentUrlType) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set('type', visualizerId);
+      setSearchParams(newParams, { replace: true });
+    }
+  }, [visualizerId, searchParams, setSearchParams]);
 
   // Fetch lyrics for visualizer
   useEffect(() => {

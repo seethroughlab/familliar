@@ -68,6 +68,154 @@ class TrackListResponse(BaseModel):
     page_size: int
 
 
+class TrackIdsResponse(BaseModel):
+    """Response containing only track IDs (lightweight for shuffle)."""
+
+    ids: list[str]
+    total: int
+
+
+@router.get("/ids", response_model=TrackIdsResponse)
+async def list_track_ids(
+    db: DbSession,
+    shuffle: bool = Query(False, description="Randomize the order of IDs"),
+    search: str | None = None,
+    artist: str | None = None,
+    album: str | None = None,
+    genre: str | None = None,
+    year_from: int | None = Query(None, description="Filter tracks from this year (inclusive)"),
+    year_to: int | None = Query(None, description="Filter tracks up to this year (inclusive)"),
+    energy_min: float | None = Query(None, ge=0, le=1, description="Minimum energy (0-1)"),
+    energy_max: float | None = Query(None, ge=0, le=1, description="Maximum energy (0-1)"),
+    valence_min: float | None = Query(None, ge=0, le=1, description="Minimum valence (0-1)"),
+    valence_max: float | None = Query(None, ge=0, le=1, description="Maximum valence (0-1)"),
+) -> TrackIdsResponse:
+    """Get all track IDs matching filters.
+
+    Returns only IDs (lightweight) for shuffle-all functionality.
+    Use shuffle=true to get randomized order via ORDER BY random().
+    """
+    query = select(Track.id)
+
+    # Apply filters (same as list_tracks)
+    if search:
+        search_filter = f"%{search}%"
+        query = query.where(
+            Track.title.ilike(search_filter)
+            | Track.artist.ilike(search_filter)
+            | Track.album.ilike(search_filter)
+        )
+    if artist:
+        query = query.where(
+            Track.artist.ilike(f"%{artist}%") | Track.album_artist.ilike(f"%{artist}%")
+        )
+    if album:
+        query = query.where(Track.album.ilike(f"%{album}%"))
+    if genre:
+        query = query.where(Track.genre.ilike(f"%{genre}%"))
+    if year_from is not None:
+        query = query.where(Track.year >= year_from)
+    if year_to is not None:
+        query = query.where(Track.year <= year_to)
+
+    # Audio feature filters
+    has_feature_filter = any(x is not None for x in [energy_min, energy_max, valence_min, valence_max])
+    if has_feature_filter:
+        from sqlalchemy import Float, cast
+
+        analysis_subq = (
+            select(
+                TrackAnalysis.track_id,
+                func.max(TrackAnalysis.version).label("max_version")
+            )
+            .where(TrackAnalysis.features.isnot(None))
+            .group_by(TrackAnalysis.track_id)
+            .subquery()
+        )
+        query = query.join(
+            analysis_subq,
+            Track.id == analysis_subq.c.track_id
+        ).join(
+            TrackAnalysis,
+            (TrackAnalysis.track_id == analysis_subq.c.track_id) &
+            (TrackAnalysis.version == analysis_subq.c.max_version)
+        )
+
+        if energy_min is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["energy"].astext, Float) >= energy_min
+            )
+        if energy_max is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["energy"].astext, Float) <= energy_max
+            )
+        if valence_min is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["valence"].astext, Float) >= valence_min
+            )
+        if valence_max is not None:
+            query = query.where(
+                cast(TrackAnalysis.features["valence"].astext, Float) <= valence_max
+            )
+
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total = await db.scalar(count_query) or 0
+
+    # Apply ordering
+    if shuffle:
+        query = query.order_by(func.random())
+    else:
+        query = query.order_by(Track.artist, Track.album, Track.track_number)
+
+    result = await db.execute(query)
+    track_ids = [str(row[0]) for row in result.all()]
+
+    return TrackIdsResponse(ids=track_ids, total=total)
+
+
+class BatchTracksRequest(BaseModel):
+    """Request to fetch tracks by IDs."""
+
+    ids: list[str]
+
+
+@router.post("/batch", response_model=list[TrackResponse])
+async def get_tracks_batch(
+    db: DbSession,
+    request: BatchTracksRequest,
+) -> list[TrackResponse]:
+    """Get full track metadata for a batch of IDs.
+
+    Returns tracks in the same order as requested IDs.
+    Limited to 50 tracks per request.
+    """
+    if len(request.ids) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 tracks per batch")
+
+    if not request.ids:
+        return []
+
+    # Convert string IDs to UUIDs
+    try:
+        uuids = [UUID(id_str) for id_str in request.ids]
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid track ID format")
+
+    # Fetch all tracks in one query
+    query = select(Track).where(Track.id.in_(uuids))
+    result = await db.execute(query)
+    tracks_by_id = {str(t.id): t for t in result.scalars().all()}
+
+    # Return in requested order, skipping missing tracks
+    ordered_tracks = []
+    for id_str in request.ids:
+        if id_str in tracks_by_id:
+            ordered_tracks.append(TrackResponse.model_validate(tracks_by_id[id_str]))
+
+    return ordered_tracks
+
+
 @router.get("", response_model=TrackListResponse)
 async def list_tracks(
     db: DbSession,

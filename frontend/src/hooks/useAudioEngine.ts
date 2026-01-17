@@ -203,6 +203,8 @@ export function useAudioEngine() {
   const loadIdRef = useRef(0);
   const errorCountRef = useRef(0);
   const lastErrorTrackRef = useRef<string | null>(null);
+  // Track when we're in a queue transition to ignore spurious ended events
+  const queueTransitionRef = useRef(false);
 
   const {
     currentTrack,
@@ -488,11 +490,20 @@ export function useAudioEngine() {
 
     // Setup event handlers for track end
     const handleEndedA = () => {
+      // Ignore ended events during queue transitions (prevents skipping to wrong track)
+      if (queueTransitionRef.current) {
+        console.debug('[AudioEngine] Ignoring ended event during queue transition');
+        return;
+      }
       if (currentElementIsA && !crossfadeContext?.isActive) {
         playNext();
       }
     };
     const handleEndedB = () => {
+      if (queueTransitionRef.current) {
+        console.debug('[AudioEngine] Ignoring ended event during queue transition');
+        return;
+      }
       if (!currentElementIsA && !crossfadeContext?.isActive) {
         playNext();
       }
@@ -559,6 +570,8 @@ export function useAudioEngine() {
       return; // Already loaded this track
     }
 
+    // Mark that we're in a queue/track transition to ignore spurious ended events
+    queueTransitionRef.current = true;
     isLoadingRef.current = true;
     const currentLoadId = ++loadIdRef.current;
     const trackIdToLoad = currentTrack.id;
@@ -588,9 +601,20 @@ export function useAudioEngine() {
         currentElement.src = url;
         currentElement.load();
 
+        // Safety timeout to clear transition flag if canplay never fires
+        const transitionTimeout = setTimeout(() => {
+          if (loadIdRef.current === currentLoadId && queueTransitionRef.current) {
+            console.warn('[AudioEngine] Transition timeout - clearing flag');
+            queueTransitionRef.current = false;
+          }
+        }, 10000);
+
         // Wait for ready then play if isPlaying
         const playWhenReady = () => {
           if (loadIdRef.current !== currentLoadId) return; // Stale load
+          clearTimeout(transitionTimeout);
+          // Clear transition flag - track is ready, ended events are now valid
+          queueTransitionRef.current = false;
           const shouldPlay = usePlayerStore.getState().isPlaying;
           if (shouldPlay) {
             currentElement.play().catch((err) => {
@@ -609,8 +633,16 @@ export function useAudioEngine() {
           currentElement.removeEventListener('loadedmetadata', handleMetadata);
         };
 
+        const handleLoadError = () => {
+          if (loadIdRef.current !== currentLoadId) return;
+          clearTimeout(transitionTimeout);
+          queueTransitionRef.current = false;
+          currentElement.removeEventListener('error', handleLoadError);
+        };
+
         currentElement.addEventListener('canplay', playWhenReady);
         currentElement.addEventListener('loadedmetadata', handleMetadata);
+        currentElement.addEventListener('error', handleLoadError);
       }
 
       isLoadingRef.current = false;

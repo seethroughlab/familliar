@@ -19,6 +19,45 @@ Talk to your music library using Claude. Ask questions like:
 
 The AI understands your library's metadata, audio features (BPM, key, energy), and **CLAP audio embeddings** — so you can describe the *sound* you want, not just genres or artists. It can also help fix metadata issues by proposing corrections for your review.
 
+<details>
+<summary><strong>Available AI Tools (25)</strong></summary>
+
+| Tool | Description |
+|------|-------------|
+| **Search & Discovery** | |
+| `search_library` | Text search across title, artist, album, genre |
+| `semantic_search` | Natural language search by mood/style via CLAP embeddings |
+| `find_similar_tracks` | Find sonically similar tracks using audio embeddings |
+| `filter_tracks_by_features` | Filter by BPM, energy, key, danceability, valence |
+| `get_similar_artists_in_library` | Find similar artists (via Last.fm) that exist in your library |
+| **Library Info** | |
+| `get_library_stats` | Total tracks, artists, albums, top genres |
+| `get_library_genres` | List all genres with track counts |
+| `get_visible_tracks` | Get tracks currently shown in the UI |
+| `get_track_details` | Detailed track info including audio features |
+| **Playback** | |
+| `queue_tracks` | Add tracks to the playback queue |
+| `control_playback` | Play, pause, next, previous, shuffle |
+| `select_diverse_tracks` | Ensure variety across artists/albums |
+| **Spotify Integration** | |
+| `get_spotify_status` | Check if Spotify is connected |
+| `get_spotify_favorites` | Get Spotify likes matched to local library |
+| `get_unmatched_spotify_favorites` | Spotify likes you don't have locally |
+| `get_spotify_sync_stats` | Match rate and sync statistics |
+| **Discovery** | |
+| `search_bandcamp` | Search Bandcamp for albums/tracks to purchase |
+| `recommend_bandcamp_purchases` | Suggest albums based on unmatched Spotify favorites |
+| **Metadata Correction** | |
+| `lookup_correct_metadata` | Look up correct metadata from MusicBrainz |
+| `propose_metadata_change` | Propose a metadata fix for user review |
+| `get_album_tracks` | Get all tracks from a specific album |
+| `mark_album_as_compilation` | Set album_artist for compilation albums |
+| `propose_album_artwork` | Search and propose album artwork from Cover Art Archive |
+| `find_duplicate_artists` | Find artists with variant spellings |
+| `merge_duplicate_artists` | Propose merging duplicate artist names |
+
+</details>
+
 ### Local Library Management
 - **Fast scanning** - Scans thousands of tracks quickly with metadata extraction
 - **Audio analysis** - Automatic BPM, key detection, and audio feature extraction via librosa

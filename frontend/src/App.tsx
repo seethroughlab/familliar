@@ -84,11 +84,32 @@ function AppContent() {
     return tab;
   });
 
-  // Wrap setRightPanelTab to also update URL hash
+  // Wrap setRightPanelTab to also update URL hash and clear irrelevant params
   const setRightPanelTab = useCallback((tab: RightPanelTab) => {
     setRightPanelTabState(tab);
-    // Update hash without triggering a scroll
-    window.history.replaceState(null, '', `#${tab}`);
+
+    // Define which search params belong to which tab
+    const tabParams: Record<RightPanelTab, string[]> = {
+      library: ['view', 'search', 'artist', 'album', 'genre', 'yearFrom', 'yearTo', 'artistDetail', 'albumDetailArtist', 'albumDetailAlbum'],
+      playlists: ['playlist', 'view'],
+      visualizer: ['type'],
+      settings: [],
+    };
+
+    // Clear params that don't belong to the new tab
+    const currentParams = new URLSearchParams(window.location.search);
+    const allowedParams = new Set(tabParams[tab]);
+
+    for (const key of Array.from(currentParams.keys())) {
+      if (!allowedParams.has(key)) {
+        currentParams.delete(key);
+      }
+    }
+
+    // Build new URL with hash and cleaned params
+    const paramString = currentParams.toString();
+    const newUrl = paramString ? `?${paramString}#${tab}` : `#${tab}`;
+    window.history.replaceState(null, '', newUrl);
   }, []);
 
   // Listen for hash changes (back/forward navigation)
