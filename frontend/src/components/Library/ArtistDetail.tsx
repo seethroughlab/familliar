@@ -106,9 +106,15 @@ interface Props {
   onGoToAlbum?: (artistName: string, albumName: string) => void;
 }
 
+// Threshold for using lazy queue mode vs loading all tracks
+const LAZY_QUEUE_THRESHOLD = 50;
+// Number of tracks to show before collapsing
+const COLLAPSED_TRACK_COUNT = 15;
+
 export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
-  const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
+  const { currentTrack, isPlaying, shuffle, setQueue, addToQueue, setIsPlaying, setLazyQueue } = usePlayerStore();
   const [showFullBio, setShowFullBio] = useState(false);
+  const [showAllTracks, setShowAllTracks] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
 
@@ -159,9 +165,28 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
     refetch();
   };
 
-  const handlePlayAll = () => {
+  const handlePlayAll = async () => {
     if (!artist || artist.tracks.length === 0) return;
 
+    // Use lazy queue mode for large artist catalogs
+    // Pass global shuffle state to server for pre-shuffled IDs
+    if (artist.tracks.length >= LAZY_QUEUE_THRESHOLD) {
+      try {
+        const response = await tracksApi.getIds({
+          artist: artist.name,
+          shuffle: shuffle,
+        });
+        if (response.ids.length > 0) {
+          await setLazyQueue(response.ids);
+        }
+      } catch (error) {
+        console.error('Failed to get track IDs for artist:', error);
+      }
+      return;
+    }
+
+    // For smaller catalogs, use regular queue
+    // setQueue() already respects the global shuffle toggle
     const queueTracks = artist.tracks.map((t) => ({
       id: t.id,
       file_path: '',
@@ -382,7 +407,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
             className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-full transition-colors"
           >
             <Play className="w-4 h-4" fill="currentColor" />
-            Play All
+            Play
           </button>
 
           {artist.lastfm_url && (
@@ -481,9 +506,16 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
 
       {/* All tracks section */}
       <div>
-        <h3 className="text-lg font-semibold mb-3">All Tracks</h3>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold">All Tracks</h3>
+          {artist.tracks.length > COLLAPSED_TRACK_COUNT && (
+            <span className="text-sm text-zinc-400">
+              {artist.tracks.length} tracks
+            </span>
+          )}
+        </div>
         <div className="space-y-1">
-          {artist.tracks.map((track, idx) => {
+          {(showAllTracks ? artist.tracks : artist.tracks.slice(0, COLLAPSED_TRACK_COUNT)).map((track, idx) => {
             // Convert to full Track type for context menu
             const fullTrack: Track = {
               id: track.id,
@@ -563,6 +595,26 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
             );
           })}
         </div>
+
+        {/* Show all/less toggle */}
+        {artist.tracks.length > COLLAPSED_TRACK_COUNT && (
+          <button
+            onClick={() => setShowAllTracks(!showAllTracks)}
+            className="flex items-center gap-2 mt-3 px-4 py-2 w-full justify-center text-sm text-zinc-400 hover:text-white hover:bg-zinc-800/50 rounded-lg transition-colors"
+          >
+            {showAllTracks ? (
+              <>
+                <ChevronUp className="w-4 h-4" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4" />
+                Show all {artist.tracks.length} tracks
+              </>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Similar artists */}

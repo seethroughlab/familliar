@@ -7,7 +7,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen, Clock, Disc, Shuffle } from 'lucide-react';
+import { Play, Pause, Download, Check, Loader2, Heart, Music, FolderOpen, Clock, Disc } from 'lucide-react';
 import { tracksApi } from '../../../api/client';
 import { usePlayerStore } from '../../../stores/playerStore';
 import { useSelectionStore } from '../../../stores/selectionStore';
@@ -329,7 +329,7 @@ export function TrackListBrowser({
   onEditTrack,
 }: BrowserProps) {
   const [, setSearchParams] = useSearchParams();
-  const { currentTrack, isPlaying, setIsPlaying, setQueue, setLazyQueue, lazyQueueIds } = usePlayerStore();
+  const { currentTrack, isPlaying, shuffle, setIsPlaying, setQueue, setLazyQueue, lazyQueueIds } = usePlayerStore();
   const selectRange = useSelectionStore((state) => state.selectRange);
   const columns = useColumnStore((state) => state.columns);
   const reorderColumns = useColumnStore((state) => state.reorderColumns);
@@ -621,41 +621,52 @@ export function TrackListBrowser({
     return `${mins} min`;
   };
 
-  const handlePlayAll = () => {
+  // Threshold for using lazy queue mode vs loading all tracks
+  const LAZY_QUEUE_THRESHOLD = 200;
+
+  // Track loading state for play all
+  const [isLoadingPlayAll, setIsLoadingPlayAll] = useState(false);
+
+  const handlePlayAll = useCallback(async () => {
+    if (total === 0) return;
+
+    // For large result sets, use lazy queue mode with server-side ordering
+    // Pass global shuffle state so server returns shuffled IDs if enabled
+    if (total >= LAZY_QUEUE_THRESHOLD) {
+      setIsLoadingPlayAll(true);
+      try {
+        const response = await tracksApi.getIds({
+          shuffle: shuffle,
+          search: filters.search,
+          artist: filters.artist,
+          album: filters.album,
+          year_from: filters.yearFrom,
+          year_to: filters.yearTo,
+          energy_min: filters.energyMin,
+          energy_max: filters.energyMax,
+          valence_min: filters.valenceMin,
+          valence_max: filters.valenceMax,
+        });
+        if (response.ids.length > 0) {
+          await setLazyQueue(response.ids);
+        }
+      } catch (error) {
+        console.error('Failed to play all tracks:', error);
+      } finally {
+        setIsLoadingPlayAll(false);
+      }
+      return;
+    }
+
+    // For smaller result sets, use regular queue
+    // setQueue() already respects the global shuffle toggle
     if (allTracks.length > 0) {
       setQueue(allTracks, 0);
     }
-  };
-
-  // Shuffle all tracks in library (fetches all IDs, shuffles server-side)
-  const [isLoadingShuffleAll, setIsLoadingShuffleAll] = useState(false);
-  const handleShuffleAll = useCallback(async () => {
-    setIsLoadingShuffleAll(true);
-    try {
-      const response = await tracksApi.getIds({
-        shuffle: true,
-        search: filters.search,
-        artist: filters.artist,
-        album: filters.album,
-        year_from: filters.yearFrom,
-        year_to: filters.yearTo,
-        energy_min: filters.energyMin,
-        energy_max: filters.energyMax,
-        valence_min: filters.valenceMin,
-        valence_max: filters.valenceMax,
-      });
-      if (response.ids.length > 0) {
-        await setLazyQueue(response.ids);
-      }
-    } catch (error) {
-      console.error('Failed to shuffle all tracks:', error);
-    } finally {
-      setIsLoadingShuffleAll(false);
-    }
-  }, [filters, setLazyQueue]);
+  }, [total, shuffle, filters, setLazyQueue, allTracks, setQueue]);
 
   // Check if currently playing from lazy queue
-  const isInLazyShuffleMode = lazyQueueIds !== null && lazyQueueIds.length > 0;
+  const isInLazyQueueMode = lazyQueueIds !== null && lazyQueueIds.length > 0;
 
   return (
     <div>
@@ -699,27 +710,19 @@ export function TrackListBrowser({
               </span>
             </div>
 
-            {/* Play and Shuffle buttons */}
-            <div className="mt-4 flex items-center gap-3">
+            {/* Play button */}
+            <div className="mt-4">
               <button
                 onClick={handlePlayAll}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 rounded-full transition-colors"
+                disabled={isLoadingPlayAll}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-full transition-colors"
               >
-                <Play className="w-4 h-4" fill="currentColor" />
-                Play All
-              </button>
-              <button
-                onClick={handleShuffleAll}
-                disabled={isLoadingShuffleAll}
-                className="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-full transition-colors"
-                title="Shuffle all tracks"
-              >
-                {isLoadingShuffleAll ? (
+                {isLoadingPlayAll ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
-                  <Shuffle className="w-4 h-4" />
+                  <Play className="w-4 h-4" fill="currentColor" />
                 )}
-                Shuffle All
+                Play
               </button>
             </div>
           </div>
@@ -731,39 +734,25 @@ export function TrackListBrowser({
         <div className="flex items-center justify-between px-4 py-3 mb-2">
           <div className="text-sm text-zinc-400">
             {total.toLocaleString()} tracks
-            {isInLazyShuffleMode && (
+            {isInLazyQueueMode && (
               <span className="ml-2 text-green-500">
-                • Shuffling all
+                • Playing all
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handlePlayAll}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-full transition-colors"
-              title="Play all tracks in order"
-            >
+          <button
+            onClick={handlePlayAll}
+            disabled={isLoadingPlayAll}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 rounded-full transition-colors"
+            title="Play all tracks"
+          >
+            {isLoadingPlayAll ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
               <Play className="w-3.5 h-3.5" fill="currentColor" />
-              <span className="hidden sm:inline">Play All</span>
-            </button>
-            <button
-              onClick={handleShuffleAll}
-              disabled={isLoadingShuffleAll}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full transition-colors disabled:opacity-50 ${
-                isInLazyShuffleMode
-                  ? 'bg-green-600 hover:bg-green-500 text-white'
-                  : 'bg-zinc-700 hover:bg-zinc-600'
-              }`}
-              title={isInLazyShuffleMode ? 'Currently shuffling all tracks' : 'Shuffle all tracks in library'}
-            >
-              {isLoadingShuffleAll ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Shuffle className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">Shuffle All</span>
-            </button>
-          </div>
+            )}
+            <span className="hidden sm:inline">Play</span>
+          </button>
         </div>
       )}
 

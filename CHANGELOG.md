@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Unified shuffle via global toggle** - Play buttons now respect the playbar's shuffle toggle
+  - Removed separate "Shuffle" and "Shuffle All" buttons from ArtistDetail and TrackListBrowser
+  - Play action checks global shuffle state and passes it to server for large track sets
+  - Single source of truth: toggle shuffle in playbar, then click Play anywhere
+  - `setQueue()` already respected shuffle toggle; now lazy queue mode does too
 - **Unified Discovery Section** - consolidated discovery/recommendation UI into single component
   - All views (Playlist, Artist, Album, Full Player) now use identical discovery UI
   - Tab interface for switching between content types (Artists, Albums, Tracks)
