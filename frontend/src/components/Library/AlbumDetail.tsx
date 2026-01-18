@@ -17,6 +17,7 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useOfflineTrack } from '../../hooks/useOfflineTrack';
+import { useOfflineAlbum } from '../../hooks/useOfflineAlbum';
 import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
@@ -89,6 +90,62 @@ function FavoriteButton({ trackId }: { trackId: string }) {
       title={favorited ? 'Remove from favorites' : 'Add to favorites'}
     >
       <Heart className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
+    </button>
+  );
+}
+
+interface AlbumTrack {
+  id: string;
+}
+
+function AlbumOfflineButton({ tracks }: { tracks: AlbumTrack[] }) {
+  const {
+    offlineCount,
+    totalCount,
+    isFullyOffline,
+    isPartiallyOffline,
+    isDownloading,
+    currentTrack,
+    overallProgress,
+    download,
+    remove,
+  } = useOfflineAlbum(tracks);
+
+  if (isDownloading) {
+    return (
+      <button
+        className="flex items-center gap-2 px-4 py-2 bg-zinc-700 rounded-full transition-colors"
+        title={`Downloading track ${currentTrack} of ${totalCount}...`}
+      >
+        <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+        <span className="text-sm">{overallProgress}%</span>
+      </button>
+    );
+  }
+
+  if (isFullyOffline) {
+    return (
+      <button
+        onClick={remove}
+        className="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-full transition-colors"
+        title="Remove offline copies"
+      >
+        <Check className="w-4 h-4 text-green-500" />
+        <span className="text-sm">Downloaded</span>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={download}
+      className="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-full transition-colors"
+      title={isPartiallyOffline ? `Download remaining ${totalCount - offlineCount} tracks` : 'Download album for offline'}
+    >
+      <Download className="w-4 h-4" />
+      <span className="text-sm">
+        {isPartiallyOffline ? `${offlineCount}/${totalCount}` : 'Download'}
+      </span>
     </button>
   );
 }
@@ -327,6 +384,7 @@ export function AlbumDetail({
             <Play className="w-4 h-4" fill="currentColor" />
             Play
           </button>
+          <AlbumOfflineButton tracks={album.tracks} />
         </div>
       </div>
 

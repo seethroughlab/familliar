@@ -440,11 +440,20 @@ async def run_library_sync(
             analyzed_count = features_done
 
             if embeddings_enabled:
+                # Timeout and stall detection for embedding loop
+                embedding_start_time = time.time()
+                max_embedding_duration = 4 * 60 * 60  # 4 hours max for entire embedding phase
+                stall_threshold = 5 * 60  # 5 minutes without progress = stalled
+                last_progress_time = time.time()
+                last_embeddings_done = 0
+                failure_cutoff = datetime.utcnow() - timedelta(hours=24)
+
                 while True:
                     async with local_session_maker() as db:
-                        # Count tracks with embeddings
                         from app.db.models import TrackAnalysis
-                        embeddings_result = await db.execute(
+
+                        # Count tracks with successful embeddings
+                        embeddings_success_result = await db.execute(
                             select(func.count(TrackAnalysis.id)).where(
                                 and_(
                                     TrackAnalysis.version >= ANALYSIS_VERSION,
@@ -452,16 +461,70 @@ async def run_library_sync(
                                 )
                             )
                         )
-                        embeddings_done = embeddings_result.scalar() or 0
+                        embeddings_success = embeddings_success_result.scalar() or 0
 
-                        # Total tracks that should have embeddings
-                        total_result = await db.execute(select(func.count(Track.id)))
-                        total_tracks = total_result.scalar() or 0
+                        # Count tracks with recent embedding failures (within 24h)
+                        # These count as "done" for progress purposes
+                        embeddings_failed_result = await db.execute(
+                            select(func.count(TrackAnalysis.id)).where(
+                                and_(
+                                    TrackAnalysis.version >= ANALYSIS_VERSION,
+                                    TrackAnalysis.embedding.is_(None),
+                                    TrackAnalysis.embedding_failed_at.is_not(None),
+                                    TrackAnalysis.embedding_failed_at >= failure_cutoff,
+                                )
+                            )
+                        )
+                        embeddings_failed = embeddings_failed_result.scalar() or 0
 
-                        pending_embeddings = total_tracks - embeddings_done
+                        # Total "done" = successful + recently failed
+                        embeddings_done = embeddings_success + embeddings_failed
+
+                        # Total tracks that need embeddings = all TrackAnalysis records
+                        # (NOT total Track count - those without features shouldn't count yet)
+                        total_result = await db.execute(
+                            select(func.count(TrackAnalysis.id)).where(
+                                TrackAnalysis.version >= ANALYSIS_VERSION
+                            )
+                        )
+                        total_with_features = total_result.scalar() or 0
+
+                        pending_embeddings = total_with_features - embeddings_done
+
+                    # Check for timeout
+                    elapsed = time.time() - embedding_start_time
+                    if elapsed > max_embedding_duration:
+                        logger.warning(
+                            f"Embedding phase timed out after {elapsed/3600:.1f}h "
+                            f"({embeddings_success} success, {embeddings_failed} failed, "
+                            f"{pending_embeddings} still pending)"
+                        )
+                        analyzed_count = embeddings_success
+                        break
+
+                    # Check for stall (no progress in stall_threshold seconds)
+                    if embeddings_done > last_embeddings_done:
+                        last_progress_time = time.time()
+                        last_embeddings_done = embeddings_done
+                    elif time.time() - last_progress_time > stall_threshold:
+                        # Stalled - try queueing more aggressively
+                        logger.warning(
+                            f"Embedding progress stalled for {stall_threshold}s "
+                            f"({pending_embeddings} still pending)"
+                        )
+                        # If still no queueable tracks, exit gracefully
+                        queued = await queue_tracks_for_embeddings(limit=200)
+                        if queued == 0 and pending_embeddings > 0:
+                            logger.warning(
+                                f"Cannot queue more embeddings but {pending_embeddings} "
+                                f"still pending - exiting to avoid infinite loop"
+                            )
+                            analyzed_count = embeddings_success
+                            break
+                        last_progress_time = time.time()
 
                     if pending_embeddings == 0:
-                        analyzed_count = embeddings_done
+                        analyzed_count = embeddings_success
                         break
 
                     # Queue more tracks for embedding generation when queue might be low
@@ -469,9 +532,9 @@ async def run_library_sync(
                         await queue_tracks_for_embeddings(limit=100)
 
                     progress.set_embeddings(
-                        analyzed=embeddings_done,
+                        analyzed=embeddings_success,
                         pending=pending_embeddings,
-                        total=total_tracks,
+                        total=total_with_features,
                         scan_stats=scan_stats,
                     )
 
@@ -979,6 +1042,37 @@ def run_track_features(track_id: str) -> dict[str, Any]:
         return {"error": error_msg, "status": "failed", "permanent": True}
 
 
+def _record_embedding_failure(track_id: str, error_msg: str) -> None:
+    """Record embedding failure in TrackAnalysis so sync loop doesn't get stuck.
+
+    This is called from exception handlers to mark embeddings as failed,
+    allowing the sync progress query to count them as "done" (either success or failed).
+    """
+    from sqlalchemy import select
+
+    from app.db.models import TrackAnalysis
+    from app.db.session import sync_session_maker
+
+    try:
+        with sync_session_maker() as db:
+            result = db.execute(
+                select(TrackAnalysis)
+                .where(TrackAnalysis.track_id == UUID(track_id))
+                .order_by(TrackAnalysis.version.desc())
+            )
+            analysis = result.scalar_one_or_none()
+
+            if analysis:
+                analysis.embedding_error = error_msg[:500]
+                analysis.embedding_failed_at = datetime.utcnow()
+                db.commit()
+                logger.info(f"Recorded embedding failure for track {track_id}")
+            else:
+                logger.warning(f"No TrackAnalysis record to record embedding failure for {track_id}")
+    except Exception as db_error:
+        logger.warning(f"Could not record embedding failure to DB: {db_error}")
+
+
 def run_track_embedding(track_id: str) -> dict[str, Any]:
     """Extract CLAP embedding for a track - runs in subprocess via ProcessPoolExecutor.
 
@@ -1128,7 +1222,8 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
     except AnalysisError as e:
         error_msg = str(e)[:500]
         logger.error(f"Embedding extraction error for {track_id}: {error_msg}")
-        # Don't mark as failed - features were still extracted successfully
+        # Record embedding failure in TrackAnalysis so sync doesn't get stuck
+        _record_embedding_failure(track_id, error_msg)
         return {"error": error_msg, "status": "partial", "phase": "embedding"}
     except StaleDataError:
         logger.info(f"Track {track_id} was deleted during embedding, skipping")
@@ -1136,7 +1231,8 @@ def run_track_embedding(track_id: str) -> dict[str, Any]:
     except Exception as e:
         error_msg = str(e)[:500]
         logger.error(f"Error extracting embedding for {track_id}: {error_msg}")
-        # Don't mark track as failed - features were still extracted
+        # Record embedding failure in TrackAnalysis so sync doesn't get stuck
+        _record_embedding_failure(track_id, error_msg)
         return {"error": error_msg, "status": "partial", "phase": "embedding"}
 
 
@@ -1243,6 +1339,7 @@ async def queue_tracks_for_embeddings(limit: int = 500) -> int:
         failure_cutoff = datetime.utcnow() - timedelta(hours=24)
 
         # Find tracks with analysis record but no embedding
+        # Exclude tracks that recently failed embedding (within 24h) to avoid infinite retry
         result = await db.execute(
             select(Track.id)
             .join(TrackAnalysis, Track.id == TrackAnalysis.track_id)
@@ -1250,9 +1347,10 @@ async def queue_tracks_for_embeddings(limit: int = 500) -> int:
                 and_(
                     TrackAnalysis.version >= ANALYSIS_VERSION,
                     TrackAnalysis.embedding.is_(None),
+                    # Exclude recently-failed embeddings (use TrackAnalysis.embedding_failed_at)
                     or_(
-                        Track.analysis_failed_at.is_(None),
-                        Track.analysis_failed_at < failure_cutoff,
+                        TrackAnalysis.embedding_failed_at.is_(None),
+                        TrackAnalysis.embedding_failed_at < failure_cutoff,
                     ),
                 )
             )

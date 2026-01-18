@@ -329,7 +329,7 @@ export function TrackListBrowser({
   onEditTrack,
 }: BrowserProps) {
   const [, setSearchParams] = useSearchParams();
-  const { currentTrack, isPlaying, setIsPlaying, setQueue, shuffle, setLazyQueue, lazyQueueIds, isFetchingTrack } = usePlayerStore();
+  const { currentTrack, isPlaying, setIsPlaying, setQueue, setLazyQueue, lazyQueueIds } = usePlayerStore();
   const selectRange = useSelectionStore((state) => state.selectRange);
   const columns = useColumnStore((state) => state.columns);
   const reorderColumns = useColumnStore((state) => state.reorderColumns);

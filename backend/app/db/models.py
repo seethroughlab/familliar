@@ -297,6 +297,10 @@ class TrackAnalysis(Base):
     features_source: Mapped[str | None] = mapped_column(String(50))
     embedding_source: Mapped[str | None] = mapped_column(String(50))
 
+    # Embedding failure tracking (separate from Track.analysis_error which is for features)
+    embedding_error: Mapped[str | None] = mapped_column(String(500))
+    embedding_failed_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
