@@ -463,6 +463,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
       <div className="flex-1 overflow-y-auto">
         {BrowserComponent ? (
           <BrowserComponent
+            key={`browser-${currentBrowserId}`}
             tracks={[]}
             artists={artists}
             albums={albums}

@@ -1,7 +1,7 @@
 /**
  * Library organization settings component.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import {
   FolderTree,
@@ -47,9 +47,11 @@ export function LibraryOrganizer() {
   const currentTemplate = templates.find(t => t.template === selectedTemplate) || templates[0];
 
   // Set default template when loaded
-  if (templates.length > 0 && !selectedTemplate) {
-    setSelectedTemplate(templates[0].template);
-  }
+  useEffect(() => {
+    if (templates.length > 0 && !selectedTemplate) {
+      setSelectedTemplate(templates[0].template);
+    }
+  }, [templates, selectedTemplate]);
 
   const getStatusIcon = (status: OrganizeResult['status']) => {
     switch (status) {
