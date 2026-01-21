@@ -156,7 +156,7 @@ export function PluginsSettings() {
             value={installUrl}
             onChange={(e) => setInstallUrl(e.target.value)}
             placeholder="https://github.com/user/plugin-repo"
-            className="flex-1 px-3 py-2 bg-zinc-900 dark:bg-zinc-900 light:bg-zinc-100 border border-zinc-700 dark:border-zinc-700 light:border-zinc-300 rounded-md text-sm text-white dark:text-white light:text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="flex-1 px-3 py-2 bg-zinc-900 dark:bg-zinc-900 light:bg-zinc-100 border border-zinc-700 dark:border-zinc-700 light:border-zinc-300 rounded-md text-base text-white dark:text-white light:text-zinc-900 placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <button
             type="submit"

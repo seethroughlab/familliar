@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, Settings, Zap, Activity, MessageSquare, X, Loader2 } from 'lucide-react';
@@ -61,6 +61,35 @@ function AppContent() {
   const [search, setSearch] = useState('');
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const queryClient = useQueryClient();
+
+  // Triple-tap recovery mechanism for mobile (closes all overlays)
+  const tapCountRef = useRef(0);
+  const lastTapTimeRef = useRef(0);
+  useEffect(() => {
+    const handleTripleTap = () => {
+      const now = Date.now();
+      if (now - lastTapTimeRef.current < 500) {
+        tapCountRef.current++;
+        if (tapCountRef.current >= 3) {
+          // Triple tap detected - close all overlays
+          logger.info('[AppContent] Triple-tap recovery triggered');
+          setShowFullPlayer(false);
+          setShowMobileChat(false);
+          setShowShortcutsHelp(false);
+          tapCountRef.current = 0;
+        }
+      } else {
+        tapCountRef.current = 1;
+      }
+      lastTapTimeRef.current = now;
+    };
+
+    // Only add on touch devices
+    if ('ontouchstart' in window) {
+      document.addEventListener('touchstart', handleTripleTap);
+      return () => document.removeEventListener('touchstart', handleTripleTap);
+    }
+  }, []);
 
   // Determine initial tab from URL hash or path
   const getTabFromUrl = (): RightPanelTab => {
@@ -126,6 +155,8 @@ function AppContent() {
   // const [showSessionPanel, setShowSessionPanel] = useState(false);
   const [showShortcutsHelp, setShowShortcutsHelp] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
+  const [mobileSearchExpanded, setMobileSearchExpanded] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize Last.fm scrobbling
   useScrobbling();
@@ -143,8 +174,9 @@ function AppContent() {
         setShowShortcutsHelp(false);
       } else if (showFullPlayer) {
         setShowFullPlayer(false);
+      } else if (showMobileChat) {
+        setShowMobileChat(false);
       }
-      // Listening sessions disabled for v0.1.0
     },
   });
 
@@ -225,9 +257,10 @@ function AppContent() {
 
   return (
     <GlobalDropZone onFilesDropped={setImportFiles}>
-    <div className={`h-screen flex flex-col ${resolvedTheme === 'light' ? 'bg-white text-zinc-900' : 'bg-black text-white'}`}>
-      {/* Main content area - pb-20 accounts for fixed player bar */}
-      <div className="flex-1 flex overflow-hidden pb-20">
+    {/* Use h-dvh for iOS dynamic viewport, fallback to h-screen */}
+    <div className={`h-screen h-[100dvh] flex flex-col ${resolvedTheme === 'light' ? 'bg-white text-zinc-900' : 'bg-black text-white'}`}>
+      {/* Main content area - pb-24 on mobile accounts for fixed player bar + safe area */}
+      <div className="flex-1 flex overflow-hidden pb-20 md:pb-20">
         {/* Left panel - Chat (hidden on mobile, shown via overlay) */}
         <div className={`hidden md:flex w-96 border-r ${resolvedTheme === 'light' ? 'border-zinc-200' : 'border-zinc-800'} flex-col`}>
           <ErrorBoundary name="Chat">
@@ -246,11 +279,11 @@ function AppContent() {
               className="absolute inset-0 bg-black/50"
               onClick={() => setShowMobileChat(false)}
             />
-            {/* Chat panel */}
-            <div className={`relative w-full max-w-md ${resolvedTheme === 'light' ? 'bg-white' : 'bg-zinc-900'} flex flex-col`}>
+            {/* Chat panel - includes safe area padding */}
+            <div className={`relative w-full max-w-md ${resolvedTheme === 'light' ? 'bg-white' : 'bg-zinc-900'} flex flex-col pt-safe pb-safe`}>
               <button
                 onClick={() => setShowMobileChat(false)}
-                className="absolute top-3 right-3 p-2 rounded-lg hover:bg-zinc-800/50 z-10"
+                className="absolute top-3 right-3 p-2 rounded-lg hover:bg-zinc-800/50 z-10 mt-safe touch-target"
                 aria-label="Close chat"
               >
                 <X className="w-5 h-5" />
@@ -267,100 +300,151 @@ function AppContent() {
 
         {/* Right panel - Library/Context */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Header with tabs */}
-          <header className={`relative z-30 backdrop-blur-md border-b ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
+          {/* Header with tabs - includes safe area padding for notch */}
+          <header className={`relative z-30 backdrop-blur-md border-b pt-safe ${resolvedTheme === 'light' ? 'bg-white/80 border-zinc-200' : 'bg-zinc-900/80 border-zinc-800'}`}>
             <div className="px-4 py-3 flex items-center gap-2 md:gap-4">
-              {/* Mobile chat toggle */}
-              <button
-                onClick={() => setShowMobileChat(true)}
-                className="md:hidden p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50"
-                aria-label="Open chat"
-              >
-                <MessageSquare className="w-5 h-5" />
-              </button>
-
-              {/* Tabs */}
-              <div className="flex gap-1 overflow-x-auto">
-                <button
-                  onClick={() => setRightPanelTab('library')}
-                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                    rightPanelTab === 'library'
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                  aria-label="Library"
-                >
-                  <Library className="w-4 h-4 inline-block sm:mr-1.5" />
-                  <span className="hidden sm:inline">Library</span>
-                </button>
-                <button
-                  onClick={() => setRightPanelTab('playlists')}
-                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                    rightPanelTab === 'playlists'
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                  aria-label="Playlists"
-                >
-                  <Zap className="w-4 h-4 inline-block sm:mr-1.5" />
-                  <span className="hidden sm:inline">Playlists</span>
-                </button>
-                <button
-                  onClick={() => setRightPanelTab('visualizer')}
-                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                    rightPanelTab === 'visualizer'
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                  aria-label="Visualizer"
-                >
-                  <Activity className="w-4 h-4 inline-block sm:mr-1.5" />
-                  <span className="hidden sm:inline">Visualizer</span>
-                </button>
-                <button
-                  onClick={() => setRightPanelTab('settings')}
-                  className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                    rightPanelTab === 'settings'
-                      ? 'bg-zinc-800 text-white'
-                      : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                  }`}
-                  aria-label="Settings"
-                >
-                  <Settings className="w-4 h-4 inline-block sm:mr-1.5" />
-                  <span className="hidden sm:inline">Settings</span>
-                </button>
-              </div>
-
-              {/* Search and column selector (only in library view) */}
-              {rightPanelTab === 'library' && (
-                <>
-                  <div className="flex-1 max-w-md">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                      <input
-                        type="text"
-                        placeholder="Search tracks..."
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                      />
-                    </div>
+              {/* Mobile search expanded state - takes over header */}
+              {mobileSearchExpanded ? (
+                <div className="flex-1 flex items-center gap-2 md:hidden">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input
+                      ref={searchInputRef}
+                      type="search"
+                      inputMode="search"
+                      placeholder="Search tracks..."
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      onBlur={() => {
+                        // Delay to allow tap on X button
+                        setTimeout(() => setMobileSearchExpanded(false), 150);
+                      }}
+                      className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full text-base placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                      autoFocus
+                    />
                   </div>
-                  <ColumnSelector />
+                  <button
+                    onClick={() => {
+                      setSearch('');
+                      setMobileSearchExpanded(false);
+                    }}
+                    className="p-2 rounded-lg text-zinc-400 hover:text-white"
+                    aria-label="Cancel search"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {/* Mobile chat toggle */}
+                  <button
+                    onClick={() => setShowMobileChat(true)}
+                    className="md:hidden p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                    aria-label="Open chat"
+                  >
+                    <MessageSquare className="w-5 h-5" />
+                  </button>
+
+                  {/* Tabs */}
+                  <div className="flex gap-1 overflow-x-auto">
+                    <button
+                      onClick={() => setRightPanelTab('library')}
+                      className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                        rightPanelTab === 'library'
+                          ? 'bg-zinc-800 text-white'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                      aria-label="Library"
+                    >
+                      <Library className="w-4 h-4 inline-block sm:mr-1.5" />
+                      <span className="hidden sm:inline">Library</span>
+                    </button>
+                    <button
+                      onClick={() => setRightPanelTab('playlists')}
+                      className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                        rightPanelTab === 'playlists'
+                          ? 'bg-zinc-800 text-white'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                      aria-label="Playlists"
+                    >
+                      <Zap className="w-4 h-4 inline-block sm:mr-1.5" />
+                      <span className="hidden sm:inline">Playlists</span>
+                    </button>
+                    <button
+                      onClick={() => setRightPanelTab('visualizer')}
+                      className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                        rightPanelTab === 'visualizer'
+                          ? 'bg-zinc-800 text-white'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                      aria-label="Visualizer"
+                    >
+                      <Activity className="w-4 h-4 inline-block sm:mr-1.5" />
+                      <span className="hidden sm:inline">Visualizer</span>
+                    </button>
+                    <button
+                      onClick={() => setRightPanelTab('settings')}
+                      className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                        rightPanelTab === 'settings'
+                          ? 'bg-zinc-800 text-white'
+                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                      }`}
+                      aria-label="Settings"
+                    >
+                      <Settings className="w-4 h-4 inline-block sm:mr-1.5" />
+                      <span className="hidden sm:inline">Settings</span>
+                    </button>
+                  </div>
+
+                  {/* Mobile search icon (library view only) */}
+                  {rightPanelTab === 'library' && (
+                    <button
+                      onClick={() => {
+                        setMobileSearchExpanded(true);
+                        // Focus will happen via autoFocus
+                      }}
+                      className="md:hidden p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                      aria-label="Search"
+                    >
+                      <Search className="w-5 h-5" />
+                    </button>
+                  )}
+
+                  {/* Desktop search and column selector (only in library view) */}
+                  {rightPanelTab === 'library' && (
+                    <>
+                      <div className="hidden md:block flex-1 max-w-md">
+                        <div className="relative">
+                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                          <input
+                            type="search"
+                            placeholder="Search tracks..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 bg-zinc-800 border border-zinc-700 rounded-full text-base placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                      <div className="hidden md:block">
+                        <ColumnSelector />
+                      </div>
+                    </>
+                  )}
+
+                  {/* Spacer to push indicators right */}
+                  <div className="flex-1" />
+
+                  {/* Proposed changes indicator - shows when changes need review */}
+                  <ProposedChangesIndicator />
+
+                  {/* Background jobs indicator - shows when jobs are running */}
+                  <BackgroundJobsIndicator />
+
+                  {/* Health indicator - only shows when issues detected */}
+                  <HealthIndicator />
                 </>
               )}
-
-              {/* Spacer to push indicators right */}
-              <div className="flex-1" />
-
-              {/* Proposed changes indicator - shows when changes need review */}
-              <ProposedChangesIndicator />
-
-              {/* Background jobs indicator - shows when jobs are running */}
-              <BackgroundJobsIndicator />
-
-              {/* Health indicator - only shows when issues detected */}
-              <HealthIndicator />
             </div>
           </header>
 
@@ -407,8 +491,12 @@ function AppContent() {
 
       {/* Full player overlay */}
       {showFullPlayer && (
-        <ErrorBoundary name="Full Player">
-          <Suspense fallback={<LazyLoadSpinner />}>
+        <ErrorBoundary name="Full Player" fullscreen>
+          <Suspense fallback={
+            <div className="fixed inset-0 z-50 bg-black flex items-center justify-center">
+              <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+            </div>
+          }>
             <FullPlayer onClose={() => setShowFullPlayer(false)} />
           </Suspense>
         </ErrorBoundary>
@@ -446,9 +534,49 @@ function AppContent() {
   );
 }
 
+// PWA Reset utility - clears all persisted state
+function resetPWAState() {
+  logger.info('[App] Resetting PWA state');
+  // Clear all localStorage keys for this app
+  const keysToRemove = Object.keys(localStorage).filter(
+    (k) => k.startsWith('familiar-') || k.startsWith('zustand-')
+  );
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
+
+  // Clear IndexedDB databases
+  if ('indexedDB' in window) {
+    indexedDB.databases?.().then((dbs) => {
+      dbs.forEach((db) => {
+        if (db.name) {
+          indexedDB.deleteDatabase(db.name);
+        }
+      });
+    });
+  }
+
+  // Clear URL state
+  window.history.replaceState(null, '', window.location.pathname);
+
+  // Reload to apply clean state
+  window.location.reload();
+}
+
+// Expose reset function globally for debugging
+if (typeof window !== 'undefined') {
+  (window as unknown as { resetFamiliar: () => void }).resetFamiliar = resetPWAState;
+}
+
 function App() {
   const [profile, setProfile] = useState<Profile | null | undefined>(undefined);
   const [checkingProfile, setCheckingProfile] = useState(true);
+
+  // Check for reset parameter in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('reset') === 'true') {
+      resetPWAState();
+    }
+  }, []);
 
   const checkProfile = useCallback(async () => {
     setCheckingProfile(true);

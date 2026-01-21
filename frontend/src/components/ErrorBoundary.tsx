@@ -7,6 +7,8 @@ interface Props {
   onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
   /** Name of the component/section for error reporting */
   name?: string;
+  /** Whether this wraps a fullscreen component (uses full-height styling) */
+  fullscreen?: boolean;
 }
 
 interface State {
@@ -47,9 +49,13 @@ export class ErrorBoundary extends Component<Props, State> {
         return this.props.fallback;
       }
 
-      // Default fallback UI
+      // Default fallback UI - visible on both light and dark backgrounds
+      const containerClass = this.props.fullscreen
+        ? "fixed inset-0 z-50 flex flex-col items-center justify-center p-8 text-center bg-zinc-900"
+        : "flex flex-col items-center justify-center p-8 text-center bg-zinc-900/80 rounded-lg m-4";
+
       return (
-        <div className="flex flex-col items-center justify-center p-8 text-center">
+        <div className={containerClass}>
           <AlertTriangle className="w-12 h-12 text-amber-500 mb-4" />
           <h2 className="text-lg font-semibold text-zinc-200 mb-2">
             Something went wrong
@@ -68,7 +74,7 @@ export class ErrorBoundary extends Component<Props, State> {
             Try Again
           </button>
           {import.meta.env.DEV && this.state.error && (
-            <pre className="mt-4 p-4 bg-zinc-900 rounded-lg text-left text-xs text-red-400
+            <pre className="mt-4 p-4 bg-zinc-950 rounded-lg text-left text-xs text-red-400
                             max-w-full overflow-auto max-h-40">
               {this.state.error.message}
               {'\n\n'}

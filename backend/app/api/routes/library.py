@@ -2085,9 +2085,16 @@ class ImportTrackPreview(BaseModel):
     file_size_bytes: int
     sample_rate: int | None = None
     bit_depth: int | None = None
+    bitrate: int | None = None
+    bitrate_mode: str | None = None  # "CBR", "VBR", or None
     # Duplicate detection
     duplicate_of: str | None = None  # ID of existing track if duplicate found
     duplicate_info: str | None = None  # e.g. "Artist - Album - Title"
+    # Quality comparison (for duplicates)
+    trump_status: str | None = None  # "trumps", "trumped_by", "equal"
+    trump_reason: str | None = None  # Human-readable comparison reason
+    incoming_quality: dict | None = None  # Quality info for incoming track
+    existing_quality: dict | None = None  # Quality info for existing track
 
 
 class ImportPreviewResponse(BaseModel):
@@ -2114,6 +2121,9 @@ class ImportTrackInput(BaseModel):
     detected_title: str | None = None
     detected_track_num: int | None = None
     detected_year: int | None = None
+    # Quality-based replacement
+    action: str = "import"  # "import", "replace", "skip"
+    replace_track_id: str | None = None  # Track ID to replace (for action="replace")
 
 
 class ImportOptions(BaseModel):
@@ -2136,6 +2146,7 @@ class ImportExecuteResponse(BaseModel):
     """Response from import execute endpoint."""
     status: str
     imported_count: int
+    replaced_count: int = 0  # Count of tracks that replaced existing ones
     imported_files: list[str]
     errors: list[str]
     base_path: str
@@ -2178,10 +2189,12 @@ async def import_preview(
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
 
     try:
+        from app.services.quality import calculate_quality_score, compare_quality
+
         preview_service = ImportPreviewService()
         result = preview_service.create_preview_session(temp_path, file.filename)
 
-        # Check for duplicates in the library
+        # Check for duplicates in the library and compare quality
         tracks = result["tracks"]
         for track in tracks:
             artist = track.get("detected_artist") or ""
@@ -2206,6 +2219,30 @@ async def import_preview(
                     track["duplicate_info"] = (
                         f"{existing.artist} - {existing.album} - {existing.title}"
                     )
+
+                    # Calculate quality scores and compare
+                    incoming_score = calculate_quality_score(
+                        format=track.get("format"),
+                        bitrate=track.get("bitrate"),
+                        sample_rate=track.get("sample_rate"),
+                        bit_depth=track.get("bit_depth"),
+                        bitrate_mode=track.get("bitrate_mode"),
+                    )
+                    existing_score = calculate_quality_score(
+                        format=existing.format,
+                        bitrate=existing.bitrate,
+                        sample_rate=existing.sample_rate,
+                        bit_depth=existing.bit_depth,
+                        bitrate_mode=existing.bitrate_mode,
+                    )
+
+                    trump_status, trump_reason = compare_quality(
+                        incoming_score, existing_score
+                    )
+                    track["trump_status"] = trump_status
+                    track["trump_reason"] = trump_reason
+                    track["incoming_quality"] = incoming_score.to_dict()
+                    track["existing_quality"] = existing_score.to_dict()
 
         return ImportPreviewResponse(
             session_id=result["session_id"],
@@ -2235,7 +2272,13 @@ async def import_execute(
     Uses session_id from preview to access uploaded files.
     Applies user-edited metadata and conversion options.
     """
+    import hashlib
+    from pathlib import Path
+    from uuid import UUID
+
+    from app.db.models import Track
     from app.services.import_service import ImportExecuteService, MusicImportError
+    from app.services.metadata import extract_metadata
 
     try:
         execute_service = ImportExecuteService()
@@ -2245,12 +2288,61 @@ async def import_execute(
             options=request.options.model_dump(),
         )
 
+        # Handle track replacements - update existing tracks to point to new files
+        replaced_tracks = result.get("replaced_tracks", [])
+        replaced_count = 0
+        for replacement in replaced_tracks:
+            try:
+                track_id = UUID(replacement["track_id"])
+                new_file_path = Path(replacement["new_file_path"])
+
+                # Get the existing track
+                existing = await db.get(Track, track_id)
+                if not existing:
+                    result["errors"].append(f"Track to replace not found: {track_id}")
+                    continue
+
+                # Delete the old file if it exists
+                old_path = Path(existing.file_path)
+                if old_path.exists():
+                    old_path.unlink()
+
+                # Update track with new file info
+                existing.file_path = str(new_file_path)
+
+                # Calculate new file hash
+                with open(new_file_path, "rb") as f:
+                    existing.file_hash = hashlib.sha256(f.read()).hexdigest()
+
+                # Extract metadata from new file
+                metadata = extract_metadata(new_file_path)
+                existing.format = metadata.get("format")
+                existing.bitrate = metadata.get("bitrate")
+                existing.bitrate_mode = metadata.get("bitrate_mode")
+                existing.sample_rate = metadata.get("sample_rate")
+                existing.bit_depth = metadata.get("bit_depth")
+                existing.duration_seconds = metadata.get("duration_seconds")
+
+                # Reset analysis to trigger re-analysis
+                existing.analysis_version = 0
+                existing.analyzed_at = None
+
+                replaced_count += 1
+
+            except Exception as e:
+                result["errors"].append(f"Failed to replace track: {e}")
+
+        # Commit replacement changes
+        if replaced_count > 0:
+            await db.commit()
+            # Adjust imported count to not double-count replacements
+            result["imported_count"] = result["imported_count"] - replaced_count
+            result["replaced_count"] = replaced_count
+
         # Schedule scan of imported files if requested
         # Use specific scan_paths to avoid scanning entire library
         scan_paths = result.get("scan_paths", [])
         if result["queue_analysis"] and scan_paths and settings.music_library_paths:
-            from pathlib import Path
-
             from app.db.session import async_session_maker
             from app.services.scanner import LibraryScanner
 

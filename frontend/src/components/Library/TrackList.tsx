@@ -139,7 +139,7 @@ function OfflineButton({ trackId }: { trackId: string }) {
         e.stopPropagation();
         download();
       }}
-      className="p-1 text-zinc-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+      className="p-1 text-zinc-500 hover:text-white transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
       title="Download for offline"
     >
       <Download className="w-4 h-4" />
@@ -160,7 +160,7 @@ function FavoriteButton({ trackId }: { trackId: string }) {
       className={`p-1 transition-colors ${
         favorited
           ? 'text-pink-500 hover:text-pink-400'
-          : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+          : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
       }`}
       title={favorited ? 'Remove from favorites' : 'Add to favorites'}
     >

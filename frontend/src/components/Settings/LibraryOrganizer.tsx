@@ -149,7 +149,7 @@ export function LibraryOrganizer() {
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <button
           onClick={() => previewMutation.mutate()}
           disabled={previewMutation.isPending || organizeMutation.isPending}

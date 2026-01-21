@@ -306,7 +306,7 @@ export function SpotifySettings() {
               </p>
             )}
 
-            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-center text-xs">
               <div className="bg-zinc-700/50 rounded p-2">
                 <div className="text-green-400 font-medium">{syncStatus.progress.new_favorites}</div>
                 <div className="text-zinc-500">New</div>
@@ -342,7 +342,7 @@ export function SpotifySettings() {
       {status.connected && status.stats && (
         <div className="bg-zinc-800/50 rounded-lg p-6">
           <h4 className="text-sm font-medium text-zinc-400 mb-4">Sync Statistics</h4>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-white">{status.stats.total_favorites}</div>
               <div className="text-xs text-zinc-500 mt-1">Total Favorites</div>

@@ -531,6 +531,8 @@ class ImportPreviewService:
             "file_size_bytes": audio_path.stat().st_size,
             "sample_rate": file_metadata.get("sample_rate"),
             "bit_depth": file_metadata.get("bit_depth"),
+            "bitrate": file_metadata.get("bitrate"),
+            "bitrate_mode": file_metadata.get("bitrate_mode"),
         }
 
 
@@ -582,12 +584,18 @@ class ImportExecuteService:
         imported_files = []
         errors = []
         imported_dirs: set[Path] = set()  # Track unique album directories for scanning
+        replaced_tracks: list[dict[str, Any]] = []  # Tracks that replaced existing ones
 
         # Create lookup from original session tracks
         session_tracks = {t["relative_path"]: t for t in session["tracks"]}
 
         for track in tracks:
             try:
+                # Check action - skip tracks with action="skip"
+                action = track.get("action", "import")
+                if action == "skip":
+                    continue
+
                 relative_path = track.get("relative_path") or track.get("filename")
                 source_path = temp_dir / relative_path
 
@@ -675,6 +683,13 @@ class ImportExecuteService:
                 imported_files.append(str(dest_path.relative_to(self.library_path)))
                 imported_dirs.add(dest_dir)
 
+                # Track replacement info if this is replacing an existing track
+                if action == "replace" and track.get("replace_track_id"):
+                    replaced_tracks.append({
+                        "track_id": track["replace_track_id"],
+                        "new_file_path": str(dest_path),
+                    })
+
             except Exception as e:
                 errors.append(f"Failed to import {track.get('filename', 'unknown')}: {str(e)}")
                 logger.error(f"Import error: {e}")
@@ -700,6 +715,7 @@ class ImportExecuteService:
             "base_path": str(base_dest.relative_to(self.library_path)),
             "scan_paths": scan_paths,  # Specific directories to scan
             "queue_analysis": queue_analysis,
+            "replaced_tracks": replaced_tracks,  # Tracks that replaced existing ones
         }
 
 

@@ -11,7 +11,22 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  Minus,
+  RefreshCw,
 } from 'lucide-react';
+
+// Quality info from backend
+interface QualityInfo {
+  format_tier: number;
+  format_tier_name: string;
+  bitrate: number | null;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  is_lossless: boolean;
+  bitrate_mode: string | null;
+}
 
 // Types matching backend
 interface TrackPreview {
@@ -25,9 +40,18 @@ interface TrackPreview {
   format: string;
   duration_seconds: number | null;
   file_size_bytes: number;
+  sample_rate: number | null;
+  bit_depth: number | null;
+  bitrate: number | null;
+  bitrate_mode: string | null;
   // Duplicate detection
   duplicate_of: string | null;
   duplicate_info: string | null;
+  // Quality comparison (for duplicates)
+  trump_status: 'trumps' | 'trumped_by' | 'equal' | null;
+  trump_reason: string | null;
+  incoming_quality: QualityInfo | null;
+  existing_quality: QualityInfo | null;
 }
 
 interface PreviewResponse {
@@ -53,6 +77,8 @@ interface EditableTrack extends TrackPreview {
   duplicate_info: string | null;
   // Track which fields have been manually edited
   editedFields: Set<'artist' | 'album' | 'title' | 'track_num' | 'year'>;
+  // Quality-based replacement action
+  action: 'import' | 'replace' | 'skip';
 }
 
 interface ImportModalProps {
@@ -80,6 +106,31 @@ function formatDuration(seconds: number | null): string {
   return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
+function formatQuality(quality: QualityInfo | null): string {
+  if (!quality) return 'Unknown';
+
+  if (quality.is_lossless) {
+    const parts: string[] = ['FLAC'];
+    if (quality.bit_depth) {
+      parts.push(`${quality.bit_depth}-bit`);
+    }
+    if (quality.sample_rate) {
+      const srKhz = quality.sample_rate / 1000;
+      parts.push(`${srKhz === Math.floor(srKhz) ? srKhz : srKhz.toFixed(1)}kHz`);
+    }
+    return parts.join(' ');
+  } else {
+    const parts: string[] = [];
+    if (quality.bitrate) {
+      parts.push(`${quality.bitrate}kbps`);
+    }
+    if (quality.bitrate_mode) {
+      parts.push(quality.bitrate_mode);
+    }
+    return parts.length > 0 ? parts.join(' ') : 'Lossy';
+  }
+}
+
 export function ImportModal({ files, onClose, onImportComplete }: ImportModalProps) {
   const queryClient = useQueryClient();
   const [state, setState] = useState<UploadState>('uploading');
@@ -95,13 +146,13 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
   const [mp3Quality, setMp3Quality] = useState(320);
   const [organization, setOrganization] = useState<OrganizationOption>('organized');
   const [queueAnalysis, setQueueAnalysis] = useState(true);
-  const [skipDuplicates, setSkipDuplicates] = useState(true);
 
   // UI state
   const [expandedTracks, setExpandedTracks] = useState(false);
   // Progress tracking - value is set but not displayed in UI yet
   const [, setImportProgress] = useState(0);
   const [importedCount, setImportedCount] = useState(0);
+  const [replacedCount, setReplacedCount] = useState(0);
   const [importErrors, setImportErrors] = useState<string[]>([]);
 
   // Upload files and get preview
@@ -155,16 +206,33 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
 
       const response = await uploadPromise;
 
-      // Convert to editable tracks
-      const editableTracks: EditableTrack[] = response.tracks.map(t => ({
-        ...t,
-        artist: t.detected_artist || '',
-        album: t.detected_album || '',
-        title: t.detected_title || t.filename,
-        track_num: t.detected_track_num,
-        year: t.detected_year,
-        editedFields: new Set(),
-      }));
+      // Convert to editable tracks with default actions based on quality
+      const editableTracks: EditableTrack[] = response.tracks.map(t => {
+        // Determine default action based on quality comparison
+        let action: 'import' | 'replace' | 'skip' = 'import';
+        if (t.duplicate_of) {
+          if (t.trump_status === 'trumps') {
+            // Incoming is better - default to replace
+            action = 'replace';
+          } else if (t.trump_status === 'trumped_by') {
+            // Existing is better - default to skip
+            action = 'skip';
+          } else {
+            // Equal quality - default to skip
+            action = 'skip';
+          }
+        }
+        return {
+          ...t,
+          artist: t.detected_artist || '',
+          album: t.detected_album || '',
+          title: t.detected_title || t.filename,
+          track_num: t.detected_track_num,
+          year: t.detected_year,
+          editedFields: new Set<'artist' | 'album' | 'title' | 'track_num' | 'year'>(),
+          action,
+        };
+      });
 
       setSessionId(response.session_id);
       setTracks(editableTracks);
@@ -262,6 +330,19 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
     }));
   };
 
+  // Set action for a duplicate track (by index in the full tracks array)
+  const setTrackAction = (duplicateIdx: number, action: 'import' | 'replace' | 'skip') => {
+    // Find the actual track index - duplicateIdx is the index within filtered duplicates
+    const duplicates = tracks.filter((t) => t.duplicate_of);
+    if (duplicateIdx >= duplicates.length) return;
+    const trackToUpdate = duplicates[duplicateIdx];
+    setTracks(prev => prev.map(track =>
+      track.relative_path === trackToUpdate.relative_path
+        ? { ...track, action }
+        : track
+    ));
+  };
+
   // State for bulk edit input values
   const [bulkArtist, setBulkArtist] = useState('');
   const [bulkAlbum, setBulkAlbum] = useState('');
@@ -274,13 +355,11 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
   const executeImport = async () => {
     if (!sessionId) return;
 
-    // Filter out duplicates if skipDuplicates is enabled
-    const tracksToImport = skipDuplicates
-      ? tracks.filter((t) => !t.duplicate_of)
-      : tracks;
+    // Filter out tracks with action="skip"
+    const tracksToImport = tracks.filter((t) => t.action !== 'skip');
 
     if (tracksToImport.length === 0) {
-      setError('All tracks are duplicates and were skipped');
+      setError('All tracks were skipped');
       setState('error');
       return;
     }
@@ -308,6 +387,9 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
             detected_title: t.detected_title,
             detected_track_num: t.detected_track_num,
             detected_year: t.detected_year,
+            // Quality-based replacement
+            action: t.action,
+            replace_track_id: t.action === 'replace' ? t.duplicate_of : null,
           })),
           options: {
             format,
@@ -326,6 +408,7 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
       const result = await response.json();
 
       setImportedCount(result.imported_count);
+      setReplacedCount(result.replaced_count || 0);
       setImportErrors(result.errors || []);
       setImportProgress(100);
       setState('complete');
@@ -357,12 +440,14 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
     return estimatedSizes.original;
   };
 
-  // Get count of tracks that will actually be imported
+  // Get count of tracks that will actually be imported (not skipped)
   const getImportCount = (): number => {
-    if (skipDuplicates) {
-      return tracks.filter((t) => !t.duplicate_of).length;
-    }
-    return tracks.length;
+    return tracks.filter((t) => t.action !== 'skip').length;
+  };
+
+  // Get count of tracks that will replace existing ones
+  const getReplaceCount = (): number => {
+    return tracks.filter((t) => t.action === 'replace').length;
   };
 
   return (
@@ -419,19 +504,117 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                 </span>
               </div>
 
-              {/* Duplicate warning */}
+              {/* Quality-based duplicate panel */}
               {tracks.some((t) => t.duplicate_of) && (
-                <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <div className="text-sm">
-                    <p className="text-amber-200 font-medium">
-                      {tracks.filter((t) => t.duplicate_of).length} track
-                      {tracks.filter((t) => t.duplicate_of).length !== 1 ? 's' : ''} may
-                      already exist in your library
-                    </p>
-                    <p className="text-amber-200/70 text-xs mt-1">
-                      Matching by artist, album, and title
-                    </p>
+                <div className="space-y-3">
+                  {/* Summary badges */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-zinc-400">Duplicates found:</span>
+                    {tracks.filter((t) => t.trump_status === 'trumps').length > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-green-500/20 text-green-400 text-xs font-medium rounded">
+                        <ArrowUp className="w-3 h-3" />
+                        {tracks.filter((t) => t.trump_status === 'trumps').length} upgrade{tracks.filter((t) => t.trump_status === 'trumps').length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {tracks.filter((t) => t.trump_status === 'trumped_by').length > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-red-500/20 text-red-400 text-xs font-medium rounded">
+                        <ArrowDown className="w-3 h-3" />
+                        {tracks.filter((t) => t.trump_status === 'trumped_by').length} downgrade{tracks.filter((t) => t.trump_status === 'trumped_by').length !== 1 ? 's' : ''}
+                      </span>
+                    )}
+                    {tracks.filter((t) => t.trump_status === 'equal').length > 0 && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-zinc-500/20 text-zinc-400 text-xs font-medium rounded">
+                        <Minus className="w-3 h-3" />
+                        {tracks.filter((t) => t.trump_status === 'equal').length} same
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Duplicate tracks with quality comparison */}
+                  <div className="bg-zinc-800/50 rounded-lg border border-zinc-700/50 divide-y divide-zinc-700/50 max-h-48 overflow-y-auto">
+                    {tracks.filter((t) => t.duplicate_of).map((track, idx) => (
+                      <div key={track.relative_path} className="p-3">
+                        <div className="flex items-start gap-3">
+                          {/* Quality indicator */}
+                          <div className="flex-shrink-0 mt-0.5">
+                            {track.trump_status === 'trumps' && (
+                              <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center" title="Better quality">
+                                <ArrowUp className="w-4 h-4 text-green-400" />
+                              </div>
+                            )}
+                            {track.trump_status === 'trumped_by' && (
+                              <div className="w-6 h-6 rounded-full bg-red-500/20 flex items-center justify-center" title="Lower quality">
+                                <ArrowDown className="w-4 h-4 text-red-400" />
+                              </div>
+                            )}
+                            {track.trump_status === 'equal' && (
+                              <div className="w-6 h-6 rounded-full bg-zinc-500/20 flex items-center justify-center" title="Same quality">
+                                <Minus className="w-4 h-4 text-zinc-400" />
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Track info */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-white truncate">
+                              {track.artist || track.detected_artist} - {track.title || track.detected_title}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1 text-xs">
+                              <span className={track.trump_status === 'trumps' ? 'text-green-400' : track.trump_status === 'trumped_by' ? 'text-zinc-400' : 'text-zinc-400'}>
+                                New: {formatQuality(track.incoming_quality)}
+                              </span>
+                              <span className="text-zinc-600">vs</span>
+                              <span className={track.trump_status === 'trumped_by' ? 'text-green-400' : track.trump_status === 'trumps' ? 'text-zinc-400' : 'text-zinc-400'}>
+                                Library: {formatQuality(track.existing_quality)}
+                              </span>
+                            </div>
+                            {track.trump_reason && (
+                              <p className="text-xs text-zinc-500 mt-0.5">{track.trump_reason}</p>
+                            )}
+                          </div>
+
+                          {/* Action buttons */}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => setTrackAction(idx, 'skip')}
+                              className={`px-2 py-1 text-xs rounded transition-colors ${
+                                track.action === 'skip'
+                                  ? 'bg-zinc-600 text-white'
+                                  : 'bg-zinc-700/50 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                              }`}
+                            >
+                              Skip
+                            </button>
+                            {track.trump_status === 'trumps' && (
+                              <button
+                                onClick={() => setTrackAction(idx, 'replace')}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${
+                                  track.action === 'replace'
+                                    ? 'bg-green-600 text-white'
+                                    : 'bg-green-600/20 text-green-400 hover:bg-green-600/40'
+                                }`}
+                              >
+                                <RefreshCw className="w-3 h-3 inline mr-1" />
+                                Replace
+                              </button>
+                            )}
+                            {track.trump_status !== 'trumps' && (
+                              <button
+                                onClick={() => setTrackAction(idx, 'import')}
+                                className={`px-2 py-1 text-xs rounded transition-colors ${
+                                  track.action === 'import'
+                                    ? 'bg-amber-600 text-white'
+                                    : 'bg-amber-600/20 text-amber-400 hover:bg-amber-600/40'
+                                }`}
+                                title={track.trump_status === 'trumped_by' ? 'Import anyway (not recommended)' : 'Import as duplicate'}
+                              >
+                                Import
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -809,19 +992,6 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
 
               {/* Additional options */}
               <div className="space-y-3">
-                {tracks.some((t) => t.duplicate_of) && (
-                  <label className="flex items-center gap-3">
-                    <input
-                      type="checkbox"
-                      checked={skipDuplicates}
-                      onChange={(e) => setSkipDuplicates(e.target.checked)}
-                      className="rounded text-amber-500"
-                    />
-                    <span className="text-sm text-zinc-300">
-                      Skip tracks that already exist in library
-                    </span>
-                  </label>
-                )}
                 <label className="flex items-center gap-3">
                   <input
                     type="checkbox"
@@ -877,7 +1047,16 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                 Import Complete!
               </h3>
               <p className="text-zinc-400">
-                {importedCount} track{importedCount !== 1 ? 's' : ''} imported successfully
+                {importedCount > 0 && (
+                  <>{importedCount} track{importedCount !== 1 ? 's' : ''} imported</>
+                )}
+                {importedCount > 0 && replacedCount > 0 && ', '}
+                {replacedCount > 0 && (
+                  <span className="text-green-400">
+                    {replacedCount} upgraded
+                  </span>
+                )}
+                {importedCount === 0 && replacedCount === 0 && 'No tracks imported'}
               </p>
               {importErrors.length > 0 && (
                 <div className="mt-4 text-left max-w-md mx-auto">
@@ -924,7 +1103,11 @@ export function ImportModal({ files, onClose, onImportComplete }: ImportModalPro
                 className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Upload className="w-4 h-4" />
-                Import {getImportCount()} track{getImportCount() !== 1 ? 's' : ''}
+                {getReplaceCount() > 0 ? (
+                  <>Import {getImportCount() - getReplaceCount()} + Replace {getReplaceCount()}</>
+                ) : (
+                  <>Import {getImportCount()} track{getImportCount() !== 1 ? 's' : ''}</>
+                )}
               </button>
             </>
           )}

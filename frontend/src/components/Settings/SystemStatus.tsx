@@ -498,7 +498,7 @@ export function SystemStatus() {
       {/* Report Issue Modal */}
       {showReportModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-zinc-900 rounded-xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-xl border border-zinc-700">
+          <div className="bg-zinc-900 rounded-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col shadow-xl border border-zinc-700">
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-700">
               <h3 className="text-lg font-medium text-white">Report Issue</h3>

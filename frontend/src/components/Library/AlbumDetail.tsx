@@ -64,7 +64,7 @@ function OfflineButton({ trackId }: { trackId: string }) {
         e.stopPropagation();
         download();
       }}
-      className="p-1 text-zinc-500 hover:text-white transition-colors opacity-0 group-hover:opacity-100"
+      className="p-1 text-zinc-500 hover:text-white transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
       title="Download for offline"
     >
       <Download className="w-4 h-4" />
@@ -85,7 +85,7 @@ function FavoriteButton({ trackId }: { trackId: string }) {
       className={`p-1 transition-colors ${
         favorited
           ? 'text-pink-500 hover:text-pink-400'
-          : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+          : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
       }`}
       title={favorited ? 'Remove from favorites' : 'Add to favorites'}
     >
@@ -309,79 +309,96 @@ export function AlbumDetail({
   }
 
   return (
-    <div className="space-y-6 pb-6">
-      {/* Header */}
-      <div className="flex items-start gap-4">
+    <div className="space-y-6 pb-6 px-4 md:px-0">
+      {/* Header - stacks vertically on mobile */}
+      <div className="space-y-4">
+        {/* Back button */}
         <button
           onClick={onBack}
-          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors -ml-2"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        {/* Album artwork */}
-        <div className="w-40 h-40 rounded-lg bg-zinc-800 overflow-hidden flex-shrink-0">
-          <AlbumArtwork
-            artist={album.artist}
-            album={album.name}
-            trackId={album.first_track_id}
-            size="full"
-            className="w-full h-full"
-          />
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h2 className="text-2xl font-bold truncate">{album.name}</h2>
-
-          {/* Artist link */}
-          <button
-            onClick={() => onGoToArtist?.(album.artist)}
-            className="text-lg text-zinc-400 hover:text-white hover:underline transition-colors"
-          >
-            {album.artist}
-          </button>
-
-          {/* Stats row */}
-          <div className="flex items-center gap-4 mt-2 text-sm text-zinc-400">
-            {album.year && (
-              <button
-                onClick={() => onGoToYear?.(album.year!)}
-                className="flex items-center gap-1 hover:text-white hover:underline transition-colors"
-              >
-                {album.year}
-              </button>
-            )}
-            <span className="flex items-center gap-1">
-              <Music className="w-4 h-4" />
-              {album.track_count} tracks
-            </span>
-            <span className="flex items-center gap-1">
-              <Clock className="w-4 h-4" />
-              {formatTotalDuration(album.total_duration_seconds)}
-            </span>
+        {/* Album info row - horizontal on desktop, adapts on mobile */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          {/* Album artwork */}
+          <div className="w-32 h-32 sm:w-40 sm:h-40 rounded-lg bg-zinc-800 overflow-hidden flex-shrink-0 mx-auto sm:mx-0">
+            <AlbumArtwork
+              artist={album.artist}
+              album={album.name}
+              trackId={album.first_track_id}
+              size="full"
+              className="w-full h-full"
+            />
           </div>
 
-          {/* Genre */}
-          {album.genre && (
-            <div className="mt-2">
-              <button
-                onClick={() => onGoToGenre?.(album.genre!)}
-                className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
-              >
-                {album.genre}
-              </button>
+          <div className="flex-1 min-w-0 text-center sm:text-left">
+            <h2 className="text-xl sm:text-2xl font-bold">{album.name}</h2>
+
+            {/* Artist link */}
+            <button
+              onClick={() => onGoToArtist?.(album.artist)}
+              className="text-base sm:text-lg text-zinc-400 hover:text-white hover:underline transition-colors"
+            >
+              {album.artist}
+            </button>
+
+            {/* Stats row - wraps on mobile */}
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-4 gap-y-1 mt-2 text-sm text-zinc-400">
+              {album.year && (
+                <button
+                  onClick={() => onGoToYear?.(album.year!)}
+                  className="flex items-center gap-1 hover:text-white hover:underline transition-colors"
+                >
+                  {album.year}
+                </button>
+              )}
+              <span className="flex items-center gap-1">
+                <Music className="w-4 h-4" />
+                {album.track_count} tracks
+              </span>
+              <span className="flex items-center gap-1">
+                <Clock className="w-4 h-4" />
+                {formatTotalDuration(album.total_duration_seconds)}
+              </span>
             </div>
-          )}
+
+            {/* Genre */}
+            {album.genre && (
+              <div className="mt-2">
+                <button
+                  onClick={() => onGoToGenre?.(album.genre!)}
+                  className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
+                >
+                  {album.genre}
+                </button>
+              </div>
+            )}
+
+            {/* Desktop actions */}
+            <div className="hidden sm:flex items-center gap-2 mt-3">
+              <button
+                onClick={handlePlayAll}
+                disabled={album.tracks.length === 0}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-full transition-colors"
+              >
+                <Play className="w-4 h-4" fill="currentColor" />
+                Play
+              </button>
+              <AlbumOfflineButton tracks={album.tracks} />
+            </div>
+          </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
+        {/* Mobile-only actions row */}
+        <div className="flex sm:hidden items-center justify-center gap-3">
           <button
             onClick={handlePlayAll}
             disabled={album.tracks.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-full transition-colors"
+            className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-full transition-colors"
           >
-            <Play className="w-4 h-4" fill="currentColor" />
+            <Play className="w-5 h-5" fill="currentColor" />
             Play
           </button>
           <AlbumOfflineButton tracks={album.tracks} />

@@ -84,7 +84,7 @@ export function SelectionToolbar({
                   value={playlistName}
                   onChange={(e) => setPlaylistName(e.target.value)}
                   placeholder="Playlist name..."
-                  className="flex-1 px-2 py-1.5 text-sm bg-zinc-700 border border-zinc-600 rounded focus:outline-none focus:border-purple-500"
+                  className="flex-1 px-2 py-1.5 text-base bg-zinc-700 border border-zinc-600 rounded focus:outline-none focus:border-purple-500"
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleCreatePlaylist();

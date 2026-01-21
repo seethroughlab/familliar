@@ -140,8 +140,8 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 bg-gradient-to-b from-black/80 to-transparent">
+      {/* Header - includes safe area padding for notch */}
+      <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-4 pt-safe bg-gradient-to-b from-black/80 to-transparent">
         <button
           onClick={onClose}
           className="p-2 hover:bg-white/10 rounded-full transition-colors"
@@ -374,14 +374,14 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
         </div>
       </div>
 
-      {/* Bottom controls */}
-      <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black via-black/95 to-transparent p-6 pt-16">
+      {/* Bottom controls - includes safe area padding for home indicator */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 bg-gradient-to-t from-black via-black/95 to-transparent p-4 pt-8 sm:p-6 sm:pt-16 pb-safe">
         {/* Track info - right-click for context menu */}
         <div
           className="text-center mb-6 cursor-context-menu"
           onContextMenu={handleContextMenu}
         >
-          <h2 className="text-2xl font-bold truncate">{currentTrack.title || 'Unknown'}</h2>
+          <h2 className="text-xl sm:text-2xl font-bold truncate">{currentTrack.title || 'Unknown'}</h2>
           <p className="text-lg text-zinc-400">{currentTrack.artist || 'Unknown'}</p>
           <p className="text-sm text-zinc-500">{currentTrack.album || ''}</p>
         </div>
@@ -478,7 +478,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             step="0.01"
             value={volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
-            className="w-32 accent-white"
+            className="w-24 sm:w-32 accent-white"
             aria-label="Volume"
           />
         </div>

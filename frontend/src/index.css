@@ -31,13 +31,17 @@
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for iOS */
   background-color: var(--bg-primary);
   color: var(--text-primary);
   transition: background-color 0.2s ease, color 0.2s ease;
+  /* Prevent overscroll/bounce on iOS */
+  overscroll-behavior: none;
 }
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for iOS */
   display: flex;
   flex-direction: column;
 }
@@ -58,12 +62,48 @@ body {
   animation: slide-up 0.3s ease-out;
 }
 
-/* Safe area insets for iOS */
+/* Safe area insets for iOS notch/home indicator */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe {
     padding-bottom: env(safe-area-inset-bottom);
   }
   .mb-safe {
     margin-bottom: env(safe-area-inset-bottom);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .mt-safe {
+    margin-top: env(safe-area-inset-top);
+  }
+  /* Combined safe padding for fixed bottom elements (like PlayerBar) */
+  .pb-safe-bottom {
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+
+/* iOS PWA standalone mode adjustments */
+@media all and (display-mode: standalone) {
+  /* Ensure proper height in standalone mode */
+  body, #root {
+    height: 100%;
+    min-height: -webkit-fill-available;
+  }
+}
+
+/* Mobile-specific fixes */
+@media (max-width: 768px) {
+  /* Prevent text selection on interactive elements */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Minimum touch target size */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
   }
 }

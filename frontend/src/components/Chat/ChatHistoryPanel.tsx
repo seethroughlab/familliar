@@ -173,7 +173,7 @@ export function ChatHistoryPanel({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations..."
-            className="w-full pl-8 pr-3 py-1.5 text-sm bg-zinc-800 border border-zinc-700 rounded-md focus:outline-none focus:border-purple-500"
+            className="w-full pl-8 pr-3 py-1.5 text-base bg-zinc-800 border border-zinc-700 rounded-md focus:outline-none focus:border-purple-500"
           />
           {searchQuery && (
             <button
@@ -248,7 +248,7 @@ export function ChatHistoryPanel({
                               onKeyDown={handleKeyDown}
                               onBlur={saveEdit}
                               onClick={(e) => e.stopPropagation()}
-                              className="flex-1 px-1.5 py-0.5 text-sm bg-zinc-700 border border-zinc-600 rounded focus:outline-none focus:border-purple-500"
+                              className="flex-1 px-1.5 py-0.5 text-base bg-zinc-700 border border-zinc-600 rounded focus:outline-none focus:border-purple-500"
                             />
                             <button
                               onClick={(e) => {
@@ -273,7 +273,7 @@ export function ChatHistoryPanel({
                         </p>
                       </div>
                       {editingId !== session.id && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={(e) => startEditing(session, e)}
                             className="p-1 text-zinc-500 hover:text-white hover:bg-zinc-700 rounded transition-colors"

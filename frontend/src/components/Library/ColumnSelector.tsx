@@ -67,7 +67,7 @@ export function ColumnSelector() {
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute right-0 top-full mt-2 w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-2"
+          className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-56 max-w-56 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 py-2"
         >
           {/* Basic columns section */}
           <div className="px-3 py-1.5 text-xs font-medium text-zinc-500 uppercase tracking-wider">

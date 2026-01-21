@@ -300,7 +300,7 @@ export function MissingTracksPanel() {
             onChange={(e) => setSearchPath(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleBatchRelocate()}
             placeholder="/path/to/search"
-            className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-base font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <button
             onClick={handleBatchRelocate}
@@ -376,7 +376,7 @@ export function MissingTracksPanel() {
                       onChange={(e) => setNewPath(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleLocateTrack(track.id)}
                       placeholder="/new/path/to/file"
-                      className="w-48 px-2 py-1 bg-zinc-800 border border-zinc-600 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="w-48 px-2 py-1 bg-zinc-800 border border-zinc-600 rounded text-base font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
                       autoFocus
                     />
                     <button

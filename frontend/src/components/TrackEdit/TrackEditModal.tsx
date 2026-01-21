@@ -166,7 +166,7 @@ export function TrackEditModal() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="bg-zinc-900 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col border border-zinc-700">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-700">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-zinc-700">
           <div className="flex items-center gap-3">
             <Music className="w-5 h-5 text-purple-400" />
             <h2 className="text-lg font-semibold text-white">
@@ -200,7 +200,7 @@ export function TrackEditModal() {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-3 sm:px-6 sm:py-4">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
@@ -265,7 +265,7 @@ export function TrackEditModal() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-700">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-t border-zinc-700">
           <label className="flex items-center gap-2 text-sm text-zinc-400">
             <input
               type="checkbox"

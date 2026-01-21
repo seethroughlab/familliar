@@ -137,7 +137,7 @@ export function InstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-20 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up">
+    <div className="fixed bottom-24 left-4 right-4 md:left-auto md:right-4 md:w-96 z-50 animate-slide-up mb-safe">
       <div className="bg-zinc-800 border border-zinc-700 rounded-xl shadow-xl p-4">
         <div className="flex items-start gap-3">
           <div className={`p-2 rounded-lg shrink-0 ${

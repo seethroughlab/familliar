@@ -83,7 +83,7 @@ export function VisualizerPicker() {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-64 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
+        <div className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-64 max-w-64 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
           <div className="p-2 border-b border-zinc-700">
             <span className="text-xs text-zinc-500 uppercase tracking-wide">
               Choose Visualizer

@@ -320,47 +320,50 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 px-4 md:px-0">
       {/* Header */}
-      <div className="flex items-start gap-4">
+      <div className="space-y-4">
+        {/* Back button row */}
         <button
           onClick={onBack}
-          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors -ml-2"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
 
-        <div className="flex-1">
+        {/* Playlist info */}
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             {playlist.is_auto_generated && (
-              <Sparkles className="w-5 h-5 text-purple-400" />
+              <Sparkles className="w-5 h-5 text-purple-400 flex-shrink-0" />
             )}
-            <h2 className="text-xl font-bold">{playlist.name}</h2>
+            <h2 className="text-xl font-bold truncate">{playlist.name}</h2>
           </div>
 
           {playlist.description && (
             <p className="text-sm text-zinc-400 mt-1">{playlist.description}</p>
           )}
 
-          <div className="flex items-center gap-4 mt-2 text-sm text-zinc-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-zinc-500">
             <span>{playlist.tracks.length} tracks</span>
             <span className="flex items-center gap-1">
               <Clock className="w-4 h-4" />
               {Math.floor(totalDuration / 60)} min
             </span>
             {playlist.is_auto_generated && playlist.generation_prompt && (
-              <span className="text-purple-400/70 truncate max-w-xs">
+              <span className="text-purple-400/70 truncate max-w-full sm:max-w-xs">
                 "{playlist.generation_prompt}"
               </span>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Action buttons */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <button
             onClick={() => handlePlay()}
             disabled={playlist.tracks.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
           >
             <Play className="w-4 h-4" fill="currentColor" />
             Play
@@ -369,7 +372,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
           <button
             onClick={handleDownloadPlaylist}
             disabled={playlist.tracks.length === 0 || isDownloading || allTracksOffline}
-            className="flex items-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
             title={allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
           >
             {isDownloading ? (
@@ -528,7 +531,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                 className={`p-1 transition-colors ${
                   isFavorite(track.id)
                     ? 'text-pink-500 hover:text-pink-400'
-                    : 'text-zinc-500 hover:text-pink-400 opacity-0 group-hover:opacity-100'
+                    : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
                 }`}
                 title={isFavorite(track.id) ? 'Remove from favorites' : 'Add to favorites'}
               >

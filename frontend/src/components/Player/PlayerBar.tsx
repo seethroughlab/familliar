@@ -113,20 +113,20 @@ export function PlayerBar({
 
   if (!currentTrack) {
     return (
-      <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 z-20 flex items-center justify-center text-zinc-500">
+      <div className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 z-20 flex items-center justify-center text-zinc-500 h-20 pb-safe-bottom">
         No track selected
       </div>
     );
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 h-20 bg-zinc-900 border-t border-zinc-800 z-20">
-      <div className="h-full max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
+    <div className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 z-20 pb-safe-bottom">
+      <div className="h-20 max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
         {/* Track info - clickable to expand, right-click for context menu */}
         <button
           onClick={onExpandClick}
           onContextMenu={handleContextMenu}
-          className="flex items-center gap-3 w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
+          className="flex items-center gap-3 w-40 sm:w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
           aria-label="Expand player"
         >
           <AlbumArt trackId={currentTrack.id} />
@@ -218,8 +218,8 @@ export function PlayerBar({
 
         {/* Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready */}
 
-        {/* Volume */}
-        <div className="flex items-center gap-2 w-32">
+        {/* Volume - hidden on mobile */}
+        <div className="hidden sm:flex items-center gap-2 w-32">
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 1)}
             className="p-2 hover:bg-zinc-800 rounded-full transition-colors"

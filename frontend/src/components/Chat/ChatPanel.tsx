@@ -409,7 +409,7 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
             className="absolute inset-0 bg-black/30 z-10"
             onClick={() => setShowSessions(false)}
           />
-          <div className="absolute inset-y-0 left-0 w-72 z-20 shadow-xl">
+          <div className="absolute inset-y-0 left-0 w-[calc(100vw-2rem)] sm:w-72 max-w-72 z-20 shadow-xl">
             <ChatHistoryPanel
               sessions={sessions}
               currentSessionId={currentSession?.id || null}
@@ -524,7 +524,7 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask Familiar..."
               disabled={isLoading}
-              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-sm placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50"
+              className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-base placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50"
             />
             <button
               type="submit"

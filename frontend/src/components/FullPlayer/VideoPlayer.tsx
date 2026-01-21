@@ -134,7 +134,7 @@ export function VideoPlayer({ trackId }: VideoPlayerProps) {
       <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
         <Loader2 className="w-12 h-12 animate-spin text-green-500 mb-4" />
         <p className="text-white text-lg">Downloading video...</p>
-        <div className="w-64 h-2 bg-zinc-700 rounded-full mt-4 overflow-hidden">
+        <div className="w-48 sm:w-64 h-2 bg-zinc-700 rounded-full mt-4 overflow-hidden">
           <div
             className="h-full bg-green-500 transition-all duration-300"
             style={{ width: `${status.progress || 0}%` }}
@@ -165,7 +165,7 @@ export function VideoPlayer({ trackId }: VideoPlayerProps) {
   // Search results view
   if (showSearch) {
     return (
-      <div className="absolute inset-0 bg-zinc-900 overflow-auto p-6">
+      <div className="absolute inset-0 bg-zinc-900 overflow-auto p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           <h3 className="text-xl font-bold mb-4">Select a music video</h3>
 

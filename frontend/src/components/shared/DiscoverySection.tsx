@@ -199,7 +199,7 @@ export function DiscoverySection({
               className={`absolute inset-0 flex items-center justify-center rounded ${
                 itemType === 'artist' ? 'rounded-full' : ''
               } bg-black/60 transition-opacity ${
-                isCurrentlyPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                isCurrentlyPlaying ? 'opacity-100' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
               }`}
             >
               {isCurrentlyPlaying ? (

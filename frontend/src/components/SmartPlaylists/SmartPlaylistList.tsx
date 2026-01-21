@@ -140,7 +140,7 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
               <button
                 onClick={() => handlePlay(playlist.id)}
                 disabled={playMutation.isPending}
-                className="p-2 bg-green-600 hover:bg-green-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                className="p-2 bg-green-600 hover:bg-green-500 rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity disabled:opacity-50"
               >
                 {playMutation.isPending ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -172,7 +172,7 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
               <div className="relative">
                 <button
                   onClick={() => setMenuOpen(menuOpen === playlist.id ? null : playlist.id)}
-                  className="p-1 hover:bg-zinc-700 rounded-md opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="p-1 hover:bg-zinc-700 rounded-md opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 >
                   <MoreVertical className="w-5 h-5 text-zinc-400" />
                 </button>

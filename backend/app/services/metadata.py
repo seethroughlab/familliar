@@ -35,6 +35,7 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
         "sample_rate": None,
         "bit_depth": None,
         "bitrate": None,
+        "bitrate_mode": None,  # "CBR", "VBR", or None
         "format": None,
         # Extended metadata
         "composer": None,
@@ -72,6 +73,8 @@ def extract_metadata(file_path: Path) -> dict[str, Any]:
         # Extract tags based on format
         if suffix == ".mp3":
             metadata.update(_extract_id3_tags(file_path))
+            # Extract bitrate mode for MP3
+            metadata.update(_extract_mp3_bitrate_mode(file_path))
         elif suffix == ".flac":
             metadata.update(_extract_flac_tags(file_path))
         elif suffix in {".m4a", ".aac", ".mp4"}:
@@ -164,6 +167,28 @@ def _extract_id3_tags(file_path: Path) -> dict[str, Any]:
         pass
 
     return tags
+
+
+def _extract_mp3_bitrate_mode(file_path: Path) -> dict[str, Any]:
+    """Extract bitrate mode (CBR/VBR) from MP3 files."""
+    result: dict[str, Any] = {}
+
+    try:
+        from mutagen.mp3 import MP3, BitrateMode
+
+        mp3 = MP3(file_path)
+        if mp3.info:
+            if mp3.info.bitrate_mode == BitrateMode.CBR:
+                result["bitrate_mode"] = "CBR"
+            elif mp3.info.bitrate_mode == BitrateMode.VBR:
+                result["bitrate_mode"] = "VBR"
+            elif mp3.info.bitrate_mode == BitrateMode.ABR:
+                result["bitrate_mode"] = "VBR"  # Treat ABR as VBR for quality purposes
+            # BitrateMode.UNKNOWN leaves bitrate_mode as None
+    except Exception as e:
+        logger.warning(f"Error extracting MP3 bitrate mode: {e}")
+
+    return result
 
 
 def _extract_flac_tags(file_path: Path) -> dict[str, Any]:

@@ -520,6 +520,7 @@ class LibraryScanner:
             "sample_rate": metadata.get("sample_rate"),
             "bit_depth": metadata.get("bit_depth"),
             "bitrate": metadata.get("bitrate"),
+            "bitrate_mode": metadata.get("bitrate_mode"),
             "format": metadata.get("format"),
         }
 
@@ -542,6 +543,7 @@ class LibraryScanner:
                 "sample_rate": insert_stmt.excluded.sample_rate,
                 "bit_depth": insert_stmt.excluded.bit_depth,
                 "bitrate": insert_stmt.excluded.bitrate,
+                "bitrate_mode": insert_stmt.excluded.bitrate_mode,
                 "format": insert_stmt.excluded.format,
             },
         ).returning(Track)
@@ -650,6 +652,7 @@ class LibraryScanner:
         track.sample_rate = metadata.get("sample_rate")
         track.bit_depth = metadata.get("bit_depth")
         track.bitrate = metadata.get("bitrate")
+        track.bitrate_mode = metadata.get("bitrate_mode")
         track.format = metadata.get("format")
 
         # Only reset analysis status if requested (when file content changed)

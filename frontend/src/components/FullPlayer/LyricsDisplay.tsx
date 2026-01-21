@@ -86,7 +86,7 @@ export function LyricsDisplay({ trackId }: LyricsDisplayProps) {
     return (
       <div
         ref={containerRef}
-        className="absolute inset-0 overflow-auto bg-gradient-to-b from-zinc-900 to-black px-8 py-32"
+        className="absolute inset-0 overflow-auto bg-gradient-to-b from-zinc-900 to-black px-4 py-16 sm:px-8 sm:py-32"
       >
         <div className="max-w-2xl mx-auto space-y-6">
           {lyrics.lines.map((line, index) => (
@@ -95,10 +95,10 @@ export function LyricsDisplay({ trackId }: LyricsDisplayProps) {
               ref={index === activeLineIndex ? activeLineRef : null}
               className={`text-center transition-all duration-300 ${
                 index === activeLineIndex
-                  ? 'text-white text-3xl font-bold scale-105'
+                  ? 'text-white text-xl sm:text-3xl font-bold scale-105'
                   : index < activeLineIndex
-                  ? 'text-zinc-500 text-xl'
-                  : 'text-zinc-600 text-xl'
+                  ? 'text-zinc-500 text-base sm:text-xl'
+                  : 'text-zinc-600 text-base sm:text-xl'
               }`}
             >
               {line.text}
@@ -111,7 +111,7 @@ export function LyricsDisplay({ trackId }: LyricsDisplayProps) {
 
   // Plain lyrics without timestamps
   return (
-    <div className="absolute inset-0 overflow-auto bg-gradient-to-b from-zinc-900 to-black px-8 py-16">
+    <div className="absolute inset-0 overflow-auto bg-gradient-to-b from-zinc-900 to-black px-4 py-8 sm:px-8 sm:py-16">
       <div className="max-w-2xl mx-auto">
         <div className="text-center space-y-4">
           {lyrics.lines.map((line, index) => (

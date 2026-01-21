@@ -212,6 +212,7 @@ class Track(Base):
     sample_rate: Mapped[int | None] = mapped_column(Integer)
     bit_depth: Mapped[int | None] = mapped_column(Integer)
     bitrate: Mapped[int | None] = mapped_column(Integer)
+    bitrate_mode: Mapped[str | None] = mapped_column(String(10))  # "CBR", "VBR", or None
     format: Mapped[str | None] = mapped_column(String(10))
 
     # External IDs (from MusicBrainz, etc.)

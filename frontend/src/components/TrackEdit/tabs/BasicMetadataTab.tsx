@@ -70,7 +70,7 @@ export function BasicMetadataTab({ formData, onChange, isBulkEdit, trackId }: Pr
       </div>
 
       {/* Track & Disc Numbers */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">Track Number</label>
           <input
@@ -96,7 +96,7 @@ export function BasicMetadataTab({ formData, onChange, isBulkEdit, trackId }: Pr
       </div>
 
       {/* Year & Genre */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-zinc-300 mb-1">Year</label>
           <input
