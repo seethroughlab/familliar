@@ -1,0 +1,553 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Play, Pause, Loader2, Music, Zap, Clock, Download, Check, WifiOff, Heart, RefreshCw } from 'lucide-react';
+import { smartPlaylistsApi, tracksApi } from '../../api/client';
+import type { SmartPlaylist } from '../../api/client';
+import { usePlayerStore } from '../../stores/playerStore';
+import { useSelectionStore } from '../../stores/selectionStore';
+import { useFavorites } from '../../hooks/useFavorites';
+import * as offlineService from '../../services/offlineService';
+import { TrackContextMenu } from '../Library/TrackContextMenu';
+import type { ContextMenuState } from '../Library/types';
+import { initialContextMenuState } from '../Library/types';
+import type { Track } from '../../types';
+import { DiscoveryPanel, useTrackDiscovery, type DiscoveryItem } from '../Discovery';
+
+// Discovery section component
+function SmartPlaylistDiscoverySection({
+  sections,
+  hasDiscovery,
+  loading,
+  onGoToArtist,
+  onPlayTrack,
+}: {
+  sections: Array<{
+    id: string;
+    title: string;
+    entityType: 'track' | 'album' | 'artist';
+    items: DiscoveryItem[];
+    layout?: 'list' | 'grid';
+  }>;
+  hasDiscovery: boolean;
+  loading: boolean;
+  onGoToArtist: (artistName: string) => void;
+  onPlayTrack: (item: DiscoveryItem) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="mt-6 border-t border-zinc-800 pt-4">
+        <DiscoveryPanel sections={[]} loading={true} />
+      </div>
+    );
+  }
+
+  if (!hasDiscovery) return null;
+
+  const handleItemClick = (item: DiscoveryItem) => {
+    if (item.entityType === 'artist' && item.inLibrary) {
+      onGoToArtist(item.name);
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-zinc-800 pt-4">
+      <DiscoveryPanel
+        title="Discover More"
+        sections={sections}
+        collapsible
+        defaultExpanded
+        onItemClick={handleItemClick}
+        onItemPlay={onPlayTrack}
+      />
+    </div>
+  );
+}
+
+interface Props {
+  playlist: SmartPlaylist;
+  onBack: () => void;
+}
+
+export function SmartPlaylistDetail({ playlist, onBack }: Props) {
+  const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
+  const { isFavorite, toggle: toggleFavorite } = useFavorites();
+  const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
+  const [, setSearchParams] = useSearchParams();
+
+  // Fetch tracks for this smart playlist
+  const { data: tracksResponse, isLoading: tracksLoading, refetch } = useQuery({
+    queryKey: ['smart-playlist-tracks', playlist.id],
+    queryFn: () => smartPlaylistsApi.getTracks(playlist.id, 500),
+  });
+
+  const tracks = tracksResponse?.tracks || [];
+
+  // Fetch discovery data based on the first track in the playlist
+  const firstTrackId = tracks[0]?.id;
+  const { data: discoverData, isLoading: discoverLoading } = useQuery({
+    queryKey: ['track-discover', firstTrackId],
+    queryFn: () => tracksApi.getDiscover(firstTrackId!, 6, 8),
+    staleTime: 5 * 60 * 1000,
+    enabled: !!firstTrackId,
+  });
+
+  // Transform discovery data
+  const { sections: discoverySections, hasDiscovery } = useTrackDiscovery({
+    data: discoverData ? {
+      similar_tracks: discoverData.similar_tracks,
+      similar_artists: discoverData.similar_artists,
+    } : undefined,
+  });
+
+  // Context menu handlers
+  const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setContextMenu({
+      isOpen: true,
+      track,
+      position: { x: e.clientX, y: e.clientY },
+    });
+  }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(initialContextMenuState);
+  }, []);
+
+  // Check which tracks are already offline
+  useEffect(() => {
+    const checkOfflineStatus = async () => {
+      const ids = await offlineService.getOfflineTrackIds();
+      setOfflineTrackIds(new Set(ids));
+    };
+    checkOfflineStatus();
+  }, []);
+
+  const handleDownloadPlaylist = async () => {
+    if (tracks.length === 0) return;
+
+    // Get tracks that need to be downloaded
+    const tracksToDownload = tracks.filter(
+      (t) => !offlineTrackIds.has(t.id)
+    );
+    if (tracksToDownload.length === 0) return;
+
+    setIsDownloading(true);
+    setDownloadProgress({ current: 0, total: tracksToDownload.length });
+
+    try {
+      await offlineService.downloadTracksForOffline(
+        tracksToDownload.map((t) => t.id),
+        (progress) => {
+          setDownloadProgress({
+            current: progress.currentTrack,
+            total: progress.totalTracks,
+          });
+          // Update offline IDs as tracks complete
+          if (progress.currentTrackProgress === 100) {
+            const completedTrack = tracksToDownload[progress.currentTrack - 1];
+            if (completedTrack) {
+              setOfflineTrackIds((prev) => new Set([...prev, completedTrack.id]));
+            }
+          }
+        }
+      );
+      // Final update to ensure all are marked
+      const ids = await offlineService.getOfflineTrackIds();
+      setOfflineTrackIds(new Set(ids));
+    } catch (error) {
+      console.error('Failed to download playlist:', error);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  const allTracksOffline = tracks.every(t => offlineTrackIds.has(t.id));
+  const offlineCount = tracks.filter(t => offlineTrackIds.has(t.id)).length;
+
+  const handlePlay = (startIndex = 0) => {
+    if (tracks.length === 0) return;
+
+    // If clicking on the currently playing track, toggle play/pause
+    const clickedTrack = tracks[startIndex];
+    if (clickedTrack && currentTrack?.id === clickedTrack.id) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
+
+    const queueTracks = tracks.map(t => ({
+      id: t.id,
+      file_path: '',
+      title: t.title || 'Unknown',
+      artist: t.artist || 'Unknown',
+      album: t.album || null,
+      album_artist: null,
+      album_type: 'album' as const,
+      track_number: null,
+      disc_number: null,
+      year: t.year || null,
+      genre: t.genre || null,
+      duration_seconds: t.duration_seconds || null,
+      format: null,
+      analysis_version: 0,
+    }));
+    setQueue(queueTracks, startIndex);
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return '--:--';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Format rule for display
+  const formatRule = (rule: { field: string; operator: string; value?: unknown }) => {
+    const fieldLabels: Record<string, string> = {
+      title: 'Title',
+      artist: 'Artist',
+      album: 'Album',
+      album_artist: 'Album Artist',
+      genre: 'Genre',
+      year: 'Year',
+      track_number: 'Track #',
+      duration_seconds: 'Duration',
+      format: 'Format',
+      created_at: 'Added',
+      bpm: 'BPM',
+      energy: 'Energy',
+      valence: 'Mood',
+      danceability: 'Danceability',
+    };
+
+    const operatorLabels: Record<string, string> = {
+      equals: '=',
+      not_equals: '≠',
+      contains: 'contains',
+      greater_than: '>',
+      less_than: '<',
+      within_days: 'within last',
+    };
+
+    const field = fieldLabels[rule.field] || rule.field;
+    const op = operatorLabels[rule.operator] || rule.operator;
+    const value = rule.operator === 'within_days' ? `${rule.value} days` : String(rule.value || '');
+
+    return `${field} ${op} ${value}`;
+  };
+
+  const totalDuration = tracks.reduce(
+    (sum, t) => sum + (t.duration_seconds || 0),
+    0
+  );
+
+  if (tracksLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 px-4 md:px-0">
+      {/* Header */}
+      <div className="space-y-4">
+        {/* Back button row */}
+        <button
+          onClick={onBack}
+          className="p-2 hover:bg-zinc-800 rounded-lg transition-colors -ml-2"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+
+        {/* Playlist info */}
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-yellow-500 flex-shrink-0" />
+            <h2 className="text-xl font-bold truncate">{playlist.name}</h2>
+          </div>
+
+          {playlist.description && (
+            <p className="text-sm text-zinc-400 mt-1">{playlist.description}</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-zinc-500">
+            <span>{tracks.length} tracks</span>
+            <span className="flex items-center gap-1">
+              <Clock className="w-4 h-4" />
+              {Math.floor(totalDuration / 60)} min
+            </span>
+          </div>
+
+          {/* Rules display */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {playlist.rules.map((rule, idx) => (
+              <span
+                key={idx}
+                className="px-2 py-1 bg-zinc-800 text-zinc-400 text-xs rounded-full"
+              >
+                {formatRule(rule)}
+              </span>
+            ))}
+            {playlist.match_mode === 'any' && (
+              <span className="px-2 py-1 bg-yellow-500/20 text-yellow-500 text-xs rounded-full">
+                Match any
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <button
+            onClick={() => handlePlay()}
+            disabled={tracks.length === 0}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
+          >
+            <Play className="w-4 h-4" fill="currentColor" />
+            Play
+          </button>
+
+          <button
+            onClick={() => refetch()}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-full transition-colors"
+            title="Refresh tracks"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+
+          <button
+            onClick={handleDownloadPlaylist}
+            disabled={tracks.length === 0 || isDownloading || allTracksOffline}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
+            title={allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
+          >
+            {isDownloading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span className="text-sm">
+                  {downloadProgress.current}/{downloadProgress.total}
+                </span>
+              </>
+            ) : allTracksOffline ? (
+              <>
+                <Check className="w-4 h-4 text-green-400" />
+                <span>Offline</span>
+              </>
+            ) : (
+              <>
+                <Download className="w-4 h-4" />
+                <span>
+                  {offlineCount > 0 ? `${offlineCount}/${tracks.length}` : 'Download'}
+                </span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Track list */}
+      {tracks.length > 0 ? (
+        <div className="space-y-1">
+          {tracks.map((track, idx) => {
+            // Convert to full Track type for context menu
+            const fullTrack: Track = {
+              id: track.id,
+              file_path: '',
+              title: track.title || null,
+              artist: track.artist || null,
+              album: track.album || null,
+              album_artist: null,
+              album_type: 'album',
+              track_number: null,
+              disc_number: null,
+              year: track.year || null,
+              genre: track.genre || null,
+              duration_seconds: track.duration_seconds || null,
+              format: null,
+              analysis_version: 0,
+            };
+            return (
+              <div
+                key={track.id}
+                onClick={() => handlePlay(idx)}
+                onContextMenu={(e) => handleContextMenu(fullTrack, e)}
+                className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-all ${
+                  currentTrack?.id === track.id ? 'bg-zinc-800/30' : ''
+                }`}
+              >
+                {/* Track number / Play button */}
+                <div className="w-8 text-center">
+                  {currentTrack?.id === track.id && isPlaying ? (
+                    <>
+                      <div className="group-hover:hidden flex justify-center gap-0.5">
+                        <div className="w-0.5 h-3 bg-green-500 animate-pulse" />
+                        <div className="w-0.5 h-3 bg-green-500 animate-pulse [animation-delay:0.2s]" />
+                        <div className="w-0.5 h-3 bg-green-500 animate-pulse [animation-delay:0.4s]" />
+                      </div>
+                      <Pause
+                        className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                        fill="currentColor"
+                      />
+                    </>
+                  ) : currentTrack?.id === track.id ? (
+                    <>
+                      <span className="group-hover:hidden text-sm text-green-500">{idx + 1}</span>
+                      <Play
+                        className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                        fill="currentColor"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span className="group-hover:hidden text-sm text-zinc-500">{idx + 1}</span>
+                      <Play
+                        className="hidden group-hover:block w-4 h-4 mx-auto text-white"
+                        fill="currentColor"
+                      />
+                    </>
+                  )}
+                </div>
+
+                {/* Track info */}
+                <div className="flex-1 min-w-0">
+                  <div className={`font-medium truncate ${currentTrack?.id === track.id ? 'text-green-500' : ''}`}>
+                    {track.title || 'Unknown Title'}
+                  </div>
+                  <div className="text-sm text-zinc-400 truncate">
+                    {track.artist || 'Unknown Artist'}
+                    {track.album && (
+                      <span className="text-zinc-500"> • {track.album}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Favorite button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(track.id);
+                  }}
+                  className={`p-1 transition-colors ${
+                    isFavorite(track.id)
+                      ? 'text-pink-500 hover:text-pink-400'
+                      : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
+                  }`}
+                  title={isFavorite(track.id) ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart className="w-4 h-4" fill={isFavorite(track.id) ? 'currentColor' : 'none'} />
+                </button>
+
+                {/* Offline indicator */}
+                {offlineTrackIds.has(track.id) && (
+                  <span title="Available offline">
+                    <WifiOff className="w-4 h-4 text-green-500" />
+                  </span>
+                )}
+
+                {/* Duration */}
+                <div className="text-sm text-zinc-500">
+                  {formatDuration(track.duration_seconds)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="text-center py-12 text-zinc-500">
+          <Music className="w-12 h-12 mx-auto mb-3 opacity-50" />
+          <p>No tracks match these rules</p>
+        </div>
+      )}
+
+      {/* Discovery section */}
+      {tracks.length > 0 && (
+        <SmartPlaylistDiscoverySection
+          sections={discoverySections}
+          hasDiscovery={hasDiscovery}
+          loading={discoverLoading}
+          onGoToArtist={(artistName) => {
+            setSearchParams({ artistDetail: artistName });
+            window.location.hash = 'library';
+          }}
+          onPlayTrack={(item) => {
+            if (item.id) {
+              if (currentTrack?.id === item.id) {
+                setIsPlaying(!isPlaying);
+                return;
+              }
+              // Play the track
+              setQueue([{
+                id: item.id,
+                file_path: '',
+                title: item.name,
+                artist: item.playbackContext?.artist || item.subtitle || null,
+                album: item.playbackContext?.album || null,
+                album_artist: null,
+                album_type: 'album' as const,
+                track_number: null,
+                disc_number: null,
+                year: null,
+                genre: null,
+                duration_seconds: null,
+                format: null,
+                analysis_version: 0,
+              }]);
+            }
+          }}
+        />
+      )}
+
+      {/* Context menu */}
+      {contextMenu.isOpen && contextMenu.track && (
+        <TrackContextMenu
+          track={contextMenu.track}
+          position={contextMenu.position}
+          isSelected={false}
+          onClose={closeContextMenu}
+          onPlay={() => {
+            const idx = tracks.findIndex(t => t.id === contextMenu.track?.id);
+            if (idx !== -1) handlePlay(idx);
+          }}
+          onQueue={() => {
+            if (contextMenu.track) {
+              addToQueue(contextMenu.track);
+            }
+          }}
+          onGoToArtist={() => {
+            if (contextMenu.track?.artist) {
+              setSearchParams({ artist: contextMenu.track.artist });
+              window.location.hash = 'library';
+            }
+          }}
+          onGoToAlbum={() => {
+            if (contextMenu.track?.artist && contextMenu.track?.album) {
+              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
+              window.location.hash = 'library';
+            }
+          }}
+          onToggleSelect={() => {}}
+          onAddToPlaylist={() => {}}
+          onMakePlaylist={() => {
+            if (contextMenu.track) {
+              const track = contextMenu.track;
+              const message = `Make me a playlist based on "${track.title || 'this track'}" by ${track.artist || 'Unknown Artist'}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+          onEditMetadata={() => {
+            if (contextMenu.track) {
+              useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}

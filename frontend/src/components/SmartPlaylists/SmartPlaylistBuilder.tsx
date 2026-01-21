@@ -98,6 +98,16 @@ export function SmartPlaylistBuilder({ playlist, onClose, onSaved }: Props) {
     return fields?.operators[type as keyof typeof fields.operators] || [];
   };
 
+  const handleFieldChange = (index: number, newField: string) => {
+    const newOperators = getOperatorsForField(newField);
+    const currentRule = rules[index];
+    // Reset operator to first valid one if current operator isn't valid for new field
+    const newOperator = newOperators.includes(currentRule.operator)
+      ? currentRule.operator
+      : newOperators[0] || 'equals';
+    updateRule(index, { field: newField, operator: newOperator, value: '' });
+  };
+
   const allFields = [
     ...(fields?.track_fields || []),
     ...(fields?.analysis_fields || []),
@@ -167,6 +177,7 @@ export function SmartPlaylistBuilder({ playlist, onClose, onSaved }: Props) {
                   fields={allFields}
                   operators={getOperatorsForField(rule.field)}
                   fieldType={getFieldType(rule.field)}
+                  onFieldChange={(field) => handleFieldChange(index, field)}
                   onChange={(updates) => updateRule(index, updates)}
                   onRemove={() => removeRule(index)}
                 />
@@ -257,11 +268,12 @@ interface RuleRowProps {
   fields: Array<{ name: string; description: string }>;
   operators: string[];
   fieldType: string;
+  onFieldChange: (field: string) => void;
   onChange: (updates: Partial<SmartPlaylistRule>) => void;
   onRemove: () => void;
 }
 
-function RuleRow({ rule, fields, operators, fieldType, onChange, onRemove }: RuleRowProps) {
+function RuleRow({ rule, fields, operators, fieldType, onFieldChange, onChange, onRemove }: RuleRowProps) {
   const needsValue = !['is_empty', 'is_not_empty'].includes(rule.operator);
   const isBetween = rule.operator === 'between';
 
@@ -270,7 +282,7 @@ function RuleRow({ rule, fields, operators, fieldType, onChange, onRemove }: Rul
       {/* Field selector */}
       <select
         value={rule.field}
-        onChange={(e) => onChange({ field: e.target.value, value: '' })}
+        onChange={(e) => onFieldChange(e.target.value)}
         className="flex-1 px-2 py-1.5 bg-zinc-700 border border-zinc-600 rounded text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
       >
         {fields.map((f) => (

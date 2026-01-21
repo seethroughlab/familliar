@@ -10,11 +10,11 @@ import type { Playlist, SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { PlaylistDetail } from './PlaylistDetail';
 import { FavoritesDetail } from './FavoritesDetail';
-import { SmartPlaylistList } from '../SmartPlaylists/SmartPlaylistList';
+import { SmartPlaylistList, SmartPlaylistDetail } from '../SmartPlaylists';
 import { NewReleasesView } from '../NewReleases';
 import { useFavorites } from '../../hooks/useFavorites';
 
-type ViewMode = 'list' | 'detail' | 'favorites';
+type ViewMode = 'list' | 'detail' | 'favorites' | 'smart-detail';
 
 interface SelectedPlaylist {
   type: 'static' | 'smart';
@@ -47,6 +47,7 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   const [selectedPlaylist, setSelectedPlaylistState] = useState<SelectedPlaylist | null>(
     urlPlaylistId ? { type: 'static', id: urlPlaylistId } : null
   );
+  const [selectedSmartPlaylist, setSelectedSmartPlaylist] = useState<SmartPlaylist | null>(null);
   const [showAiPlaylists, setShowAiPlaylists] = useState(true);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
 
@@ -144,9 +145,9 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     setSelectedPlaylist({ type: 'static', id: playlist.id });
   };
 
-  const handleSelectSmartPlaylist = (_playlist: SmartPlaylist) => {
-    // Smart playlists use the SmartPlaylistList component directly
-    // Detail view with recommendations is only for AI-generated static playlists
+  const handleSelectSmartPlaylist = (playlist: SmartPlaylist) => {
+    setSelectedSmartPlaylist(playlist);
+    setViewModeState('smart-detail');
   };
 
   const handleBack = () => {
@@ -168,6 +169,19 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   if (viewMode === 'favorites') {
     return (
       <FavoritesDetail onBack={handleBack} />
+    );
+  }
+
+  // Show smart playlist detail view
+  if (viewMode === 'smart-detail' && selectedSmartPlaylist) {
+    return (
+      <SmartPlaylistDetail
+        playlist={selectedSmartPlaylist}
+        onBack={() => {
+          setSelectedSmartPlaylist(null);
+          setViewModeState('list');
+        }}
+      />
     );
   }
 

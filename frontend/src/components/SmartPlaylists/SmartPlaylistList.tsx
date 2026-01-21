@@ -134,11 +134,15 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
           {playlists.map((playlist) => (
             <div
               key={playlist.id}
-              className="group flex items-center gap-3 p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition-colors"
+              onClick={() => onSelectPlaylist?.(playlist)}
+              className="group flex items-center gap-3 p-3 bg-zinc-800/50 hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
             >
               {/* Play button */}
               <button
-                onClick={() => handlePlay(playlist.id)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePlay(playlist.id);
+                }}
                 disabled={playMutation.isPending}
                 className="p-2 bg-green-600 hover:bg-green-500 rounded-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity disabled:opacity-50"
               >
@@ -150,10 +154,7 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
               </button>
 
               {/* Info */}
-              <div
-                className="flex-1 min-w-0 cursor-pointer"
-                onClick={() => onSelectPlaylist?.(playlist)}
-              >
+              <div className="flex-1 min-w-0">
                 <div className="font-medium truncate">{playlist.name}</div>
                 <div className="text-sm text-zinc-400 flex items-center gap-2">
                   <span>{playlist.cached_track_count} tracks</span>
@@ -171,7 +172,10 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
               {/* Menu */}
               <div className="relative">
                 <button
-                  onClick={() => setMenuOpen(menuOpen === playlist.id ? null : playlist.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(menuOpen === playlist.id ? null : playlist.id);
+                  }}
                   className="p-1 hover:bg-zinc-700 rounded-md opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity"
                 >
                   <MoreVertical className="w-5 h-5 text-zinc-400" />

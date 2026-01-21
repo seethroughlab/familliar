@@ -16,6 +16,15 @@ TRACK_FIELDS = {
     "created_at", "album_type",
 }
 
+# Date/timestamp fields that need special handling
+DATE_FIELDS = {"created_at"}
+
+# String fields that support ILIKE operations
+STRING_FIELDS = {"title", "artist", "album", "album_artist", "genre", "format", "album_type"}
+
+# Numeric fields
+NUMERIC_FIELDS = {"year", "track_number", "disc_number", "duration_seconds"}
+
 # Fields that exist in TrackAnalysis.features JSONB
 ANALYSIS_FIELDS = {
     "bpm", "key", "energy", "valence", "danceability",
@@ -162,10 +171,13 @@ class SmartPlaylistService:
         playlist.cached_track_count = count
         playlist.last_refreshed_at = datetime.utcnow()
         await self.db.commit()
+        await self.db.refresh(playlist)
         return count
 
     def _validate_rules(self, rules: list[dict[str, Any]]) -> None:
         """Validate rule structure."""
+        string_operators = {"contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty"}
+
         for rule in rules:
             if "field" not in rule:
                 raise ValueError("Rule missing 'field'")
@@ -182,6 +194,15 @@ class SmartPlaylistService:
             # Validate operator
             if operator not in OPERATORS:
                 raise ValueError(f"Unknown operator: {operator}")
+
+            # Validate operator/field type compatibility
+            if field in DATE_FIELDS and operator != "within_days":
+                raise ValueError(f"Field '{field}' only supports 'within_days' operator, got '{operator}'")
+
+            if operator in string_operators and field not in STRING_FIELDS and field not in {"key"}:
+                # 'key' is a string field in ANALYSIS_FIELDS
+                if field in NUMERIC_FIELDS or field in DATE_FIELDS or field in ANALYSIS_FIELDS:
+                    raise ValueError(f"Cannot use string operator '{operator}' on numeric/date field '{field}'")
 
             # Validate value presence (except for is_empty/is_not_empty)
             if operator not in ("is_empty", "is_not_empty") and "value" not in rule:
@@ -254,6 +275,16 @@ class SmartPlaylistService:
         else:
             return None
 
+        # Check if operator is valid for field type
+        string_operators = {"contains", "not_contains", "starts_with", "ends_with", "is_empty", "is_not_empty"}
+        if operator in string_operators and field not in STRING_FIELDS and field not in ANALYSIS_FIELDS:
+            # Can't use string operators on non-string fields (dates, numbers)
+            return None
+
+        # Date fields only support within_days
+        if field in DATE_FIELDS and operator != "within_days":
+            return None
+
         # Build condition based on operator
         if operator == "equals":
             return column == value
@@ -292,9 +323,14 @@ class SmartPlaylistService:
         elif operator == "is_not_empty":
             return and_(column.isnot(None), column != "")
         elif operator == "within_days":
-            if isinstance(value, int):
-                cutoff = datetime.utcnow() - timedelta(days=value)
-                return column >= cutoff
+            # Value can come as string or int from JSON
+            try:
+                days = int(value) if value is not None else None
+                if days is not None:
+                    cutoff = datetime.utcnow() - timedelta(days=days)
+                    return column >= cutoff
+            except (ValueError, TypeError):
+                pass
             return None
 
         return None
