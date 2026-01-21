@@ -6,13 +6,80 @@ import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
-import { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from '../shared';
+import { DiscoveryPanel, usePlaylistDiscovery, type DiscoveryItem } from '../Discovery';
 import * as offlineService from '../../services/offlineService';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
 import type { Track } from '../../types';
 import type { PlaylistDetail as PlaylistDetailType } from '../../api/client';
+
+// Playlist Discovery Section using unified components
+function PlaylistDiscoverySection({
+  recommendations,
+  loading,
+  onGoToArtist,
+  onPlayItem,
+}: {
+  recommendations: {
+    artists: Array<{
+      name: string;
+      source: string;
+      match_score: number;
+      image_url: string | null;
+      external_url: string | null;
+      local_track_count: number;
+    }>;
+    tracks: Array<{
+      title: string;
+      artist: string;
+      source: string;
+      match_score: number;
+      external_url: string | null;
+      local_track_id: string | null;
+      album: string | null;
+    }>;
+    sources_used: string[];
+  } | undefined;
+  loading: boolean;
+  onGoToArtist: (artistName: string) => void;
+  onPlayItem: (item: DiscoveryItem) => void;
+}) {
+  const { sections, sources, hasDiscovery } = usePlaylistDiscovery({ recommendations });
+
+  if (loading) {
+    return (
+      <div className="mt-6 border-t border-zinc-800 pt-4">
+        <DiscoveryPanel
+          sections={[]}
+          loading={true}
+        />
+      </div>
+    );
+  }
+
+  if (!hasDiscovery) return null;
+
+  const handleItemClick = (item: DiscoveryItem) => {
+    if (item.entityType === 'artist' && item.inLibrary) {
+      onGoToArtist(item.name);
+    }
+  };
+
+  return (
+    <div className="mt-6 border-t border-zinc-800 pt-4">
+      <DiscoveryPanel
+        title="Discover More"
+        sections={sections}
+        sources={sources}
+        collapsible
+        defaultExpanded
+        onItemClick={handleItemClick}
+        onItemPlay={onPlayItem}
+      />
+    </div>
+  );
+}
 
 interface Props {
   playlistId: string;
@@ -152,6 +219,45 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+
+  // Handle playing a discovery item
+  const handlePlayDiscoveryItem = useCallback(async (item: DiscoveryItem) => {
+    if (item.entityType === 'track' && item.id) {
+      // If clicking on the currently playing track, toggle play/pause
+      if (currentTrack?.id === item.id) {
+        setIsPlaying(!isPlaying);
+        return;
+      }
+      // Play the local track
+      setQueue([{
+        id: item.id,
+        file_path: '',
+        title: item.name,
+        artist: item.playbackContext?.artist || item.subtitle || null,
+        album: item.playbackContext?.album || null,
+        album_artist: null,
+        album_type: 'album' as const,
+        track_number: null,
+        disc_number: null,
+        year: null,
+        genre: null,
+        duration_seconds: null,
+        format: null,
+        analysis_version: 0,
+      }]);
+    } else if (item.entityType === 'artist' && item.inLibrary) {
+      // Play tracks by this artist
+      try {
+        const { tracksApi } = await import('../../api/client');
+        const response = await tracksApi.list({ artist: item.name, page_size: 50 });
+        if (response.items.length > 0) {
+          setQueue(response.items, 0);
+        }
+      } catch (error) {
+        console.error('Failed to fetch artist tracks:', error);
+      }
+    }
+  }, [currentTrack?.id, isPlaying, setIsPlaying, setQueue]);
 
   // Drag-to-reorder handlers
   const handleDragStart = useCallback((trackId: string, e: React.DragEvent) => {
@@ -561,114 +667,14 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       )}
 
       {/* Recommendations (only for AI-generated playlists) */}
-      {playlist.is_auto_generated && (() => {
-        // Map artists to DiscoveryItem format
-        const artistItems: DiscoveryItem[] = (recommendations?.artists || []).map((artist) => ({
-          name: artist.name,
-          subtitle: artist.local_track_count > 0
-            ? `${artist.local_track_count} tracks in library`
-            : 'Not in library',
-          imageUrl: artist.image_url || undefined,
-          matchScore: artist.match_score,
-          inLibrary: artist.local_track_count > 0,
-          externalLinks: artist.local_track_count > 0 ? undefined : {
-            lastfm: artist.external_url || undefined,
-          },
-        }));
-
-        // Map tracks to DiscoveryItem format
-        const trackItems: DiscoveryItem[] = (recommendations?.tracks || []).map((track) => ({
-          id: track.local_track_id || undefined,
-          name: track.title,
-          subtitle: track.artist,
-          matchScore: track.match_score,
-          inLibrary: !!track.local_track_id,
-          artist: track.artist,
-          album: track.album || undefined,
-          externalLinks: track.local_track_id ? undefined : {
-            lastfm: track.external_url || undefined,
-          },
-        }));
-
-        // Build sections
-        const discoverySections: DiscoveryGroup[] = [];
-        if (artistItems.length > 0) {
-          discoverySections.push({
-            id: 'artists',
-            title: 'Artists',
-            type: 'artist',
-            items: artistItems,
-          });
-        }
-        if (trackItems.length > 0) {
-          discoverySections.push({
-            id: 'tracks',
-            title: 'Tracks',
-            type: 'track',
-            items: trackItems,
-          });
-        }
-
-        // Don't render if no recommendations
-        if (!recommendationsLoading && discoverySections.length === 0) {
-          return null;
-        }
-
-        return (
-          <div className="mt-6 border-t border-zinc-800 pt-4">
-            <DiscoverySection
-              title="Discover More"
-              sections={discoverySections}
-              sources={recommendations?.sources_used}
-              loading={recommendationsLoading}
-              collapsible
-              defaultExpanded={true}
-              onItemClick={(item, type) => {
-                if (type === 'artist' && item.inLibrary) {
-                  setSearchParams({ artistDetail: item.name });
-                }
-              }}
-              onPlay={async (item, type) => {
-                if (type === 'track' && item.id) {
-                  // If clicking on the currently playing track, toggle play/pause
-                  if (currentTrack?.id === item.id) {
-                    setIsPlaying(!isPlaying);
-                    return;
-                  }
-                  // Play the local track
-                  setQueue([{
-                    id: item.id,
-                    file_path: '',
-                    title: item.name,
-                    artist: item.artist || item.subtitle || null,
-                    album: null,
-                    album_artist: null,
-                    album_type: 'album' as const,
-                    track_number: null,
-                    disc_number: null,
-                    year: null,
-                    genre: null,
-                    duration_seconds: null,
-                    format: null,
-                    analysis_version: 0,
-                  }]);
-                } else if (type === 'artist' && item.inLibrary) {
-                  // Play tracks by this artist
-                  try {
-                    const { tracksApi } = await import('../../api/client');
-                    const response = await tracksApi.list({ artist: item.name, page_size: 50 });
-                    if (response.items.length > 0) {
-                      setQueue(response.items, 0);
-                    }
-                  } catch (error) {
-                    console.error('Failed to fetch artist tracks:', error);
-                  }
-                }
-              }}
-            />
-          </div>
-        );
-      })()}
+      {playlist.is_auto_generated && (
+        <PlaylistDiscoverySection
+          recommendations={recommendations}
+          loading={recommendationsLoading}
+          onGoToArtist={(artistName) => setSearchParams({ artistDetail: artistName })}
+          onPlayItem={handlePlayDiscoveryItem}
+        />
+      )}
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (

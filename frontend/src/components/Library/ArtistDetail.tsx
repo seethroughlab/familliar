@@ -27,7 +27,7 @@ import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
 import type { Track } from '../../types';
-import { DiscoverySection, type DiscoveryGroup } from '../shared';
+import { DiscoveryPanel, useArtistDiscovery, type DiscoveryItem } from '../Discovery';
 
 function OfflineButton({ trackId }: { trackId: string }) {
   const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
@@ -96,6 +96,44 @@ function FavoriteButton({ trackId }: { trackId: string }) {
     >
       <Heart className="w-4 h-4" fill={favorited ? 'currentColor' : 'none'} />
     </button>
+  );
+}
+
+// Artist Discovery Section using unified components
+function ArtistDiscoverySection({
+  artist,
+  onGoToArtist,
+}: {
+  artist: {
+    similar_artists: Array<{
+      name: string;
+      match_score: number;
+      in_library: boolean;
+      track_count: number | null;
+      image_url: string | null;
+      lastfm_url: string | null;
+      bandcamp_url: string | null;
+    }>;
+  };
+  onGoToArtist: (artistName: string) => void;
+}) {
+  const { sections, hasDiscovery } = useArtistDiscovery({ artist });
+
+  if (!hasDiscovery) return null;
+
+  const handleItemClick = (item: DiscoveryItem) => {
+    if (item.inLibrary) {
+      onGoToArtist(item.name);
+    }
+  };
+
+  return (
+    <DiscoveryPanel
+      title="Discover More"
+      sections={sections}
+      collapsible
+      onItemClick={handleItemClick}
+    />
   );
 }
 
@@ -643,37 +681,10 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
       </div>
 
       {/* Similar artists */}
-      {artist.similar_artists.length > 0 && (() => {
-        const sections: DiscoveryGroup[] = [{
-          id: 'similar-artists',
-          title: 'Similar Artists',
-          type: 'artist',
-          items: artist.similar_artists.slice(0, 20).map((similar) => ({
-            name: similar.name,
-            subtitle: similar.in_library
-              ? `${similar.track_count} ${similar.track_count === 1 ? 'track' : 'tracks'}`
-              : undefined,
-            imageUrl: similar.in_library
-              ? libraryApi.getArtistImageUrl(similar.name, 'large')
-              : similar.image_url || undefined,
-            matchScore: similar.match_score,
-            inLibrary: similar.in_library,
-            externalLinks: similar.in_library ? undefined : {
-              bandcamp: similar.bandcamp_url || undefined,
-              lastfm: similar.lastfm_url || undefined,
-            },
-          })),
-        }];
-
-        return (
-          <DiscoverySection
-            title="Discover More"
-            sections={sections}
-            collapsible
-            onItemClick={(item) => item.inLibrary && setSearchParams({ artistDetail: item.name })}
-          />
-        );
-      })()}
+      <ArtistDiscoverySection
+        artist={artist}
+        onGoToArtist={(artistName) => setSearchParams({ artistDetail: artistName })}
+      />
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (

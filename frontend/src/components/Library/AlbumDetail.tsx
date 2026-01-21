@@ -22,7 +22,7 @@ import { TrackContextMenu } from './TrackContextMenu';
 import type { ContextMenuState } from './types';
 import { initialContextMenuState } from './types';
 import type { Track } from '../../types';
-import { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from '../shared';
+import { DiscoveryPanel, useAlbumDiscovery, type DiscoveryItem } from '../Discovery';
 
 function OfflineButton({ trackId }: { trackId: string }) {
   const { isOffline, isDownloading, downloadProgress, download, remove } = useOfflineTrack(trackId);
@@ -147,6 +147,66 @@ function AlbumOfflineButton({ tracks }: { tracks: AlbumTrack[] }) {
         {isPartiallyOffline ? `${offlineCount}/${totalCount}` : 'Download'}
       </span>
     </button>
+  );
+}
+
+// Album Discovery Section using unified components
+function AlbumDiscoverySection({
+  album,
+  onGoToAlbum,
+  onPlayAlbum,
+}: {
+  album: {
+    artist: string;
+    other_albums_by_artist: Array<{
+      name: string;
+      artist: string;
+      year: number | null;
+      track_count: number;
+      first_track_id: string;
+    }>;
+    similar_albums: Array<{
+      name: string;
+      artist: string;
+      year: number | null;
+      track_count: number;
+      first_track_id: string;
+      similarity_score: number;
+    }>;
+    discover_albums: Array<{
+      name: string;
+      artist: string;
+      image_url: string | null;
+      lastfm_url: string | null;
+      bandcamp_url: string | null;
+    }>;
+  };
+  onGoToAlbum?: (artistName: string, albumName: string) => void;
+  onPlayAlbum: (artistName: string, albumName: string) => void;
+}) {
+  const { sections, hasDiscovery } = useAlbumDiscovery({ album });
+
+  if (!hasDiscovery) return null;
+
+  const handleItemClick = (item: DiscoveryItem) => {
+    if (item.inLibrary && item.playbackContext) {
+      onGoToAlbum?.(item.playbackContext.artist, item.playbackContext.album || item.name);
+    }
+  };
+
+  const handleItemPlay = (item: DiscoveryItem) => {
+    if (item.playbackContext) {
+      onPlayAlbum(item.playbackContext.artist, item.playbackContext.album || item.name);
+    }
+  };
+
+  return (
+    <DiscoveryPanel
+      sections={sections}
+      collapsible
+      onItemClick={handleItemClick}
+      onItemPlay={handleItemPlay}
+    />
   );
 }
 
@@ -492,68 +552,11 @@ export function AlbumDetail({
       </div>
 
       {/* Discovery section - More from Artist + Similar Albums */}
-      {(album.other_albums_by_artist.length > 0 || album.similar_albums.length > 0 || album.discover_albums.length > 0) && (() => {
-        const sections: DiscoveryGroup[] = [];
-
-        // More from Artist section
-        if (album.other_albums_by_artist.length > 0) {
-          sections.push({
-            id: 'more-from-artist',
-            title: `More from ${album.artist}`,
-            type: 'album',
-            items: album.other_albums_by_artist.map((other) => ({
-              id: other.first_track_id,
-              name: other.name,
-              subtitle: [other.year, `${other.track_count} tracks`].filter(Boolean).join(' · '),
-              inLibrary: true,
-              artist: other.artist,
-              album: other.name,
-            })),
-          });
-        }
-
-        // Similar Albums section (combining in-library and external)
-        const similarItems: DiscoveryItem[] = [
-          ...album.similar_albums.map((similar) => ({
-            id: similar.first_track_id,
-            name: similar.name,
-            subtitle: similar.artist,
-            matchScore: similar.similarity_score,
-            inLibrary: true,
-            artist: similar.artist,
-            album: similar.name,
-          })),
-          ...album.discover_albums.map((discover) => ({
-            name: discover.name,
-            subtitle: discover.artist,
-            imageUrl: discover.image_url || undefined,
-            inLibrary: false,
-            externalLinks: {
-              bandcamp: discover.bandcamp_url || undefined,
-              lastfm: discover.lastfm_url || undefined,
-            },
-          })),
-        ];
-
-        if (similarItems.length > 0) {
-          sections.push({
-            id: 'similar-albums',
-            title: 'Similar Albums',
-            type: 'album',
-            items: similarItems,
-          });
-        }
-
-        return (
-          <DiscoverySection
-            title="Discover"
-            sections={sections}
-            collapsible
-            onItemClick={(item) => item.inLibrary && item.artist && onGoToAlbum?.(item.artist, item.name)}
-            onPlay={(item) => item.artist && handlePlayOtherAlbum(item.artist, item.name)}
-          />
-        );
-      })()}
+      <AlbumDiscoverySection
+        album={album}
+        onGoToAlbum={onGoToAlbum}
+        onPlayAlbum={handlePlayOtherAlbum}
+      />
 
       {/* Context menu */}
       {contextMenu.isOpen && contextMenu.track && (

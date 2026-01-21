@@ -24,7 +24,7 @@ import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
-import { DiscoverySection, type DiscoveryItem, type DiscoveryGroup } from '../shared';
+import { DiscoveryPanel, useTrackDiscovery, type DiscoveryItem } from '../Discovery';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
@@ -32,6 +32,124 @@ import { useArtworkPrefetch } from '../../hooks/useArtworkPrefetch';
 import type { Track } from '../../types';
 
 type ViewMode = 'visualizer' | 'video' | 'lyrics' | 'discover';
+
+// Discovery tab component using unified Discovery components
+function FullPlayerDiscoverTab({
+  discoverData,
+  loading,
+  onGoToArtist,
+  onPlayTrack,
+}: {
+  discoverData: {
+    similar_tracks: Array<{
+      id: string;
+      title: string | null;
+      artist: string | null;
+      album: string | null;
+    }>;
+    similar_artists: Array<{
+      name: string;
+      match_score: number;
+      in_library: boolean;
+      track_count: number | null;
+      image_url: string | null;
+      lastfm_url: string | null;
+      bandcamp_url: string | null;
+    }>;
+    bandcamp_artist_url: string | null;
+    bandcamp_track_url: string | null;
+    artist: string | null;
+  } | undefined;
+  loading: boolean;
+  onGoToArtist: (artistName: string) => void;
+  onPlayTrack: (item: DiscoveryItem) => void;
+}) {
+  // Transform the discover data to match the hook's expected input
+  const trackDiscoveryInput = discoverData ? {
+    similarTracks: discoverData.similar_tracks,
+    similarArtists: discoverData.similar_artists,
+    getArtistImageUrl: () => '', // Not needed for this use case
+  } : undefined;
+
+  const { sections, hasDiscovery } = useTrackDiscovery({ data: trackDiscoveryInput as any });
+
+  if (loading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
+      </div>
+    );
+  }
+
+  if (!hasDiscovery) {
+    return (
+      <div className="h-full overflow-y-auto p-6 pb-32">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center text-zinc-500 py-12">
+            <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>No discovery data available for this track yet.</p>
+            <p className="text-sm mt-2">
+              Try playing a track that has been analyzed with audio embeddings.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const handleItemClick = (item: DiscoveryItem) => {
+    if (item.entityType === 'artist' && item.inLibrary) {
+      onGoToArtist(item.name);
+    }
+  };
+
+  const handleItemPlay = (item: DiscoveryItem) => {
+    if (item.entityType === 'track') {
+      onPlayTrack(item);
+    }
+  };
+
+  return (
+    <div className="h-full overflow-y-auto p-6 pb-32">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <DiscoveryPanel
+          sections={sections}
+          onItemClick={handleItemClick}
+          onItemPlay={handleItemPlay}
+        />
+
+        {/* External Links for Current Track */}
+        {(discoverData?.bandcamp_artist_url || discoverData?.bandcamp_track_url) && (
+          <section className="pt-4 border-t border-zinc-800">
+            <h3 className="text-sm font-medium text-zinc-400 mb-3">Find on Bandcamp</h3>
+            <div className="flex gap-2">
+              {discoverData.bandcamp_track_url && (
+                <a
+                  href={discoverData.bandcamp_track_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
+                >
+                  Search for this track
+                </a>
+              )}
+              {discoverData.bandcamp_artist_url && (
+                <a
+                  href={discoverData.bandcamp_artist_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
+                >
+                  More by {discoverData.artist}
+                </a>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function formatTime(seconds: number): string {
   if (!seconds || !isFinite(seconds)) return '0:00';
@@ -227,135 +345,30 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           <LyricsDisplay trackId={currentTrack.id} />
         )}
 
-        {viewMode === 'discover' && (() => {
-          // Map tracks to DiscoveryItem format
-          const trackItems: DiscoveryItem[] = (discoverData?.similar_tracks || []).map((track) => ({
-            id: track.id,
-            name: track.title || 'Unknown',
-            subtitle: track.artist || 'Unknown',
-            inLibrary: true,
-            artist: track.artist || undefined,
-            album: track.album || undefined,
-          }));
-
-          // Map artists to DiscoveryItem format
-          const artistItems: DiscoveryItem[] = (discoverData?.similar_artists || []).map((artist) => ({
-            name: artist.name,
-            subtitle: artist.in_library
-              ? `${artist.track_count} ${artist.track_count === 1 ? 'track' : 'tracks'}`
-              : undefined,
-            imageUrl: artist.image_url || undefined,
-            matchScore: artist.match_score,
-            inLibrary: artist.in_library,
-            externalLinks: artist.in_library ? undefined : {
-              bandcamp: artist.bandcamp_url || undefined,
-              lastfm: artist.lastfm_url || undefined,
-            },
-          }));
-
-          // Build sections
-          const discoverySections: DiscoveryGroup[] = [];
-          if (trackItems.length > 0) {
-            discoverySections.push({
-              id: 'tracks',
-              title: 'Similar Tracks',
-              type: 'track',
-              items: trackItems,
-            });
-          }
-          if (artistItems.length > 0) {
-            discoverySections.push({
-              id: 'artists',
-              title: 'Similar Artists',
-              type: 'artist',
-              items: artistItems,
-            });
-          }
-
-          if (discoverLoading) {
-            return (
-              <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-zinc-400" />
-              </div>
-            );
-          }
-
-          if (discoverySections.length === 0) {
-            return (
-              <div className="h-full overflow-y-auto p-6 pb-32">
-                <div className="max-w-4xl mx-auto">
-                  <div className="text-center text-zinc-500 py-12">
-                    <Music className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p>No discovery data available for this track yet.</p>
-                    <p className="text-sm mt-2">
-                      Try playing a track that has been analyzed with audio embeddings.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          return (
-            <div className="h-full overflow-y-auto p-6 pb-32">
-              <div className="max-w-4xl mx-auto space-y-6">
-                <DiscoverySection
-                  title="Discover"
-                  sections={discoverySections}
-                  onItemClick={(item, type) => {
-                    if (type === 'artist' && item.inLibrary) {
-                      setSearchParams({ artistDetail: item.name });
-                      window.location.hash = 'library';
-                      onClose();
-                    }
-                  }}
-                  onPlay={(item, type) => {
-                    if (type === 'track' && item.id) {
-                      if (currentTrack?.id === item.id) {
-                        togglePlayPause();
-                        return;
-                      }
-                      // Find the track in similar_tracks to get all tracks for the queue
-                      const trackIndex = discoverData?.similar_tracks.findIndex(t => t.id === item.id) ?? -1;
-                      if (trackIndex !== -1 && discoverData) {
-                        setQueue(discoverData.similar_tracks as Track[], trackIndex);
-                      }
-                    }
-                  }}
-                />
-
-                {/* External Links for Current Track */}
-                {(discoverData?.bandcamp_artist_url || discoverData?.bandcamp_track_url) && (
-                  <section className="pt-4 border-t border-zinc-800">
-                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Find on Bandcamp</h3>
-                    <div className="flex gap-2">
-                      {discoverData.bandcamp_track_url && (
-                        <a
-                          href={discoverData.bandcamp_track_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
-                        >
-                          Search for this track
-                        </a>
-                      )}
-                      {discoverData.bandcamp_artist_url && (
-                        <a
-                          href={discoverData.bandcamp_artist_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-3 py-1.5 bg-teal-600/20 text-teal-400 hover:bg-teal-600/30 rounded transition-colors text-sm"
-                        >
-                          More by {discoverData.artist}
-                        </a>
-                      )}
-                    </div>
-                  </section>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        {viewMode === 'discover' && (
+          <FullPlayerDiscoverTab
+            discoverData={discoverData}
+            loading={discoverLoading}
+            onGoToArtist={(artistName) => {
+              setSearchParams({ artistDetail: artistName });
+              window.location.hash = 'library';
+              onClose();
+            }}
+            onPlayTrack={(item) => {
+              if (item.id) {
+                if (currentTrack?.id === item.id) {
+                  togglePlayPause();
+                  return;
+                }
+                // Find the track in similar_tracks to get all tracks for the queue
+                const trackIndex = discoverData?.similar_tracks.findIndex(t => t.id === item.id) ?? -1;
+                if (trackIndex !== -1 && discoverData) {
+                  setQueue(discoverData.similar_tracks as Track[], trackIndex);
+                }
+              }
+            }}
+          />
+        )}
 
         {/* Album art overlay (bottom left) */}
         <div className="absolute bottom-32 left-8 z-10">
