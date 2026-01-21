@@ -7,8 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.11] - 2026-01-21
+
 ### Added
 
+- **Import quality comparison** - duplicate detection now compares audio quality
+  - Shows whether incoming file is higher/lower/equal quality vs existing track
+  - Quality factors: format tier (FLAC > AAC > MP3), bitrate, sample rate, bit depth
+  - Visual indicators: green up-arrow (trumps existing), red down-arrow (trumped by), dash (equal)
+  - One-click actions: "Replace" to upgrade, "Skip" to keep existing, "Import" for new tracks
+  - New `quality.py` service with format tier definitions and comparison logic
 - **AcoustID result caching** - API responses are now cached in the database
   - Avoids repeated API calls when identifying the same track multiple times
   - Cached per analysis version in `TrackAnalysis.acoustid_lookup`
@@ -26,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Comprehensive mobile layout audit** - fixed 26 components for better mobile experience
+  - **iOS auto-zoom prevention**: All text inputs now use `text-base` (16px) to prevent viewport zoom on focus
+  - **Responsive grids**: Grid layouts now adapt column count on mobile (e.g., `grid-cols-2 sm:grid-cols-4`)
+  - **Stacking layouts**: Horizontal button groups stack vertically on mobile
+  - **Touch-friendly buttons**: Hover-only buttons now always visible on touch devices
+  - **Reduced padding**: Full player, lyrics, modals use smaller padding on mobile
+  - **Responsive dropdowns**: Pickers constrain width on small screens
+  - Files updated: PlayerBar, FullPlayer, PlaylistDetail, ArtistDetail, AlbumDetail, TrackEditModal, ChatPanel, Settings panels, and more
 - **Unified shuffle via global toggle** - Play buttons now respect the playbar's shuffle toggle
   - Removed separate "Shuffle" and "Shuffle All" buttons from ArtistDetail and TrackListBrowser
   - Play action checks global shuffle state and passes it to server for large track sets
@@ -47,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Playlist detail overflow** - header now stacks vertically on mobile, preventing title/button clipping
 - **Track skipping during queue changes** - fixed race condition where tracks could skip unexpectedly
   - Added transition tracking to ignore spurious "ended" events during queue/track loading
   - Prevents double-advancing when rapidly changing tracks
@@ -321,7 +338,9 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...HEAD
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...HEAD
+[0.1.0-alpha.11]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
+[0.1.0-alpha.10]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
 [0.1.0-alpha.9]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
 [0.1.0-alpha.8]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
 [0.1.0-alpha.7]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
