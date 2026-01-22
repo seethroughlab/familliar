@@ -8,6 +8,7 @@ import {
   createOfflineTrackUrl,
   revokeOfflineTrackUrl,
 } from '../services/offlineService';
+import { EffectsChain, initEffectsChain } from '../services/audioEffects';
 
 // ============================================================================
 // Global Audio Graph State (singleton pattern for visualizer access)
@@ -17,6 +18,7 @@ import {
 let globalAudioContext: AudioContext | null = null;
 let globalAnalyser: AnalyserNode | null = null;
 let globalMasterGain: GainNode | null = null;
+let globalEffectsChain: EffectsChain | null = null;
 
 // Dual audio element system for crossfade
 let globalAudioElementA: HTMLAudioElement | null = null;
@@ -52,6 +54,10 @@ export function getAudioAnalyser(): AnalyserNode | null {
 
 export function getAudioContext(): AudioContext | null {
   return globalAudioContext;
+}
+
+export function getAudioEffectsChain(): EffectsChain | null {
+  return globalEffectsChain;
 }
 
 // ============================================================================
@@ -122,14 +128,20 @@ function initializeAudioGraph(): boolean {
       globalAnalyser.smoothingTimeConstant = 0.8;
     }
 
+    // Create effects chain
+    if (!globalEffectsChain) {
+      globalEffectsChain = initEffectsChain(globalAudioContext);
+    }
+
     // Connect the audio graph:
-    // MediaSourceA -> GainA -> MasterGain -> Analyser -> Destination
-    // MediaSourceB -> GainB -> MasterGain -> Analyser -> Destination
+    // MediaSourceA -> GainA -> MasterGain -> EffectsChain -> Analyser -> Destination
+    // MediaSourceB -> GainB -> MasterGain -> EffectsChain -> Analyser -> Destination
     globalMediaSourceA.connect(globalGainA);
     globalMediaSourceB.connect(globalGainB);
     globalGainA.connect(globalMasterGain);
     globalGainB.connect(globalMasterGain);
-    globalMasterGain.connect(globalAnalyser);
+    globalMasterGain.connect(globalEffectsChain.input);
+    globalEffectsChain.output.connect(globalAnalyser);
     globalAnalyser.connect(globalAudioContext.destination);
 
     return true;
@@ -339,6 +351,10 @@ export function useAudioEngine() {
         timeoutId,
       };
 
+      // Mark the next track as loaded BEFORE advancing to prevent the track loading
+      // effect from trying to reload it on the wrong element
+      loadedTrackIdRef.current = nextTrack.id;
+
       // Advance the queue (updates UI to show next track)
       advanceToNextTrack(nextTrack);
     },
@@ -516,6 +532,16 @@ export function useAudioEngine() {
     const handleError = (e: Event) => {
       const target = e.target as HTMLAudioElement;
       if (!target.src || target.src === window.location.href) return;
+
+      // Only handle errors on the current element, not the preloading one
+      const isCurrentElement =
+        (currentElementIsA && target === globalAudioElementA) ||
+        (!currentElementIsA && target === globalAudioElementB);
+      if (!isCurrentElement) {
+        console.warn('[AudioEngine] Ignoring error on inactive element');
+        return;
+      }
+
       console.error('Audio error:', e);
 
       const currentId = usePlayerStore.getState().currentTrack?.id;
@@ -568,6 +594,12 @@ export function useAudioEngine() {
     // Skip if this track is already loaded (happens after crossfade advance)
     if (loadedTrackIdRef.current === currentTrack.id) {
       return; // Already loaded this track
+    }
+
+    // Skip if crossfade is active - the track is already loaded on the next element
+    // and will become current when crossfade completes
+    if (crossfadeContext?.isActive) {
+      return;
     }
 
     // Mark that we're in a queue/track transition to ignore spurious ended events

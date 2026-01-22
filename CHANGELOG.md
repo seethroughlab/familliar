@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Audio Effects Panel** - comprehensive real-time audio effects system
+  - **3-Band EQ** - Low (250 Hz), Mid (1 kHz), High (4 kHz) shelving filters with ±12 dB range
+  - **Compressor** - Dynamics compression with threshold, ratio, attack, release, knee, and makeup gain
+  - **Reverb** - Convolution reverb with 5 algorithmic presets (Small Room, Medium Room, Large Hall, Plate, Cathedral)
+  - **Delay** - Echo effect with time, feedback, mix controls and ping-pong stereo mode
+  - **Filters** - High-pass and low-pass filters with adjustable frequency and Q
+  - 5 built-in presets: Warm Vinyl, Live Concert, Studio Polish, Bass Boost, Dreamy
+  - Custom preset save/load with persistence
+  - Quick-access button in FullPlayer header for fast preset switching
+  - Settings panel in Playback section with collapsible effect sections
+  - Effects chain inserted after volume control, before visualizer (effected audio visible in visualizations)
+
 ## [0.1.0-alpha.11] - 2026-01-21
 
 ### Added

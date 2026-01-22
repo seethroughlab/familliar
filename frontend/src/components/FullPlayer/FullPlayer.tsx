@@ -24,6 +24,7 @@ import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
+import { EffectsQuickAccess } from './EffectsQuickAccess';
 import { DiscoveryPanel, useTrackDiscovery, type DiscoveryItem } from '../Discovery';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
@@ -320,6 +321,9 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
 
           {/* Visualizer picker - only show in visualizer mode */}
           {viewMode === 'visualizer' && <VisualizerPicker />}
+
+          {/* Effects quick access */}
+          <EffectsQuickAccess />
         </div>
 
         <div className="w-10" /> {/* Spacer for balance */}

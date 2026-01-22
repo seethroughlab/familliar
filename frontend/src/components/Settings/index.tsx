@@ -3,6 +3,7 @@ import { LastfmSettings } from './LastfmSettings';
 import { OfflineSettings } from './OfflineSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { PlaybackSettings } from './PlaybackSettings';
+import { AudioEffectsSettings } from './AudioEffectsSettings';
 import { ProfileSettings } from './ProfileSettings';
 import { SystemStatus } from './SystemStatus';
 import { LibrarySync } from './LibrarySync';
@@ -83,6 +84,7 @@ export function SettingsPanel() {
           </h3>
           <div className="space-y-4">
             <PlaybackSettings />
+            <AudioEffectsSettings />
           </div>
         </section>
 
