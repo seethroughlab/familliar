@@ -6,13 +6,14 @@
  * - Selected profile was deleted
  * - User clicks "Switch Profile" in settings
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   listProfiles,
   createProfile,
   selectProfile,
   type Profile,
 } from '../../services/profileService';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 
 // Default profile colors
 const PROFILE_COLORS = [
@@ -37,18 +38,50 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
   const [newProfileName, setNewProfileName] = useState('');
   const [selectedColor, setSelectedColor] = useState(PROFILE_COLORS[0]);
   const [error, setError] = useState<string | null>(null);
+  const [usingCache, setUsingCache] = useState(false);
+  const { isOffline } = useOfflineStatus();
+  const autoSelectedRef = useRef(false);
 
   useEffect(() => {
     loadProfiles();
   }, []);
 
+  // Auto-select if offline with exactly one cached profile
+  useEffect(() => {
+    async function autoSelect() {
+      if (isOffline && usingCache && profiles.length === 1 && !autoSelectedRef.current) {
+        autoSelectedRef.current = true;
+        const profile = profiles[0];
+        try {
+          await selectProfile(profile.id);
+          onProfileSelected(profile);
+        } catch (err) {
+          console.error('Failed to auto-select profile:', err);
+        }
+      }
+    }
+    autoSelect();
+  }, [isOffline, usingCache, profiles, onProfileSelected]);
+
   async function loadProfiles() {
     try {
       setLoading(true);
-      const profileList = await listProfiles();
+      setUsingCache(false);
+      const profileList = await listProfiles({ allowCache: true });
       setProfiles(profileList);
+
+      // Check if we got cached profiles (network failed but cache succeeded)
+      // We detect this by checking if we're offline
+      if (!navigator.onLine && profileList.length > 0) {
+        setUsingCache(true);
+      }
     } catch (err) {
-      setError('Failed to load profiles');
+      // Check if we have any cached profiles to show
+      if (!navigator.onLine) {
+        setError('Connect to the network to create your first profile');
+      } else {
+        setError('Failed to load profiles');
+      }
       console.error(err);
     } finally {
       setLoading(false);
@@ -97,6 +130,26 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
       <h1 className="text-4xl font-bold text-white mb-2">Who's listening?</h1>
       <p className="text-zinc-400 mb-12">Select your profile to continue</p>
 
+      {/* Offline indicator */}
+      {isOffline && usingCache && (
+        <div className="mb-8 px-4 py-2 bg-amber-500/20 border border-amber-500/50 rounded-lg text-amber-400 flex items-center gap-2">
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414"
+            />
+          </svg>
+          Offline - using cached profiles
+        </div>
+      )}
+
       {error && (
         <div className="mb-8 px-4 py-2 bg-red-500/20 border border-red-500/50 rounded-lg text-red-400">
           {error}
@@ -135,25 +188,27 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
           </button>
         ))}
 
-        {/* Add Profile Button */}
-        <button
-          onClick={() => {
-            setNewProfileName('');
-            setSelectedColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length]);
-            const modal = document.getElementById('create-profile-modal');
-            if (modal instanceof HTMLDialogElement) {
-              modal.showModal();
-            }
-          }}
-          className="group flex flex-col items-center gap-3 p-4 rounded-lg hover:bg-zinc-800/50 transition-colors"
-        >
-          <div className="w-24 h-24 rounded-lg flex items-center justify-center text-4xl font-light text-zinc-500 border-2 border-dashed border-zinc-700 group-hover:border-zinc-500 group-hover:text-zinc-400 transition-all">
-            +
-          </div>
-          <span className="text-zinc-500 group-hover:text-zinc-400 transition-colors">
-            Add Profile
-          </span>
-        </button>
+        {/* Add Profile Button - hidden when offline */}
+        {!isOffline && (
+          <button
+            onClick={() => {
+              setNewProfileName('');
+              setSelectedColor(PROFILE_COLORS[profiles.length % PROFILE_COLORS.length]);
+              const modal = document.getElementById('create-profile-modal');
+              if (modal instanceof HTMLDialogElement) {
+                modal.showModal();
+              }
+            }}
+            className="group flex flex-col items-center gap-3 p-4 rounded-lg hover:bg-zinc-800/50 transition-colors"
+          >
+            <div className="w-24 h-24 rounded-lg flex items-center justify-center text-4xl font-light text-zinc-500 border-2 border-dashed border-zinc-700 group-hover:border-zinc-500 group-hover:text-zinc-400 transition-all">
+              +
+            </div>
+            <span className="text-zinc-500 group-hover:text-zinc-400 transition-colors">
+              Add Profile
+            </span>
+          </button>
+        )}
       </div>
 
       {/* Create Profile Modal */}

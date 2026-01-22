@@ -73,6 +73,17 @@ export interface PendingAction {
   retries: number;
 }
 
+// Cached profile for offline support
+export interface CachedProfile {
+  id: string;
+  name: string;
+  color: string | null;
+  avatar_url: string | null;
+  has_spotify: boolean;
+  has_lastfm: boolean;
+  cachedAt: Date;
+}
+
 // Player state persistence
 export interface PersistedPlayerState {
   id: string; // Profile ID (was fixed 'player-state', now per-profile)
@@ -95,6 +106,7 @@ export class FamiliarDB extends Dexie {
   offlineArtwork!: Table<OfflineArtwork>;
   pendingActions!: Table<PendingAction>;
   playerState!: Table<PersistedPlayerState>;
+  cachedProfiles!: Table<CachedProfile>;
 
   constructor() {
     super('FamiliarDB');
@@ -147,6 +159,18 @@ export class FamiliarDB extends Dexie {
       offlineArtwork: 'hash, cachedAt',
       pendingActions: '++id, profileId, type, createdAt',
       playerState: 'id',
+    });
+
+    // Version 7: Add cached profiles for offline support
+    this.version(7).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      offlineArtwork: 'hash, cachedAt',
+      pendingActions: '++id, profileId, type, createdAt',
+      playerState: 'id',
+      cachedProfiles: 'id, cachedAt',
     });
   }
 }
