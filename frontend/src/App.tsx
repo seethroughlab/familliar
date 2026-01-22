@@ -120,7 +120,7 @@ function AppContent() {
     // Define which search params belong to which tab
     const tabParams: Record<RightPanelTab, string[]> = {
       library: ['view', 'search', 'artist', 'album', 'genre', 'yearFrom', 'yearTo', 'artistDetail', 'albumDetailArtist', 'albumDetailAlbum'],
-      playlists: ['playlist', 'view'],
+      playlists: ['playlist', 'smartPlaylist', 'view'],
       visualizer: ['type'],
       settings: [],
     };

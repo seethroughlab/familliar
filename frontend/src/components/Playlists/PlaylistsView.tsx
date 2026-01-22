@@ -5,7 +5,7 @@ import {
   Sparkles, Play, MoreVertical, Trash2, Loader2,
   ChevronDown, ChevronUp, ListMusic, Heart
 } from 'lucide-react';
-import { playlistsApi } from '../../api/client';
+import { playlistsApi, smartPlaylistsApi } from '../../api/client';
 import type { Playlist, SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { PlaylistDetail } from './PlaylistDetail';
@@ -34,22 +34,31 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
 
   // Get playlist ID and view from URL
   const urlPlaylistId = searchParams.get('playlist');
+  const urlSmartPlaylistId = searchParams.get('smartPlaylist');
   const urlView = searchParams.get('view');
 
   // Derive view mode from URL params
   const getViewModeFromUrl = useCallback((): ViewMode => {
     if (urlView === 'favorites') return 'favorites';
+    if (urlSmartPlaylistId) return 'smart-detail';
     if (urlPlaylistId) return 'detail';
     return 'list';
-  }, [urlPlaylistId, urlView]);
+  }, [urlPlaylistId, urlSmartPlaylistId, urlView]);
 
   const [viewMode, setViewModeState] = useState<ViewMode>(getViewModeFromUrl);
   const [selectedPlaylist, setSelectedPlaylistState] = useState<SelectedPlaylist | null>(
     urlPlaylistId ? { type: 'static', id: urlPlaylistId } : null
   );
-  const [selectedSmartPlaylist, setSelectedSmartPlaylist] = useState<SmartPlaylist | null>(null);
+  const [selectedSmartPlaylist, setSelectedSmartPlaylistState] = useState<SmartPlaylist | null>(null);
   const [showAiPlaylists, setShowAiPlaylists] = useState(true);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+
+  // Fetch smart playlist from URL if present
+  const { data: urlSmartPlaylist } = useQuery({
+    queryKey: ['smart-playlist', urlSmartPlaylistId],
+    queryFn: () => smartPlaylistsApi.get(urlSmartPlaylistId!),
+    enabled: !!urlSmartPlaylistId,
+  });
 
   // Sync URL params to state when they change
   useEffect(() => {
@@ -57,10 +66,13 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     setViewModeState(newViewMode);
     if (urlPlaylistId) {
       setSelectedPlaylistState({ type: 'static', id: urlPlaylistId });
+    } else if (urlSmartPlaylistId && urlSmartPlaylist) {
+      setSelectedSmartPlaylistState(urlSmartPlaylist);
     } else if (newViewMode === 'list') {
       setSelectedPlaylistState(null);
+      setSelectedSmartPlaylistState(null);
     }
-  }, [urlPlaylistId, urlView, getViewModeFromUrl]);
+  }, [urlPlaylistId, urlSmartPlaylistId, urlSmartPlaylist, urlView, getViewModeFromUrl]);
 
   // Helper to update URL and state together
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -71,6 +83,7 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
       // Clear playlist-related params
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('playlist');
+      newParams.delete('smartPlaylist');
       newParams.delete('view');
       setSearchParams(newParams);
     }
@@ -84,6 +97,22 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     } else {
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('playlist');
+      newParams.delete('smartPlaylist');
+      newParams.delete('view');
+      setSearchParams(newParams);
+      setViewModeState('list');
+    }
+  }, [searchParams, setSearchParams]);
+
+  const setSelectedSmartPlaylist = useCallback((playlist: SmartPlaylist | null) => {
+    setSelectedSmartPlaylistState(playlist);
+    if (playlist) {
+      setSearchParams({ smartPlaylist: playlist.id });
+      setViewModeState('smart-detail');
+    } else {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('playlist');
+      newParams.delete('smartPlaylist');
       newParams.delete('view');
       setSearchParams(newParams);
       setViewModeState('list');
@@ -147,7 +176,6 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
 
   const handleSelectSmartPlaylist = (playlist: SmartPlaylist) => {
     setSelectedSmartPlaylist(playlist);
-    setViewModeState('smart-detail');
   };
 
   const handleBack = () => {
@@ -179,7 +207,6 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
         playlist={selectedSmartPlaylist}
         onBack={() => {
           setSelectedSmartPlaylist(null);
-          setViewModeState('list');
         }}
       />
     );
