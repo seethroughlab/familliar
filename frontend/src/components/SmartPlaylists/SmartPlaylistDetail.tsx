@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Loader2, Music, Zap, Clock, Download, Check, WifiOff, Heart, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Loader2, Music, Zap, Clock, Download, Check, WifiOff, Heart, RefreshCw, CloudOff } from 'lucide-react';
 import { smartPlaylistsApi, tracksApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import * as offlineService from '../../services/offlineService';
+import * as playlistCache from '../../services/playlistCache';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
@@ -72,27 +74,70 @@ interface Props {
 export function SmartPlaylistDetail({ playlist, onBack }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
+  const { isOffline } = useOfflineStatus();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
+  const [usingCachedData, setUsingCachedData] = useState(false);
 
-  // Fetch tracks for this smart playlist
+  // Fetch tracks for this smart playlist with offline fallback
   const { data: tracksResponse, isLoading: tracksLoading, refetch } = useQuery({
     queryKey: ['smart-playlist-tracks', playlist.id],
-    queryFn: () => smartPlaylistsApi.getTracks(playlist.id, 500),
+    queryFn: async () => {
+      try {
+        const result = await smartPlaylistsApi.getTracks(playlist.id, 500);
+        setUsingCachedData(false);
+
+        // Cache the smart playlist with its track IDs
+        await playlistCache.cacheSmartPlaylist(
+          playlist,
+          result.tracks.map((t) => t.id)
+        );
+
+        return result;
+      } catch (error) {
+        // If offline, try to load from cache
+        if (isOffline) {
+          const cached = await playlistCache.getCachedSmartPlaylist(playlist.id);
+          if (cached) {
+            // Resolve track metadata from cached tracks
+            const resolvedTracks = await playlistCache.resolveTrackIds(cached.track_ids);
+            setUsingCachedData(true);
+            return {
+              playlist: {
+                ...playlist,
+                cached_track_count: cached.cached_track_count,
+              },
+              tracks: resolvedTracks.map((t) => ({
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                album: t.album,
+                duration_seconds: t.durationSeconds,
+                genre: t.genre,
+                year: t.year,
+              })),
+              total: resolvedTracks.length,
+            };
+          }
+        }
+        throw error;
+      }
+    },
+    retry: isOffline ? false : 3,
   });
 
   const tracks = tracksResponse?.tracks || [];
 
-  // Fetch discovery data based on the first track in the playlist
+  // Fetch discovery data based on the first track in the playlist (not available offline)
   const firstTrackId = tracks[0]?.id;
   const { data: discoverData, isLoading: discoverLoading } = useQuery({
     queryKey: ['track-discover', firstTrackId],
     queryFn: () => tracksApi.getDiscover(firstTrackId!, 6, 8),
     staleTime: 5 * 60 * 1000,
-    enabled: !!firstTrackId,
+    enabled: !!firstTrackId && !isOffline && !usingCachedData,
   });
 
   // Transform discovery data
@@ -159,6 +204,12 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
       // Final update to ensure all are marked
       const ids = await offlineService.getOfflineTrackIds();
       setOfflineTrackIds(new Set(ids));
+
+      // Auto-cache the smart playlist metadata for offline access
+      await playlistCache.cacheSmartPlaylist(
+        playlist,
+        tracks.map((t) => t.id)
+      );
     } catch (error) {
       console.error('Failed to download playlist:', error);
     } finally {
@@ -270,6 +321,12 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-yellow-500 flex-shrink-0" />
             <h2 className="text-xl font-bold truncate">{playlist.name}</h2>
+            {usingCachedData && (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
+                <CloudOff className="w-3 h-3" />
+                Offline
+              </span>
+            )}
           </div>
 
           {playlist.description && (
@@ -315,8 +372,9 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
 
           <button
             onClick={() => refetch()}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-full transition-colors"
-            title="Refresh tracks"
+            disabled={isOffline}
+            className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
+            title={isOffline ? 'Cannot refresh while offline' : 'Refresh tracks'}
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
@@ -324,9 +382,9 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
 
           <button
             onClick={handleDownloadPlaylist}
-            disabled={tracks.length === 0 || isDownloading || allTracksOffline}
+            disabled={tracks.length === 0 || isDownloading || allTracksOffline || isOffline}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
-            title={allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
+            title={isOffline ? 'Cannot download while offline' : allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
           >
             {isDownloading ? (
               <>

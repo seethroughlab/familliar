@@ -1,8 +1,9 @@
 /**
  * Player state persistence service.
  * Saves and loads player state from IndexedDB per profile.
+ * All operations silently fail if IndexedDB isn't available (iOS private browsing).
  */
-import { db, type PersistedPlayerState } from '../db';
+import { db, isIndexedDBAvailable, type PersistedPlayerState } from '../db';
 import { getSelectedProfileId } from './profileService';
 import type { Track, QueueItem } from '../types';
 
@@ -19,46 +20,69 @@ export async function savePlayerState(state: {
   shuffleOrder: number[];
   shuffleIndex: number;
 }): Promise<void> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return;
+
   const profileId = await getSelectedProfileId();
   if (!profileId) {
     return; // No profile selected, don't save
   }
 
-  const persistedState: PersistedPlayerState = {
-    id: profileId, // Use profile ID as record key
-    volume: state.volume,
-    shuffle: state.shuffle,
-    repeat: state.repeat,
-    queueTrackIds: state.queue.map((item) => item.track.id),
-    queueIndex: state.queueIndex,
-    currentTrackId: state.currentTrack?.id || null,
-    shuffleOrder: state.shuffleOrder,
-    shuffleIndex: state.shuffleIndex,
-    updatedAt: new Date(),
-  };
+  try {
+    const persistedState: PersistedPlayerState = {
+      id: profileId, // Use profile ID as record key
+      volume: state.volume,
+      shuffle: state.shuffle,
+      repeat: state.repeat,
+      queueTrackIds: state.queue.map((item) => item.track.id),
+      queueIndex: state.queueIndex,
+      currentTrackId: state.currentTrack?.id || null,
+      shuffleOrder: state.shuffleOrder,
+      shuffleIndex: state.shuffleIndex,
+      updatedAt: new Date(),
+    };
 
-  await db.playerState.put(persistedState);
+    await db.playerState.put(persistedState);
+  } catch (error) {
+    console.warn('[PlayerPersistence] Failed to save player state:', error);
+  }
 }
 
 /**
  * Load player state from IndexedDB for the current profile.
  */
 export async function loadPlayerState(): Promise<PersistedPlayerState | null> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return null;
+
   const profileId = await getSelectedProfileId();
   if (!profileId) {
     return null;
   }
 
-  const state = await db.playerState.get(profileId);
-  return state || null;
+  try {
+    const state = await db.playerState.get(profileId);
+    return state || null;
+  } catch (error) {
+    console.warn('[PlayerPersistence] Failed to load player state:', error);
+    return null;
+  }
 }
 
 /**
  * Load player state for a specific profile (used when switching profiles).
  */
 export async function loadPlayerStateForProfile(profileId: string): Promise<PersistedPlayerState | null> {
-  const state = await db.playerState.get(profileId);
-  return state || null;
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return null;
+
+  try {
+    const state = await db.playerState.get(profileId);
+    return state || null;
+  } catch (error) {
+    console.warn('[PlayerPersistence] Failed to load player state for profile:', error);
+    return null;
+  }
 }
 
 /**
@@ -93,11 +117,19 @@ export async function fetchTracksByIds(trackIds: string[]): Promise<Track[]> {
  * Clear persisted player state for the current profile.
  */
 export async function clearPlayerState(): Promise<void> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return;
+
   const profileId = await getSelectedProfileId();
   if (!profileId) {
     return;
   }
-  await db.playerState.delete(profileId);
+
+  try {
+    await db.playerState.delete(profileId);
+  } catch (error) {
+    console.warn('[PlayerPersistence] Failed to clear player state:', error);
+  }
 }
 
 /**
@@ -105,24 +137,31 @@ export async function clearPlayerState(): Promise<void> {
  * Call this once on app startup to handle upgrade from v4 to v5.
  */
 export async function migrateOldPlayerState(): Promise<void> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return;
+
   const profileId = await getSelectedProfileId();
   if (!profileId) {
     return;
   }
 
-  // Check if old fixed-ID state exists
-  const oldState = await db.playerState.get('player-state');
-  if (oldState) {
-    // Migrate to current profile if they don't already have state
-    const existingState = await db.playerState.get(profileId);
-    if (!existingState) {
-      await db.playerState.put({
-        ...oldState,
-        id: profileId,
-      });
+  try {
+    // Check if old fixed-ID state exists
+    const oldState = await db.playerState.get('player-state');
+    if (oldState) {
+      // Migrate to current profile if they don't already have state
+      const existingState = await db.playerState.get(profileId);
+      if (!existingState) {
+        await db.playerState.put({
+          ...oldState,
+          id: profileId,
+        });
+      }
+      // Delete old state
+      await db.playerState.delete('player-state');
     }
-    // Delete old state
-    await db.playerState.delete('player-state');
+  } catch (error) {
+    console.warn('[PlayerPersistence] Failed to migrate old player state:', error);
   }
 }
 

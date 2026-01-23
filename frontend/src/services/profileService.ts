@@ -4,7 +4,7 @@
  * Manages selectable profiles that work across devices.
  * No passwords needed - protected by Tailscale.
  */
-import { db, type DeviceProfile, type CachedProfile } from '../db';
+import { db, type DeviceProfile, type CachedProfile, isIndexedDBAvailable } from '../db';
 
 export interface Profile {
   id: string;
@@ -37,39 +37,80 @@ let cachedProfileId: string | null = null;
 
 /**
  * Cache a profile in IndexedDB for offline access.
+ * Silently fails if IndexedDB isn't available.
  */
 export async function cacheProfile(profile: Profile): Promise<void> {
-  const cached: CachedProfile = {
-    id: profile.id,
-    name: profile.name,
-    color: profile.color,
-    avatar_url: profile.avatar_url,
-    has_spotify: profile.has_spotify,
-    has_lastfm: profile.has_lastfm,
-    cachedAt: new Date(),
-  };
-  await db.cachedProfiles.put(cached);
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    return; // Silently skip caching
+  }
+
+  try {
+    const cached: CachedProfile = {
+      id: profile.id,
+      name: profile.name,
+      color: profile.color,
+      avatar_url: profile.avatar_url,
+      has_spotify: profile.has_spotify,
+      has_lastfm: profile.has_lastfm,
+      cachedAt: new Date(),
+    };
+    await db.cachedProfiles.put(cached);
+  } catch (error) {
+    console.warn('[ProfileService] Failed to cache profile:', error);
+  }
 }
 
 /**
  * Get a single cached profile by ID.
+ * Returns undefined if IndexedDB isn't available.
  */
 export async function getCachedProfile(profileId: string): Promise<CachedProfile | undefined> {
-  return db.cachedProfiles.get(profileId);
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    return undefined;
+  }
+
+  try {
+    return await db.cachedProfiles.get(profileId);
+  } catch (error) {
+    console.warn('[ProfileService] Failed to get cached profile:', error);
+    return undefined;
+  }
 }
 
 /**
  * Get all cached profiles.
+ * Returns empty array if IndexedDB isn't available.
  */
 export async function getCachedProfiles(): Promise<CachedProfile[]> {
-  return db.cachedProfiles.toArray();
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    return [];
+  }
+
+  try {
+    return await db.cachedProfiles.toArray();
+  } catch (error) {
+    console.warn('[ProfileService] Failed to get cached profiles:', error);
+    return [];
+  }
 }
 
 /**
  * Clear a cached profile.
  */
 export async function clearCachedProfile(profileId: string): Promise<void> {
-  await db.cachedProfiles.delete(profileId);
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    return;
+  }
+
+  try {
+    await db.cachedProfiles.delete(profileId);
+  } catch (error) {
+    console.warn('[ProfileService] Failed to clear cached profile:', error);
+  }
 }
 
 /**
@@ -100,10 +141,22 @@ export async function getSelectedProfileId(): Promise<string | null> {
     return cachedProfileId;
   }
 
-  const existing = await db.deviceProfile.get('device-profile');
-  if (existing) {
-    cachedProfileId = existing.profileId;
-    return existing.profileId;
+  // Check if IndexedDB is available (fails on iOS private browsing)
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    console.warn('[ProfileService] IndexedDB not available, using memory-only mode');
+    return null;
+  }
+
+  try {
+    const existing = await db.deviceProfile.get('device-profile');
+    if (existing) {
+      cachedProfileId = existing.profileId;
+      return existing.profileId;
+    }
+  } catch (error) {
+    console.warn('[ProfileService] Failed to read from IndexedDB:', error);
+    return null;
   }
 
   return null;
@@ -112,16 +165,29 @@ export async function getSelectedProfileId(): Promise<string | null> {
 /**
  * Select a profile (store in IndexedDB).
  * Call this after user picks a profile from the selector.
+ * Falls back to memory-only if IndexedDB isn't available.
  */
 export async function selectProfile(profileId: string): Promise<void> {
-  const profile: DeviceProfile = {
-    id: 'device-profile',
-    profileId: profileId,
-    deviceId: '', // No longer used
-    createdAt: new Date(),
-  };
-  await db.deviceProfile.put(profile);
   cachedProfileId = profileId;
+
+  // Try to persist to IndexedDB
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    console.warn('[ProfileService] IndexedDB not available, profile selection is session-only');
+    return;
+  }
+
+  try {
+    const profile: DeviceProfile = {
+      id: 'device-profile',
+      profileId: profileId,
+      deviceId: '', // No longer used
+      createdAt: new Date(),
+    };
+    await db.deviceProfile.put(profile);
+  } catch (error) {
+    console.warn('[ProfileService] Failed to persist profile to IndexedDB:', error);
+  }
 }
 
 /**
@@ -129,8 +195,18 @@ export async function selectProfile(profileId: string): Promise<void> {
  * Use this to show the profile selector again.
  */
 export async function clearSelectedProfile(): Promise<void> {
-  await db.deviceProfile.delete('device-profile');
   cachedProfileId = null;
+
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    return;
+  }
+
+  try {
+    await db.deviceProfile.delete('device-profile');
+  } catch (error) {
+    console.warn('[ProfileService] Failed to clear profile from IndexedDB:', error);
+  }
 }
 
 /**

@@ -1,10 +1,15 @@
 /**
  * Hook for managing favorites with optimistic updates.
  * Uses React Query as single source of truth for favorites state.
+ * Supports offline caching for offline access.
  */
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { favoritesApi, type FavoriteTrack, type FavoritesListResponse } from '../api/client';
+import { useOfflineStatus } from './useOfflineStatus';
+import * as playlistCache from '../services/playlistCache';
+import * as syncService from '../services/syncService';
+import { getSelectedProfileId } from '../services/profileService';
 
 export interface UseFavoritesResult {
   /** Set of favorite track IDs for O(1) lookup */
@@ -19,6 +24,8 @@ export interface UseFavoritesResult {
   total: number;
   /** Loading state */
   isLoading: boolean;
+  /** Whether using cached offline data */
+  usingCachedData: boolean;
 }
 
 /**
@@ -27,12 +34,58 @@ export interface UseFavoritesResult {
  */
 export function useFavorites(): UseFavoritesResult {
   const queryClient = useQueryClient();
+  const { isOffline } = useOfflineStatus();
+  const [usingCachedData, setUsingCachedData] = useState(false);
 
-  // Fetch all favorites (source of truth)
+  // Fetch all favorites (source of truth) with offline fallback
   const { data, isLoading } = useQuery({
     queryKey: ['favorites'],
-    queryFn: () => favoritesApi.list(10000, 0), // Get all favorites
+    queryFn: async () => {
+      try {
+        const result = await favoritesApi.list(10000, 0); // Get all favorites
+        setUsingCachedData(false);
+
+        // Cache favorites for offline use
+        const profileId = await getSelectedProfileId();
+        if (profileId) {
+          await playlistCache.cacheFavorites(
+            profileId,
+            result.favorites.map((f) => f.id)
+          );
+        }
+
+        return result;
+      } catch (error) {
+        // If offline, try to load from cache
+        if (isOffline) {
+          const profileId = await getSelectedProfileId();
+          if (profileId) {
+            const cached = await playlistCache.getCachedFavorites(profileId);
+            if (cached) {
+              setUsingCachedData(true);
+              // Return a minimal response with just the track IDs
+              // Full track metadata would be resolved separately from cachedTracks
+              return {
+                favorites: cached.trackIds.map((id): FavoriteTrack => ({
+                  id,
+                  title: null,
+                  artist: null,
+                  album: null,
+                  duration_seconds: null,
+                  genre: null,
+                  year: null,
+                  favorited_at: '',
+                })),
+                total: cached.trackIds.length,
+              } as FavoritesListResponse;
+            }
+          }
+        }
+        throw error;
+      }
+    },
     staleTime: 30000, // Consider fresh for 30s
+    retry: isOffline ? false : 3,
   });
 
   // Derive a Set for O(1) lookups
@@ -47,9 +100,17 @@ export function useFavorites(): UseFavoritesResult {
     [favoriteIds]
   );
 
-  // Toggle mutation with optimistic updates
+  // Toggle mutation with optimistic updates and offline queueing
   const toggleMutation = useMutation({
-    mutationFn: favoritesApi.toggle,
+    mutationFn: async (trackId: string) => {
+      if (isOffline) {
+        // Queue the action for later sync
+        await syncService.queueAction('favorite_toggle', { trackId });
+        // Return a mock response for optimistic update
+        return { track_id: trackId, is_favorite: !favoriteIds.has(trackId) };
+      }
+      return favoritesApi.toggle(trackId);
+    },
     onMutate: async (trackId: string) => {
       // Cancel outgoing refetches
       await queryClient.cancelQueries({ queryKey: ['favorites'] });
@@ -90,17 +151,30 @@ export function useFavorites(): UseFavoritesResult {
         }
       });
 
+      // Also update cached favorites for offline
+      const profileId = await getSelectedProfileId();
+      if (profileId) {
+        const currentIds = Array.from(favoriteIds);
+        const isCurrentlyFavorite = favoriteIds.has(trackId);
+        const newIds = isCurrentlyFavorite
+          ? currentIds.filter((id) => id !== trackId)
+          : [trackId, ...currentIds];
+        await playlistCache.cacheFavorites(profileId, newIds);
+      }
+
       return { previous };
     },
     onError: (_err, _trackId, context) => {
-      // Rollback on error
-      if (context?.previous) {
+      // Rollback on error (only if online - offline changes are queued)
+      if (context?.previous && !isOffline) {
         queryClient.setQueryData(['favorites'], context.previous);
       }
     },
     onSettled: () => {
-      // Refetch to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      // Refetch to ensure consistency (only when online)
+      if (!isOffline) {
+        queryClient.invalidateQueries({ queryKey: ['favorites'] });
+      }
     },
   });
 
@@ -111,5 +185,6 @@ export function useFavorites(): UseFavoritesResult {
     favorites: data?.favorites ?? [],
     total: data?.total ?? 0,
     isLoading,
+    usingCachedData,
   };
 }

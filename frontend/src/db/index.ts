@@ -67,7 +67,7 @@ export interface OfflineArtwork {
 export interface PendingAction {
   id?: number; // Auto-increment
   profileId: string; // Profile that queued this action
-  type: 'scrobble' | 'now_playing' | 'sync_spotify';
+  type: 'scrobble' | 'now_playing' | 'sync_spotify' | 'favorite_toggle';
   payload: unknown;
   createdAt: Date;
   retries: number;
@@ -81,6 +81,45 @@ export interface CachedProfile {
   avatar_url: string | null;
   has_spotify: boolean;
   has_lastfm: boolean;
+  cachedAt: Date;
+}
+
+// Cached playlist for offline support
+export interface CachedPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  is_auto_generated: boolean;
+  generation_prompt: string | null;
+  track_ids: string[];
+  track_count: number;
+  cachedAt: Date;
+}
+
+// Cached smart playlist for offline support
+export interface CachedSmartPlaylist {
+  id: string;
+  name: string;
+  description: string | null;
+  rules: Array<{
+    field: string;
+    operator: string;
+    value?: unknown;
+  }>;
+  match_mode: 'all' | 'any';
+  order_by: string;
+  order_direction: 'asc' | 'desc';
+  max_tracks: number | null;
+  track_ids: string[];
+  cached_track_count: number;
+  last_refreshed_at: string | null;
+  cachedAt: Date;
+}
+
+// Cached favorites for offline support
+export interface CachedFavorites {
+  profileId: string;
+  trackIds: string[];
   cachedAt: Date;
 }
 
@@ -98,6 +137,40 @@ export interface PersistedPlayerState {
   updatedAt: Date;
 }
 
+// Track IndexedDB availability (can be disabled on iOS private browsing)
+let indexedDBAvailable: boolean | null = null;
+
+/**
+ * Check if IndexedDB is available.
+ * Returns false on iOS private browsing or when IndexedDB is disabled.
+ */
+export async function isIndexedDBAvailable(): Promise<boolean> {
+  if (indexedDBAvailable !== null) {
+    return indexedDBAvailable;
+  }
+
+  try {
+    // Test if IndexedDB works (fails in private browsing on iOS)
+    const testDB = indexedDB.open('__idb_test__');
+    await new Promise<void>((resolve, reject) => {
+      testDB.onerror = () => reject(new Error('IndexedDB not available'));
+      testDB.onsuccess = () => {
+        testDB.result.close();
+        indexedDB.deleteDatabase('__idb_test__');
+        resolve();
+      };
+      // Timeout for iOS which can hang instead of error
+      setTimeout(() => reject(new Error('IndexedDB timeout')), 1000);
+    });
+    indexedDBAvailable = true;
+    return true;
+  } catch {
+    console.warn('[DB] IndexedDB not available (private browsing or disabled)');
+    indexedDBAvailable = false;
+    return false;
+  }
+}
+
 export class FamiliarDB extends Dexie {
   deviceProfile!: Table<DeviceProfile>;
   chatSessions!: Table<ChatSession>;
@@ -107,6 +180,9 @@ export class FamiliarDB extends Dexie {
   pendingActions!: Table<PendingAction>;
   playerState!: Table<PersistedPlayerState>;
   cachedProfiles!: Table<CachedProfile>;
+  cachedPlaylists!: Table<CachedPlaylist>;
+  cachedSmartPlaylists!: Table<CachedSmartPlaylist>;
+  cachedFavorites!: Table<CachedFavorites>;
 
   constructor() {
     super('FamiliarDB');
@@ -171,6 +247,21 @@ export class FamiliarDB extends Dexie {
       pendingActions: '++id, profileId, type, createdAt',
       playerState: 'id',
       cachedProfiles: 'id, cachedAt',
+    });
+
+    // Version 8: Add cached playlists, smart playlists, and favorites for offline support
+    this.version(8).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      offlineArtwork: 'hash, cachedAt',
+      pendingActions: '++id, profileId, type, createdAt',
+      playerState: 'id',
+      cachedProfiles: 'id, cachedAt',
+      cachedPlaylists: 'id, cachedAt',
+      cachedSmartPlaylists: 'id, cachedAt',
+      cachedFavorites: 'profileId, cachedAt',
     });
   }
 }

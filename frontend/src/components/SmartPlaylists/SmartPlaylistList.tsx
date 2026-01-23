@@ -1,11 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2, Upload } from 'lucide-react';
+import { Zap, Plus, MoreVertical, Pencil, Trash2, RefreshCw, Play, Loader2, Upload, CloudOff } from 'lucide-react';
 import { smartPlaylistsApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { SmartPlaylistBuilder } from './SmartPlaylistBuilder';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { PlaylistExport, PlaylistImport } from '../PlaylistSharing';
+import * as playlistCache from '../../services/playlistCache';
 
 interface Props {
   onSelectPlaylist?: (playlist: SmartPlaylist) => void;
@@ -17,12 +19,55 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
   const [showImport, setShowImport] = useState(false);
   const [editingPlaylist, setEditingPlaylist] = useState<SmartPlaylist | undefined>();
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  const [cachedPlaylistIds, setCachedPlaylistIds] = useState<Set<string>>(new Set());
+  const [usingCachedData, setUsingCachedData] = useState(false);
 
   const { setQueue } = usePlayerStore();
+  const { isOffline } = useOfflineStatus();
+
+  // Load cached playlist IDs for offline indicators
+  useEffect(() => {
+    const loadCachedIds = async () => {
+      const cached = await playlistCache.getCachedSmartPlaylists();
+      setCachedPlaylistIds(new Set(cached.map((p) => p.id)));
+    };
+    loadCachedIds();
+  }, []);
 
   const { data: playlists, isLoading } = useQuery({
     queryKey: ['smart-playlists'],
-    queryFn: smartPlaylistsApi.list,
+    queryFn: async () => {
+      try {
+        const data = await smartPlaylistsApi.list();
+        setUsingCachedData(false);
+        return data;
+      } catch (error) {
+        // If offline, try to load from cache
+        if (isOffline) {
+          const cached = await playlistCache.getCachedSmartPlaylists();
+          if (cached.length > 0) {
+            setUsingCachedData(true);
+            // Convert to SmartPlaylist format
+            return cached.map((p): SmartPlaylist => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              rules: p.rules,
+              match_mode: p.match_mode,
+              order_by: p.order_by,
+              order_direction: p.order_direction,
+              max_tracks: p.max_tracks,
+              cached_track_count: p.cached_track_count,
+              last_refreshed_at: p.last_refreshed_at,
+              created_at: '',
+              updated_at: '',
+            }));
+          }
+        }
+        throw error;
+      }
+    },
+    retry: isOffline ? false : 3,
   });
 
   const deleteMutation = useMutation({
@@ -105,12 +150,19 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <Zap className="w-5 h-5 text-yellow-500" />
           Smart Playlists
+          {usingCachedData && (
+            <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
+              <CloudOff className="w-3 h-3" />
+              Offline
+            </span>
+          )}
         </h3>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowImport(true)}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded-md transition-colors"
-            title="Import .familiar playlist"
+            disabled={isOffline}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-md transition-colors"
+            title={isOffline ? 'Cannot import while offline' : 'Import .familiar playlist'}
           >
             <Upload className="w-4 h-4" />
             Import
@@ -120,7 +172,9 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
               setEditingPlaylist(undefined);
               setShowBuilder(true);
             }}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 rounded-md transition-colors"
+            disabled={isOffline}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-md transition-colors"
+            title={isOffline ? 'Cannot create while offline' : 'New smart playlist'}
           >
             <Plus className="w-4 h-4" />
             New
@@ -155,7 +209,14 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">{playlist.name}</div>
+                <div className="font-medium truncate flex items-center gap-2">
+                  {playlist.name}
+                  {cachedPlaylistIds.has(playlist.id) && (
+                    <span title="Available offline">
+                      <CloudOff className="w-3.5 h-3.5 text-green-500" />
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm text-zinc-400 flex items-center gap-2">
                   <span>{playlist.cached_track_count} tracks</span>
                   <span className="text-zinc-600">|</span>
@@ -190,14 +251,16 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                     <div className="absolute right-0 top-8 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 py-1">
                       <button
                         onClick={() => handleEdit(playlist)}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2"
+                        disabled={isOffline}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Pencil className="w-4 h-4" />
                         Edit
                       </button>
                       <button
                         onClick={() => handleRefresh(playlist.id)}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2"
+                        disabled={isOffline}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <RefreshCw className="w-4 h-4" />
                         Refresh
@@ -208,7 +271,8 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                       />
                       <button
                         onClick={() => handleDelete(playlist.id)}
-                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400"
+                        disabled={isOffline}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Trash2 className="w-4 h-4" />
                         Delete

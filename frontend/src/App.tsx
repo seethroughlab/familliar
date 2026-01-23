@@ -581,7 +581,18 @@ function App() {
   const checkProfile = useCallback(async () => {
     setCheckingProfile(true);
     try {
-      const p = await initializeProfile();
+      // Add timeout to prevent hanging on iOS when IndexedDB/Dexie gets stuck
+      const timeoutPromise = new Promise<null>((resolve) => {
+        setTimeout(() => {
+          logger.warn('[App] Profile initialization timed out - IndexedDB may be unavailable');
+          resolve(null);
+        }, 5000);
+      });
+
+      const p = await Promise.race([
+        initializeProfile(),
+        timeoutPromise,
+      ]);
       setProfile(p);
     } catch (err) {
       console.error('Failed to check profile:', err);

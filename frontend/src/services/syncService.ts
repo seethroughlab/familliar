@@ -1,11 +1,12 @@
 /**
  * Sync service for queuing actions when offline and syncing when back online.
+ * All IndexedDB operations silently fail if IndexedDB isn't available (iOS private browsing).
  */
-import { db, type PendingAction } from '../db';
+import { db, isIndexedDBAvailable, type PendingAction } from '../db';
 import { getSelectedProfileId } from './profileService';
 import { logger } from '../utils/logger';
 
-type ActionType = 'scrobble' | 'now_playing' | 'sync_spotify';
+type ActionType = 'scrobble' | 'now_playing' | 'sync_spotify' | 'favorite_toggle';
 
 /**
  * Queue an action to be performed when online.
@@ -15,35 +16,61 @@ export async function queueAction(
   type: ActionType,
   payload: unknown
 ): Promise<void> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) {
+    console.warn('[SyncService] Cannot queue action - IndexedDB not available');
+    return;
+  }
+
   const profileId = await getSelectedProfileId();
   if (!profileId) {
     console.warn('Cannot queue action without a selected profile');
     return;
   }
 
-  const action: PendingAction = {
-    profileId,
-    type,
-    payload,
-    createdAt: new Date(),
-    retries: 0,
-  };
+  try {
+    const action: PendingAction = {
+      profileId,
+      type,
+      payload,
+      createdAt: new Date(),
+      retries: 0,
+    };
 
-  await db.pendingActions.add(action);
+    await db.pendingActions.add(action);
+  } catch (error) {
+    console.warn('[SyncService] Failed to queue action:', error);
+  }
 }
 
 /**
  * Get the count of pending actions.
  */
 export async function getPendingCount(): Promise<number> {
-  return db.pendingActions.count();
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return 0;
+
+  try {
+    return await db.pendingActions.count();
+  } catch (error) {
+    console.warn('[SyncService] Failed to get pending count:', error);
+    return 0;
+  }
 }
 
 /**
  * Get all pending actions.
  */
 export async function getPendingActions(): Promise<PendingAction[]> {
-  return db.pendingActions.orderBy('createdAt').toArray();
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return [];
+
+  try {
+    return await db.pendingActions.orderBy('createdAt').toArray();
+  } catch (error) {
+    console.warn('[SyncService] Failed to get pending actions:', error);
+    return [];
+  }
 }
 
 /**
@@ -54,6 +81,9 @@ export async function processPendingActions(): Promise<{
   processed: number;
   failed: number;
 }> {
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return { processed: 0, failed: 0 };
+
   const actions = await getPendingActions();
   let processed = 0;
   let failed = 0;
@@ -61,20 +91,28 @@ export async function processPendingActions(): Promise<{
   for (const action of actions) {
     try {
       await executeAction(action);
-      await db.pendingActions.delete(action.id!);
+      try {
+        await db.pendingActions.delete(action.id!);
+      } catch (e) {
+        console.warn('[SyncService] Failed to delete processed action:', e);
+      }
       processed++;
     } catch (error) {
       console.error(`Failed to process action ${action.type}:`, error);
 
-      // Increment retry count
-      await db.pendingActions.update(action.id!, {
-        retries: action.retries + 1,
-      });
+      try {
+        // Increment retry count
+        await db.pendingActions.update(action.id!, {
+          retries: action.retries + 1,
+        });
 
-      // Remove if too many retries
-      if (action.retries >= 3) {
-        await db.pendingActions.delete(action.id!);
-        failed++;
+        // Remove if too many retries
+        if (action.retries >= 3) {
+          await db.pendingActions.delete(action.id!);
+          failed++;
+        }
+      } catch (e) {
+        console.warn('[SyncService] Failed to update action retries:', e);
       }
     }
   }
@@ -96,6 +134,9 @@ async function executeAction(action: PendingAction): Promise<void> {
     case 'sync_spotify':
       await executeSyncSpotify(action.profileId);
       break;
+    case 'favorite_toggle':
+      await executeFavoriteToggle(action.profileId, action.payload as FavoriteTogglePayload);
+      break;
     default:
       console.warn(`Unknown action type: ${action.type}`);
   }
@@ -107,6 +148,10 @@ interface ScrobblePayload {
 }
 
 interface NowPlayingPayload {
+  trackId: string;
+}
+
+interface FavoriteTogglePayload {
   trackId: string;
 }
 
@@ -156,11 +201,31 @@ async function executeSyncSpotify(profileId: string): Promise<void> {
   }
 }
 
+async function executeFavoriteToggle(profileId: string, payload: FavoriteTogglePayload): Promise<void> {
+  const response = await fetch(`/api/v1/favorites/${payload.trackId}/toggle`, {
+    method: 'POST',
+    headers: {
+      'X-Profile-ID': profileId,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Favorite toggle failed: ${response.statusText}`);
+  }
+}
+
 /**
  * Clear all pending actions.
  */
 export async function clearPendingActions(): Promise<void> {
-  await db.pendingActions.clear();
+  const idbAvailable = await isIndexedDBAvailable();
+  if (!idbAvailable) return;
+
+  try {
+    await db.pendingActions.clear();
+  } catch (error) {
+    console.warn('[SyncService] Failed to clear pending actions:', error);
+  }
 }
 
 /**

@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Loader2, Music, Wrench, Plus, History, AlertTriangle } from 'lucide-react';
+import { Send, Loader2, Music, Wrench, Plus, History, AlertTriangle, WifiOff } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useLibraryViewStore } from '../../stores/libraryViewStore';
 import { useVisibleTracksStore } from '../../stores/visibleTracksStore';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { getOrCreateDeviceProfile } from '../../services/profileService';
 import * as chatService from '../../services/chatService';
 import { ChatHistoryPanel } from './ChatHistoryPanel';
@@ -36,6 +37,7 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
 
   const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
+  const { isOffline } = useOfflineStatus();
 
   // Load profile and sessions on mount
   useEffect(() => {
@@ -457,8 +459,21 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          {/* Offline warning */}
+          {isOffline && (
+            <div className="p-3 bg-amber-900/20 border border-amber-800 rounded-lg flex items-start gap-2">
+              <WifiOff className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+              <div>
+                <p className="text-sm text-amber-400">You're offline</p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Chat requires a network connection. You can still browse and play cached music.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* LLM configuration warning */}
-          {llmStatus && !llmStatus.configured && (
+          {llmStatus && !llmStatus.configured && !isOffline && (
             <div className="p-3 bg-amber-900/20 border border-amber-800 rounded-lg flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
               <div>
@@ -522,13 +537,13 @@ export function ChatPanel({ pendingMessage, onPendingMessageConsumed }: ChatPane
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask Familiar..."
-              disabled={isLoading}
+              placeholder={isOffline ? 'Chat unavailable offline' : 'Ask Familiar...'}
+              disabled={isLoading || isOffline}
               className="flex-1 bg-zinc-800 border border-zinc-700 rounded-full px-4 py-2 text-base placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:opacity-50"
             />
             <button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || isOffline}
               className="p-2 bg-green-600 text-white rounded-full hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 transition-colors"
             >
               {isLoading ? (

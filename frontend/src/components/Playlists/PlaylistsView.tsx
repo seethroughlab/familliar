@@ -3,16 +3,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
   Sparkles, Play, MoreVertical, Trash2, Loader2,
-  ChevronDown, ChevronUp, ListMusic, Heart
+  ChevronDown, ChevronUp, ListMusic, Heart, CloudOff
 } from 'lucide-react';
 import { playlistsApi, smartPlaylistsApi } from '../../api/client';
 import type { Playlist, SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { PlaylistDetail } from './PlaylistDetail';
 import { FavoritesDetail } from './FavoritesDetail';
 import { SmartPlaylistList, SmartPlaylistDetail } from '../SmartPlaylists';
 import { NewReleasesView } from '../NewReleases';
 import { useFavorites } from '../../hooks/useFavorites';
+import * as playlistCache from '../../services/playlistCache';
 
 type ViewMode = 'list' | 'detail' | 'favorites' | 'smart-detail';
 
@@ -30,7 +32,10 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
   const { total: favoritesCount } = useFavorites();
+  const { isOffline } = useOfflineStatus();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [cachedPlaylistIds, setCachedPlaylistIds] = useState<Set<string>>(new Set());
+  const [usingCachedPlaylists, setUsingCachedPlaylists] = useState(false);
 
   // Get playlist ID and view from URL
   const urlPlaylistId = searchParams.get('playlist');
@@ -128,11 +133,47 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     }
   }, [selectedPlaylistId, onPlaylistViewed, setSelectedPlaylist]);
 
-  // Fetch AI-generated playlists (static playlists)
+  // Load cached playlist IDs to show offline availability indicators
+  useEffect(() => {
+    const loadCachedIds = async () => {
+      const cached = await playlistCache.getCachedPlaylists();
+      setCachedPlaylistIds(new Set(cached.map(p => p.id)));
+    };
+    loadCachedIds();
+  }, []);
+
+  // Fetch AI-generated playlists (static playlists) with offline fallback
   const { data: aiPlaylists, isLoading: loadingAi } = useQuery({
     queryKey: ['playlists', 'ai'],
-    queryFn: () => playlistsApi.list(true),
-    select: (data) => data.filter(p => p.is_auto_generated),
+    queryFn: async () => {
+      try {
+        const data = await playlistsApi.list(true);
+        setUsingCachedPlaylists(false);
+        return data.filter(p => p.is_auto_generated);
+      } catch (error) {
+        // If offline, try to load from cache
+        if (isOffline) {
+          const cached = await playlistCache.getCachedPlaylists();
+          const aiCached = cached.filter(p => p.is_auto_generated);
+          if (aiCached.length > 0) {
+            setUsingCachedPlaylists(true);
+            // Convert to Playlist format
+            return aiCached.map((p): Playlist => ({
+              id: p.id,
+              name: p.name,
+              description: p.description,
+              is_auto_generated: p.is_auto_generated,
+              generation_prompt: p.generation_prompt,
+              track_count: p.track_count,
+              created_at: '',
+              updated_at: '',
+            }));
+          }
+        }
+        throw error;
+      }
+    },
+    retry: isOffline ? false : 3,
   });
 
   const deleteMutation = useMutation({
@@ -251,6 +292,12 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
               <Sparkles className="w-5 h-5 text-purple-400" />
               <span className="font-semibold">AI Playlists</span>
               <span className="text-sm text-zinc-500">({aiPlaylists.length})</span>
+              {usingCachedPlaylists && (
+                <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
+                  <CloudOff className="w-3 h-3" />
+                  Offline
+                </span>
+              )}
             </div>
             {showAiPlaylists ? (
               <ChevronUp className="w-5 h-5 text-zinc-400" />
@@ -294,6 +341,11 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
                     >
                       <div className="font-medium truncate flex items-center gap-2">
                         {playlist.name}
+                        {cachedPlaylistIds.has(playlist.id) && (
+                          <span title="Available offline">
+                            <CloudOff className="w-3.5 h-3.5 text-green-500" />
+                          </span>
+                        )}
                       </div>
                       <div className="text-sm text-zinc-400 flex items-center gap-2">
                         <span>{playlist.track_count} tracks</span>
@@ -329,7 +381,8 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
                           <div className="absolute right-0 top-8 w-32 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 py-1">
                             <button
                               onClick={() => handleDelete(playlist.id)}
-                              className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400"
+                              disabled={isOffline}
+                              className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <Trash2 className="w-4 h-4" />
                               Delete

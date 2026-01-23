@@ -10,8 +10,12 @@ import {
   WifiOff,
   Cloud,
   CheckCircle,
+  ListMusic,
+  Zap,
+  Heart,
 } from 'lucide-react';
 import * as libraryCache from '../../services/libraryCache';
+import * as playlistCache from '../../services/playlistCache';
 import * as syncService from '../../services/syncService';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { OfflineTracksPanel } from './OfflineTracksPanel';
@@ -25,21 +29,30 @@ export function OfflineSettings() {
     lastCached: Date | null;
   } | null>(null);
 
+  const [playlistCacheInfo, setPlaylistCacheInfo] = useState<{
+    playlists: { count: number; lastCached: Date | null };
+    smartPlaylists: { count: number; lastCached: Date | null };
+    favorites: { count: number; lastCached: Date | null };
+  } | null>(null);
+
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isLoading, setIsLoading] = useState<{
     cacheLibrary?: boolean;
     clearCache?: boolean;
     syncPending?: boolean;
+    clearPlaylistCache?: boolean;
   }>({});
 
   const loadStats = async () => {
     try {
-      const [cache, pending] = await Promise.all([
+      const [cache, playlistStats, pending] = await Promise.all([
         libraryCache.getCacheInfo(),
+        playlistCache.getAllCacheStats(),
         syncService.getPendingCount(),
       ]);
       setCacheInfo(cache);
+      setPlaylistCacheInfo(playlistStats);
       setPendingCount(pending);
     } catch (error) {
       console.error('Failed to load offline stats:', error);
@@ -74,6 +87,21 @@ export function OfflineSettings() {
       console.error('Failed to clear cache:', error);
     } finally {
       setIsLoading((prev) => ({ ...prev, clearCache: false }));
+    }
+  };
+
+  const handleClearPlaylistCaches = async () => {
+    if (!confirm('Clear all cached playlists and favorites? You can re-cache by viewing them.')) {
+      return;
+    }
+    setIsLoading((prev) => ({ ...prev, clearPlaylistCache: true }));
+    try {
+      await playlistCache.clearAllPlaylistCaches();
+      await loadStats();
+    } catch (error) {
+      console.error('Failed to clear playlist caches:', error);
+    } finally {
+      setIsLoading((prev) => ({ ...prev, clearPlaylistCache: false }));
     }
   };
 
@@ -194,6 +222,73 @@ export function OfflineSettings() {
             )}
           </div>
         </div>
+
+        {/* Playlist cache status */}
+        {playlistCacheInfo && (playlistCacheInfo.playlists.count > 0 || playlistCacheInfo.smartPlaylists.count > 0 || playlistCacheInfo.favorites.count > 0) && (
+          <div className="py-2 border-t border-zinc-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-zinc-300 font-medium">Cached Playlists</span>
+              <button
+                onClick={handleClearPlaylistCaches}
+                disabled={isLoading.clearPlaylistCache}
+                className="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-400/10 rounded transition-colors disabled:opacity-50"
+                title="Clear all playlist caches"
+              >
+                {isLoading.clearPlaylistCache ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Trash2 className="w-4 h-4" />
+                )}
+              </button>
+            </div>
+
+            {playlistCacheInfo.playlists.count > 0 && (
+              <div className="flex items-center justify-between text-sm text-zinc-400 pl-2">
+                <div className="flex items-center gap-2">
+                  <ListMusic className="w-3.5 h-3.5" />
+                  <span>AI Playlists</span>
+                </div>
+                <span>
+                  {playlistCacheInfo.playlists.count} cached
+                  {playlistCacheInfo.playlists.lastCached && (
+                    <span className="text-xs ml-1">
+                      ({formatRelativeTime(playlistCacheInfo.playlists.lastCached)})
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {playlistCacheInfo.smartPlaylists.count > 0 && (
+              <div className="flex items-center justify-between text-sm text-zinc-400 pl-2">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Smart Playlists</span>
+                </div>
+                <span>
+                  {playlistCacheInfo.smartPlaylists.count} cached
+                  {playlistCacheInfo.smartPlaylists.lastCached && (
+                    <span className="text-xs ml-1">
+                      ({formatRelativeTime(playlistCacheInfo.smartPlaylists.lastCached)})
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {playlistCacheInfo.favorites.count > 0 && (
+              <div className="flex items-center justify-between text-sm text-zinc-400 pl-2">
+                <div className="flex items-center gap-2">
+                  <Heart className="w-3.5 h-3.5" />
+                  <span>Favorites</span>
+                </div>
+                <span>
+                  {playlistCacheInfo.favorites.count} profile{playlistCacheInfo.favorites.count !== 1 ? 's' : ''} cached
+                </span>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Pending sync actions */}
         <div className="flex items-center justify-between py-2 border-t border-zinc-700">

@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2, CloudOff } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
+import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { DiscoveryPanel, usePlaylistDiscovery, type DiscoveryItem } from '../Discovery';
 import * as offlineService from '../../services/offlineService';
+import * as playlistCache from '../../services/playlistCache';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
@@ -90,11 +92,13 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const queryClient = useQueryClient();
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
+  const { isOffline } = useOfflineStatus();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
+  const [usingCachedData, setUsingCachedData] = useState(false);
 
   // Drag-to-reorder state
   const [draggedTrackId, setDraggedTrackId] = useState<string | null>(null);
@@ -121,16 +125,54 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
 
   const { data: playlist, isLoading } = useQuery({
     queryKey: ['playlist', playlistId],
-    queryFn: () => playlistsApi.get(playlistId),
+    queryFn: async () => {
+      try {
+        const data = await playlistsApi.get(playlistId);
+        // Cache successful fetch for offline use
+        await playlistCache.cachePlaylist(data);
+        setUsingCachedData(false);
+        return data;
+      } catch (error) {
+        // If offline, try to load from cache
+        if (isOffline) {
+          const cached = await playlistCache.getCachedPlaylist(playlistId);
+          if (cached) {
+            // Resolve track metadata from cached tracks
+            const tracks = await playlistCache.resolveTrackIds(cached.track_ids);
+            setUsingCachedData(true);
+            // Convert to PlaylistDetail format
+            return {
+              id: cached.id,
+              name: cached.name,
+              description: cached.description,
+              is_auto_generated: cached.is_auto_generated,
+              generation_prompt: cached.generation_prompt,
+              tracks: tracks.map((t, idx) => ({
+                id: t.id,
+                title: t.title,
+                artist: t.artist,
+                album: t.album,
+                duration_seconds: t.durationSeconds,
+                position: idx,
+              })),
+              created_at: '',
+              updated_at: '',
+            } as PlaylistDetailType;
+          }
+        }
+        throw error;
+      }
+    },
+    retry: isOffline ? false : 3,
   });
 
-  // Fetch recommendations for AI-generated playlists
+  // Fetch recommendations for AI-generated playlists (not available offline)
   const { data: recommendations, isLoading: recommendationsLoading } = useQuery({
     queryKey: ['playlist-recommendations', playlistId],
     queryFn: () => playlistsApi.getRecommendations(playlistId),
     staleTime: 1000 * 60 * 10, // 10 minutes
     retry: 1,
-    enabled: !!playlist?.is_auto_generated,
+    enabled: !!playlist?.is_auto_generated && !isOffline && !usingCachedData,
   });
 
   // Check which tracks are already offline
@@ -174,6 +216,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       // Final update to ensure all are marked
       const ids = await offlineService.getOfflineTrackIds();
       setOfflineTrackIds(new Set(ids));
+
+      // Auto-cache the playlist metadata for offline access
+      await playlistCache.cachePlaylist(playlist);
     } catch (error) {
       console.error('Failed to download playlist:', error);
     } finally {
@@ -444,6 +489,12 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               <Sparkles className="w-5 h-5 text-purple-400 flex-shrink-0" />
             )}
             <h2 className="text-xl font-bold truncate">{playlist.name}</h2>
+            {usingCachedData && (
+              <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
+                <CloudOff className="w-3 h-3" />
+                Offline
+              </span>
+            )}
           </div>
 
           {playlist.description && (
@@ -477,9 +528,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
 
           <button
             onClick={handleDownloadPlaylist}
-            disabled={playlist.tracks.length === 0 || isDownloading || allTracksOffline}
+            disabled={playlist.tracks.length === 0 || isDownloading || allTracksOffline || isOffline}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
-            title={allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
+            title={isOffline ? 'Cannot download while offline' : allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
           >
             {isDownloading ? (
               <>
@@ -519,13 +570,15 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
             <ListPlus className="w-4 h-4" />
             Add to Queue
           </button>
-          <button
-            onClick={handleRemoveSelected}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-md text-sm transition-colors"
-          >
-            <Trash2 className="w-4 h-4" />
-            Remove
-          </button>
+          {!isOffline && !usingCachedData && (
+            <button
+              onClick={handleRemoveSelected}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-md text-sm transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Remove
+            </button>
+          )}
           <button
             onClick={() => setSelectedTrackIds(new Set())}
             className="p-1.5 hover:bg-zinc-700 rounded-md transition-colors"
@@ -563,11 +616,11 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
             return (
             <div
               key={track.id}
-              draggable
-              onDragStart={(e) => handleDragStart(track.id, e)}
-              onDragOver={(e) => handleDragOver(e, track.id)}
+              draggable={!isOffline && !usingCachedData}
+              onDragStart={(e) => !isOffline && !usingCachedData && handleDragStart(track.id, e)}
+              onDragOver={(e) => !isOffline && !usingCachedData && handleDragOver(e, track.id)}
               onDragLeave={handleDragLeave}
-              onDrop={() => handleDrop(track.id)}
+              onDrop={() => !isOffline && !usingCachedData && handleDrop(track.id)}
               onDragEnd={handleDragEnd}
               onClick={(e) => handleTrackClick(track.id, idx, e)}
               onContextMenu={(e) => handleContextMenu(fullTrack, e)}
@@ -577,8 +630,10 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               } ${isDragged ? 'opacity-50' : ''
               } ${isDropTarget ? 'border-t-2 border-green-500' : ''}`}
             >
-              {/* Drag handle */}
-              <div className="w-4 flex-shrink-0 cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity">
+              {/* Drag handle - hidden when offline */}
+              <div className={`w-4 flex-shrink-0 cursor-grab active:cursor-grabbing transition-opacity ${
+                isOffline || usingCachedData ? 'opacity-0' : 'opacity-0 group-hover:opacity-50 hover:!opacity-100'
+              }`}>
                 <GripVertical className="w-4 h-4 text-zinc-500" />
               </div>
 
