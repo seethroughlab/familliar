@@ -6,6 +6,7 @@ import { useVisualizerStore } from '../../stores/visualizerStore';
 import { tracksApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer } from './AudioVisualizer';
 import { VisualizerPicker } from './VisualizerPicker';
+import { setVisualizerVisible } from '../../hooks/useAudioEngine';
 
 export function VisualizerView() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -15,6 +16,12 @@ export function VisualizerView() {
 
   const { currentTrack, currentTime, duration, isPlaying } = usePlayerStore();
   const { visualizerId, setVisualizerId } = useVisualizerStore();
+
+  // Notify audio engine when visualizer is visible (for iOS hybrid mode)
+  useEffect(() => {
+    setVisualizerVisible(true);
+    return () => setVisualizerVisible(false);
+  }, []);
 
   // Sync visualizer type with URL
   const urlVisualizerType = searchParams.get('type');

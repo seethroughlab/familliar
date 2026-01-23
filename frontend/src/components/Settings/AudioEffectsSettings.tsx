@@ -6,11 +6,13 @@ import {
   RotateCcw,
   Save,
   Trash2,
+  Info,
 } from 'lucide-react';
 import {
   useAudioEffectsStore,
   type ReverbPreset,
 } from '../../stores/audioEffectsStore';
+import { areAudioEffectsAvailable } from '../../hooks/useAudioEngine';
 
 // Collapsible section component
 function EffectSection({
@@ -126,6 +128,7 @@ const REVERB_PRESETS: { value: ReverbPreset; label: string }[] = [
 export function AudioEffectsSettings() {
   const [savePresetName, setSavePresetName] = useState('');
   const [showSavePreset, setShowSavePreset] = useState(false);
+  const effectsAvailable = areAudioEffectsAvailable();
 
   const {
     masterEnabled,
@@ -183,6 +186,35 @@ export function AudioEffectsSettings() {
       setShowSavePreset(false);
     }
   };
+
+  // Show informative message on mobile where effects aren't available
+  if (!effectsAvailable) {
+    return (
+      <div className="bg-zinc-800/50 dark:bg-zinc-800/50 light:bg-white rounded-lg p-4">
+        <div className="flex items-center gap-3">
+          <Sliders className="w-5 h-5 text-zinc-500" />
+          <div className="flex-1">
+            <h4 className="font-medium text-white dark:text-white light:text-zinc-900">
+              Audio Effects
+            </h4>
+            <p className="text-sm text-zinc-400 dark:text-zinc-400 light:text-zinc-600">
+              EQ, compression, reverb, delay, and filters
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 p-3 bg-zinc-700/50 rounded-lg flex items-start gap-3">
+          <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-zinc-300">
+            <p className="font-medium text-white mb-1">Not available on mobile</p>
+            <p className="text-zinc-400">
+              Audio effects require Web Audio API routing which prevents background playback on iOS.
+              Effects are available on desktop browsers where background playback isn't needed.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-zinc-800/50 dark:bg-zinc-800/50 light:bg-white rounded-lg p-4">

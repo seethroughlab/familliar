@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.13] - 2026-01-23
+
 ### Added
 
-- **Audio Effects Panel** - comprehensive real-time audio effects system
+- **Audio Effects Panel** - comprehensive real-time audio effects system (desktop only)
   - **3-Band EQ** - Low (250 Hz), Mid (1 kHz), High (4 kHz) shelving filters with ±12 dB range
   - **Compressor** - Dynamics compression with threshold, ratio, attack, release, knee, and makeup gain
   - **Reverb** - Convolution reverb with 5 algorithmic presets (Small Room, Medium Room, Large Hall, Plate, Cathedral)
@@ -20,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Quick-access button in FullPlayer header for fast preset switching
   - Settings panel in Playback section with collapsible effect sections
   - Effects chain inserted after volume control, before visualizer (effected audio visible in visualizations)
+- **Debug Settings panel** - new Developer section at bottom of Settings
+  - Platform detection info (iOS, mobile, hybrid mode)
+  - Audio engine state (AudioContext, Analyser, current mode)
+  - Live console log viewer with filtering
+  - Test buttons for AudioContext and visibility state
+
+### Fixed
+
+- **iOS background playback** - audio now continues playing when app is backgrounded on iOS
+  - Implemented hybrid audio mode that switches between Web Audio (for visualizer) and direct playback (for background)
+  - Default: uses direct playback for reliable background audio
+  - When visualizer is visible: switches to Web Audio mode for visualizer to work
+  - When app backgrounds or visualizer closes: switches back to direct playback
+  - Audio effects not available on iOS (they require Web Audio routing which breaks background playback)
 
 ## [0.1.0-alpha.11] - 2026-01-21
 
