@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Search, Library, Settings, Zap, Activity, MessageSquare, X, Loader2 } from 'lucide-react';
+import { isVisualizerAvailable } from './hooks/useAudioEngine';
 import { logger } from './utils/logger';
 import { PlayerBar } from './components/Player/PlayerBar';
 import { LibraryView } from './components/Library';
@@ -95,15 +96,19 @@ function AppContent() {
   const getTabFromUrl = (): RightPanelTab => {
     // Check hash first (e.g., #settings, #playlists)
     const hash = window.location.hash.slice(1); // Remove #
-    if (hash === 'settings' || hash === 'playlists' || hash === 'visualizer' || hash === 'library') {
+    if (hash === 'settings' || hash === 'playlists' || hash === 'library') {
       return hash;
+    }
+    // Visualizer only available on desktop
+    if (hash === 'visualizer' && isVisualizerAvailable()) {
+      return 'visualizer';
     }
     // Fall back to pathname (e.g., /settings from OAuth callback)
     const path = window.location.pathname;
     logger.debug('[AppContent] getTabFromUrl, hash:', hash, 'path:', path);
     if (path === '/settings') return 'settings';
     if (path === '/playlists') return 'playlists';
-    if (path === '/visualizer') return 'visualizer';
+    if (path === '/visualizer' && isVisualizerAvailable()) return 'visualizer';
     return 'library';
   };
 
@@ -371,18 +376,20 @@ function AppContent() {
                       <Zap className="w-4 h-4 inline-block sm:mr-1.5" />
                       <span className="hidden sm:inline">Playlists</span>
                     </button>
-                    <button
-                      onClick={() => setRightPanelTab('visualizer')}
-                      className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
-                        rightPanelTab === 'visualizer'
-                          ? 'bg-zinc-800 text-white'
-                          : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
-                      }`}
-                      aria-label="Visualizer"
-                    >
-                      <Activity className="w-4 h-4 inline-block sm:mr-1.5" />
-                      <span className="hidden sm:inline">Visualizer</span>
-                    </button>
+                    {isVisualizerAvailable() && (
+                      <button
+                        onClick={() => setRightPanelTab('visualizer')}
+                        className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+                          rightPanelTab === 'visualizer'
+                            ? 'bg-zinc-800 text-white'
+                            : 'text-zinc-400 hover:text-white hover:bg-zinc-800/50'
+                        }`}
+                        aria-label="Visualizer"
+                      >
+                        <Activity className="w-4 h-4 inline-block sm:mr-1.5" />
+                        <span className="hidden sm:inline">Visualizer</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => setRightPanelTab('settings')}
                       className={`px-2 sm:px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${

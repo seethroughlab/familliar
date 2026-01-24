@@ -121,12 +121,57 @@ export function PlayerBar({
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-zinc-900 border-t border-zinc-800 z-20 pb-safe-bottom">
-      <div className="h-20 max-w-screen-2xl mx-auto px-4 flex items-center gap-4">
+      {/* Mobile layout: two rows - track info + play, then progress bar */}
+      <div className="sm:hidden">
+        {/* Row 1: Album art + Track info + Play/Pause */}
+        <div className="flex items-center gap-3 px-4 pt-2 pb-1">
+          <button
+            onClick={onExpandClick}
+            onContextMenu={handleContextMenu}
+            className="flex items-center gap-3 flex-1 min-w-0 text-left"
+            aria-label="Expand player"
+          >
+            <AlbumArt trackId={currentTrack.id} />
+            <div className="min-w-0 flex-1">
+              <div data-testid="current-track-title" className="font-medium truncate">{currentTrack.title || 'Unknown'}</div>
+              <div className="text-sm text-zinc-400 truncate">{currentTrack.artist || 'Unknown'}</div>
+            </div>
+          </button>
+          <button
+            data-testid="play-pause-mobile"
+            onClick={togglePlayPause}
+            className="p-3 bg-white text-black rounded-full flex-shrink-0"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause className="w-5 h-5" fill="currentColor" />
+            ) : (
+              <Play className="w-5 h-5" fill="currentColor" />
+            )}
+          </button>
+        </div>
+        {/* Row 2: Progress bar (full width, tappable) */}
+        <div className="px-4 pb-2">
+          <div
+            data-testid="progress-bar-mobile"
+            className="h-1 bg-zinc-700 rounded-full cursor-pointer"
+            onClick={handleSeek}
+          >
+            <div
+              className="h-full bg-white rounded-full"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop layout: single row with all controls */}
+      <div className="hidden sm:flex h-20 max-w-screen-2xl mx-auto px-4 items-center gap-4">
         {/* Track info - clickable to expand, right-click for context menu */}
         <button
           onClick={onExpandClick}
           onContextMenu={handleContextMenu}
-          className="flex items-center gap-3 w-40 sm:w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
+          className="flex items-center gap-3 w-64 min-w-0 text-left hover:bg-zinc-800/50 rounded-lg p-1 -ml-1 transition-colors group"
           aria-label="Expand player"
         >
           <AlbumArt trackId={currentTrack.id} />
@@ -216,10 +261,8 @@ export function PlayerBar({
           </div>
         </div>
 
-        {/* Listening sessions disabled for v0.1.0 - re-enable when signaling server is ready */}
-
-        {/* Volume - hidden on mobile */}
-        <div className="hidden sm:flex items-center gap-2 w-32">
+        {/* Volume */}
+        <div className="flex items-center gap-2 w-32">
           <button
             onClick={() => setVolume(volume > 0 ? 0 : 1)}
             className="p-2 hover:bg-zinc-800 rounded-full transition-colors"

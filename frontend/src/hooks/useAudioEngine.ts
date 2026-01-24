@@ -15,40 +15,18 @@ import { EffectsChain, initEffectsChain } from '../services/audioEffects';
 // ============================================================================
 
 const isMobilePlatform = /iPad|iPhone|iPod|Android/i.test(navigator.userAgent);
-const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
 
-// iOS Hybrid Mode: Switch between direct playback (background-safe) and Web Audio (visualizer)
-// On iOS, we use direct playback by default, but switch to Web Audio when visualizer is visible
-const useHybridMode = isIOS;
-
-// For non-iOS mobile, use direct playback always (no hybrid switching)
-const useDirectPlaybackOnly = isMobilePlatform && !isIOS;
-
-// Desktop uses Web Audio always
-const useWebAudioOnly = !isMobilePlatform;
+// Mobile uses direct playback (background-safe, no Web Audio)
+// Desktop uses Web Audio (visualizer, effects)
+const useDirectPlayback = isMobilePlatform;
+const useWebAudio = !isMobilePlatform;
 
 // Log version and platform detection on load
-console.log('[AudioEngine] v4 - iOS hybrid mode', {
-  isIOS,
+console.log('[AudioEngine] v5 - simplified mobile', {
   isMobilePlatform,
-  useHybridMode,
-  useDirectPlaybackOnly,
-  useWebAudioOnly,
+  useDirectPlayback,
+  useWebAudio,
 });
-
-// ============================================================================
-// Hybrid Mode State
-// ============================================================================
-
-// Track whether we're currently using Web Audio or direct playback
-let currentMode: 'direct' | 'webaudio' = useWebAudioOnly ? 'webaudio' : 'direct';
-
-// Track visualizer visibility (set by VisualizerView)
-let visualizerVisible = false;
-
-// Listeners for mode changes
-type ModeChangeListener = (mode: 'direct' | 'webaudio') => void;
-const modeChangeListeners: Set<ModeChangeListener> = new Set();
 
 // ============================================================================
 // Exported functions
@@ -56,39 +34,21 @@ const modeChangeListeners: Set<ModeChangeListener> = new Set();
 
 export function areAudioEffectsAvailable(): boolean {
   // Effects only work in Web Audio mode on desktop
-  return useWebAudioOnly;
+  return useWebAudio;
 }
 
 export function isVisualizerAvailable(): boolean {
-  // Visualizer works on desktop always, and on iOS when in hybrid mode
-  return useWebAudioOnly || useHybridMode;
+  // Visualizer only works on desktop (requires Web Audio)
+  return useWebAudio;
 }
 
-// Called by VisualizerView when it mounts/unmounts
-export function setVisualizerVisible(visible: boolean): void {
-  if (visualizerVisible === visible) return;
-
-  visualizerVisible = visible;
-  console.log('[AudioEngine] Visualizer visibility changed:', visible);
-
-  if (useHybridMode) {
-    // On iOS, switch modes based on visualizer visibility
-    if (visible && currentMode === 'direct') {
-      switchToWebAudioMode();
-    } else if (!visible && currentMode === 'webaudio') {
-      switchToDirectMode();
-    }
-  }
-}
-
-// Subscribe to mode changes
-export function onModeChange(listener: ModeChangeListener): () => void {
-  modeChangeListeners.add(listener);
-  return () => modeChangeListeners.delete(listener);
+// Legacy function - kept for API compatibility but no longer does anything
+export function setVisualizerVisible(_visible: boolean): void {
+  // No-op: visualizer is disabled on mobile
 }
 
 export function getCurrentMode(): 'direct' | 'webaudio' {
-  return currentMode;
+  return useWebAudio ? 'webaudio' : 'direct';
 }
 
 // ============================================================================
@@ -145,15 +105,15 @@ export function getAudioContext(): AudioContext | null {
 }
 
 export function getAudioEffectsChain(): EffectsChain | null {
-  return useWebAudioOnly ? globalEffectsChain : null;
+  return useWebAudio ? globalEffectsChain : null;
 }
 
 // ============================================================================
-// Element Accessors (mode-aware)
+// Element Accessors
 // ============================================================================
 
 function getCurrentElement(): HTMLAudioElement | null {
-  if (currentMode === 'webaudio') {
+  if (useWebAudio) {
     return currentElementIsA ? webAudioElementA : webAudioElementB;
   } else {
     return currentElementIsA ? directElementA : directElementB;
@@ -161,7 +121,7 @@ function getCurrentElement(): HTMLAudioElement | null {
 }
 
 function getNextElement(): HTMLAudioElement | null {
-  if (currentMode === 'webaudio') {
+  if (useWebAudio) {
     return currentElementIsA ? webAudioElementB : webAudioElementA;
   } else {
     return currentElementIsA ? directElementB : directElementA;
@@ -169,12 +129,12 @@ function getNextElement(): HTMLAudioElement | null {
 }
 
 function getCurrentGain(): GainNode | null {
-  if (currentMode !== 'webaudio') return null;
+  if (!useWebAudio) return null;
   return currentElementIsA ? globalGainA : globalGainB;
 }
 
 function getNextGain(): GainNode | null {
-  if (currentMode !== 'webaudio') return null;
+  if (!useWebAudio) return null;
   return currentElementIsA ? globalGainB : globalGainA;
 }
 
@@ -193,16 +153,17 @@ function createAudioElement(): HTMLAudioElement {
 
 function initializeAudioGraph(): boolean {
   try {
-    // Always create direct playback elements (for background playback on mobile)
-    if (!directElementA) {
-      directElementA = createAudioElement();
-    }
-    if (!directElementB) {
-      directElementB = createAudioElement();
-    }
-
-    // Create Web Audio graph if needed (desktop or iOS hybrid mode)
-    if (useWebAudioOnly || useHybridMode) {
+    if (useDirectPlayback) {
+      // Mobile: create direct playback elements only (no Web Audio)
+      if (!directElementA) {
+        directElementA = createAudioElement();
+      }
+      if (!directElementB) {
+        directElementB = createAudioElement();
+      }
+      console.log('[AudioEngine] Initialized in direct playback mode (mobile)');
+    } else {
+      // Desktop: create Web Audio graph with visualizer and effects support
       if (!globalAudioContext) {
         globalAudioContext = new AudioContext();
       }
@@ -213,7 +174,6 @@ function initializeAudioGraph(): boolean {
         globalAnalyser.smoothingTimeConstant = 0.8;
       }
 
-      // Create separate elements for Web Audio (these get bound permanently)
       if (!webAudioElementA) {
         webAudioElementA = createAudioElement();
         globalMediaSourceA = globalAudioContext.createMediaElementSource(webAudioElementA);
@@ -223,7 +183,6 @@ function initializeAudioGraph(): boolean {
         globalMediaSourceB = globalAudioContext.createMediaElementSource(webAudioElementB);
       }
 
-      // Create gain nodes
       if (!globalGainA) {
         globalGainA = globalAudioContext.createGain();
         globalGainA.gain.value = 1;
@@ -237,8 +196,7 @@ function initializeAudioGraph(): boolean {
         globalMasterGain = globalAudioContext.createGain();
       }
 
-      // Create effects chain (desktop only)
-      if (useWebAudioOnly && !globalEffectsChain) {
+      if (!globalEffectsChain) {
         globalEffectsChain = initEffectsChain(globalAudioContext);
       }
 
@@ -255,9 +213,9 @@ function initializeAudioGraph(): boolean {
         globalMasterGain.connect(globalAnalyser);
       }
       globalAnalyser.connect(globalAudioContext.destination);
+      console.log('[AudioEngine] Initialized in Web Audio mode (desktop)');
     }
 
-    console.log('[AudioEngine] Initialized, starting in mode:', currentMode);
     return true;
   } catch (e) {
     console.error('Failed to initialize audio graph:', e);
@@ -265,99 +223,6 @@ function initializeAudioGraph(): boolean {
   }
 }
 
-// ============================================================================
-// Mode Switching (iOS Hybrid Mode)
-// ============================================================================
-
-function switchToWebAudioMode(): void {
-  if (currentMode === 'webaudio') return;
-  if (!webAudioElementA || !webAudioElementB) return;
-
-  console.log('[AudioEngine] Switching to Web Audio mode (visualizer)');
-
-  const directElement = getCurrentElement();
-  const wasPlaying = directElement && !directElement.paused;
-  const currentTime = directElement?.currentTime ?? 0;
-  const src = directElement?.src ?? '';
-
-  // Pause direct element
-  if (directElement) {
-    directElement.pause();
-  }
-
-  // Switch mode
-  currentMode = 'webaudio';
-
-  // Resume AudioContext if suspended
-  if (globalAudioContext?.state === 'suspended') {
-    globalAudioContext.resume();
-  }
-
-  // Transfer playback to Web Audio element
-  const webAudioElement = getCurrentElement();
-  if (webAudioElement && src) {
-    webAudioElement.src = src;
-    webAudioElement.currentTime = currentTime;
-    if (wasPlaying) {
-      webAudioElement.play().catch(console.error);
-    }
-  }
-
-  // Notify listeners
-  modeChangeListeners.forEach(listener => listener('webaudio'));
-}
-
-function switchToDirectMode(): void {
-  if (currentMode === 'direct') return;
-  if (!directElementA || !directElementB) return;
-
-  console.log('[AudioEngine] Switching to direct mode (background-safe)');
-
-  const webAudioElement = getCurrentElement();
-  const wasPlaying = webAudioElement && !webAudioElement.paused;
-  const currentTime = webAudioElement?.currentTime ?? 0;
-  const src = webAudioElement?.src ?? '';
-
-  // Pause Web Audio element
-  if (webAudioElement) {
-    webAudioElement.pause();
-  }
-
-  // Switch mode
-  currentMode = 'direct';
-
-  // Transfer playback to direct element
-  const directElement = getCurrentElement();
-  if (directElement && src) {
-    directElement.src = src;
-    directElement.currentTime = currentTime;
-    directElement.volume = currentMasterVolume;
-    if (wasPlaying) {
-      directElement.play().catch(console.error);
-    }
-  }
-
-  // Notify listeners
-  modeChangeListeners.forEach(listener => listener('direct'));
-}
-
-// Handle visibility change - switch to direct mode when backgrounded
-function handleVisibilityChange(): void {
-  const currentElement = getCurrentElement();
-  console.log('[AudioEngine] Visibility changed:', {
-    hidden: document.hidden,
-    visibilityState: document.visibilityState,
-    currentMode,
-    visualizerVisible,
-    isPlaying: usePlayerStore.getState().isPlaying,
-    audioPaused: currentElement?.paused,
-  });
-
-  if (useHybridMode && document.hidden && currentMode === 'webaudio') {
-    // App went to background while in Web Audio mode - switch to direct for background playback
-    switchToDirectMode();
-  }
-}
 
 // ============================================================================
 // Helper Functions
@@ -390,7 +255,7 @@ function setElementVolume(element: HTMLAudioElement | null, volume: number): voi
 }
 
 function updateDirectPlaybackVolumes(): void {
-  if (currentMode !== 'direct') return;
+  if (!useDirectPlayback) return;
   if (!crossfadeContext?.isActive) {
     const currentElement = getCurrentElement();
     const nextElement = getNextElement();
@@ -494,8 +359,8 @@ export function useAudioEngine() {
     const nextElement = getNextElement();
     if (!nextElement) return;
 
-    if (currentMode === 'direct') {
-      // Direct mode: animate audioElement.volume
+    if (useDirectPlayback) {
+      // Direct mode (mobile): animate audioElement.volume
       const startTime = performance.now();
       const durationMs = duration * 1000;
 
@@ -582,7 +447,7 @@ export function useAudioEngine() {
     const currentId = usePlayerStore.getState().currentTrack?.id;
     if (currentId) loadedTrackIdRef.current = currentId;
 
-    if (currentMode === 'direct') {
+    if (useDirectPlayback) {
       const newCurrentElement = getCurrentElement();
       const newNextElement = getNextElement();
       setElementVolume(newCurrentElement, currentMasterVolume);
@@ -602,7 +467,7 @@ export function useAudioEngine() {
     const currentElement = getCurrentElement();
     const nextElement = getNextElement();
 
-    if (currentMode === 'direct') {
+    if (useDirectPlayback) {
       if (crossfadeContext.animationFrameId) cancelAnimationFrame(crossfadeContext.animationFrameId);
       setElementVolume(currentElement, currentMasterVolume);
       setElementVolume(nextElement, 0);
@@ -681,9 +546,7 @@ export function useAudioEngine() {
   useEffect(() => {
     initializeAudioGraph();
 
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // Setup ended handlers for ALL elements
+    // Setup ended handlers for elements
     const handleEnded = (isA: boolean) => () => {
       if (queueTransitionRef.current) return;
       if (currentElementIsA === isA && !crossfadeContext?.isActive) {
@@ -719,26 +582,31 @@ export function useAudioEngine() {
     const endedA = handleEnded(true);
     const endedB = handleEnded(false);
 
-    directElementA?.addEventListener('ended', endedA);
-    directElementB?.addEventListener('ended', endedB);
-    webAudioElementA?.addEventListener('ended', endedA);
-    webAudioElementB?.addEventListener('ended', endedB);
-
-    directElementA?.addEventListener('error', handleError);
-    directElementB?.addEventListener('error', handleError);
-    webAudioElementA?.addEventListener('error', handleError);
-    webAudioElementB?.addEventListener('error', handleError);
+    // Add listeners only to the elements that exist for this platform
+    if (useDirectPlayback) {
+      directElementA?.addEventListener('ended', endedA);
+      directElementB?.addEventListener('ended', endedB);
+      directElementA?.addEventListener('error', handleError);
+      directElementB?.addEventListener('error', handleError);
+    } else {
+      webAudioElementA?.addEventListener('ended', endedA);
+      webAudioElementB?.addEventListener('ended', endedB);
+      webAudioElementA?.addEventListener('error', handleError);
+      webAudioElementB?.addEventListener('error', handleError);
+    }
 
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      directElementA?.removeEventListener('ended', endedA);
-      directElementB?.removeEventListener('ended', endedB);
-      webAudioElementA?.removeEventListener('ended', endedA);
-      webAudioElementB?.removeEventListener('ended', endedB);
-      directElementA?.removeEventListener('error', handleError);
-      directElementB?.removeEventListener('error', handleError);
-      webAudioElementA?.removeEventListener('error', handleError);
-      webAudioElementB?.removeEventListener('error', handleError);
+      if (useDirectPlayback) {
+        directElementA?.removeEventListener('ended', endedA);
+        directElementB?.removeEventListener('ended', endedB);
+        directElementA?.removeEventListener('error', handleError);
+        directElementB?.removeEventListener('error', handleError);
+      } else {
+        webAudioElementA?.removeEventListener('ended', endedA);
+        webAudioElementB?.removeEventListener('ended', endedB);
+        webAudioElementA?.removeEventListener('error', handleError);
+        webAudioElementB?.removeEventListener('error', handleError);
+      }
     };
   }, [playNext, setIsPlaying]);
 
@@ -878,7 +746,7 @@ export function useAudioEngine() {
   useEffect(() => {
     currentMasterVolume = volume;
 
-    if (currentMode === 'direct') {
+    if (useDirectPlayback) {
       updateDirectPlaybackVolumes();
     } else {
       if (globalMasterGain) globalMasterGain.gain.value = volume;
