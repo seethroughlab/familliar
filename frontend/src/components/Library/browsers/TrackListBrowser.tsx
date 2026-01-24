@@ -327,6 +327,7 @@ export function TrackListBrowser({
   onGoToArtist,
   onGoToAlbum,
   onEditTrack,
+  offlineTrackIds,
 }: BrowserProps) {
   const [, setSearchParams] = useSearchParams();
   const { currentTrack, isPlaying, shuffle, setIsPlaying, setQueue, setLazyQueue, lazyQueueIds } = usePlayerStore();
@@ -472,11 +473,22 @@ export function TrackListBrowser({
   });
 
   // Flatten all pages into a single array
-  const allTracks = useMemo(
+  const allTracksUnfiltered = useMemo(
     () => data?.pages.flatMap((page) => page.items) ?? [],
     [data]
   );
-  const total = data?.pages[0]?.total ?? 0;
+
+  // Filter by downloaded tracks if downloadedOnly is enabled
+  const allTracks = useMemo(() => {
+    if (filters.downloadedOnly && offlineTrackIds && offlineTrackIds.size > 0) {
+      return allTracksUnfiltered.filter(track => offlineTrackIds.has(track.id));
+    }
+    return allTracksUnfiltered;
+  }, [allTracksUnfiltered, filters.downloadedOnly, offlineTrackIds]);
+
+  const total = filters.downloadedOnly && offlineTrackIds
+    ? allTracks.length
+    : data?.pages[0]?.total ?? 0;
 
   // Update visible tracks store when tracks change (for LLM context)
   const setVisibleTracks = useVisibleTracksStore((state) => state.setVisibleTracks);

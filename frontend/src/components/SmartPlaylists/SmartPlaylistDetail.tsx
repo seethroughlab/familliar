@@ -81,6 +81,7 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
   const [usingCachedData, setUsingCachedData] = useState(false);
+  const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
 
   // Fetch tracks for this smart playlist with offline fallback
   const { data: tracksResponse, isLoading: tracksLoading, refetch } = useQuery({
@@ -129,7 +130,12 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
     retry: isOffline ? false : 3,
   });
 
-  const tracks = tracksResponse?.tracks || [];
+  const allTracks = tracksResponse?.tracks || [];
+
+  // Filter by downloaded tracks if showDownloadedOnly is enabled
+  const tracks = showDownloadedOnly
+    ? allTracks.filter(t => offlineTrackIds.has(t.id))
+    : allTracks;
 
   // Fetch discovery data based on the first track in the playlist (not available offline)
   const firstTrackId = tracks[0]?.id;
@@ -217,8 +223,8 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
     }
   };
 
-  const allTracksOffline = tracks.every(t => offlineTrackIds.has(t.id));
-  const offlineCount = tracks.filter(t => offlineTrackIds.has(t.id)).length;
+  const allTracksOffline = allTracks.every(t => offlineTrackIds.has(t.id));
+  const offlineCount = allTracks.filter(t => offlineTrackIds.has(t.id)).length;
 
   const handlePlay = (startIndex = 0) => {
     if (tracks.length === 0) return;
@@ -382,7 +388,7 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
 
           <button
             onClick={handleDownloadPlaylist}
-            disabled={tracks.length === 0 || isDownloading || allTracksOffline || isOffline}
+            disabled={allTracks.length === 0 || isDownloading || allTracksOffline || isOffline}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-zinc-700 hover:bg-zinc-600 disabled:opacity-50 disabled:hover:bg-zinc-700 rounded-full transition-colors"
             title={isOffline ? 'Cannot download while offline' : allTracksOffline ? 'All tracks downloaded' : 'Download for offline'}
           >
@@ -402,11 +408,29 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
               <>
                 <Download className="w-4 h-4" />
                 <span>
-                  {offlineCount > 0 ? `${offlineCount}/${tracks.length}` : 'Download'}
+                  {offlineCount > 0 ? `${offlineCount}/${allTracks.length}` : 'Download'}
                 </span>
               </>
             )}
           </button>
+
+          {/* Downloaded only filter toggle */}
+          {offlineCount > 0 && (
+            <button
+              onClick={() => setShowDownloadedOnly(!showDownloadedOnly)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full transition-colors ${
+                showDownloadedOnly
+                  ? 'bg-green-600 hover:bg-green-500'
+                  : 'bg-zinc-700 hover:bg-zinc-600'
+              }`}
+              title={showDownloadedOnly ? 'Show all tracks' : 'Show only downloaded tracks'}
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm">
+                {showDownloadedOnly ? `Downloaded (${offlineCount})` : 'Downloaded only'}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 

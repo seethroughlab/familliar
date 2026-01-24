@@ -7,9 +7,11 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Download } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useLibraryViewStore } from '../../stores/libraryViewStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useOfflineTrackIds } from '../../hooks/useOfflineTrack';
 import { BrowserPicker } from './BrowserPicker';
 import { SelectionToolbar } from './SelectionToolbar';
 import { ArtistDetail } from './ArtistDetail';
@@ -39,6 +41,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     clearSelection,
     setEditingTrackId,
   } = useSelectionStore();
+  const { offlineIds } = useOfflineTrackIds();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Browser selection - read from URL, fall back to persisted preference
@@ -76,6 +79,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
       energyMax: searchParams.get('energyMax') ? Number(searchParams.get('energyMax')) : undefined,
       valenceMin: searchParams.get('valenceMin') ? Number(searchParams.get('valenceMin')) : undefined,
       valenceMax: searchParams.get('valenceMax') ? Number(searchParams.get('valenceMax')) : undefined,
+      downloadedOnly: searchParams.get('downloadedOnly') === 'true',
     };
   }, [searchParams, initialSearch]);
 
@@ -93,6 +97,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('energyMax');
         next.delete('valenceMin');
         next.delete('valenceMax');
+        next.delete('downloadedOnly');
         // Set new ones
         if (newFilters.artist) next.set('artist', newFilters.artist);
         if (newFilters.album) next.set('album', newFilters.album);
@@ -103,6 +108,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         if (newFilters.energyMax !== undefined) next.set('energyMax', String(newFilters.energyMax));
         if (newFilters.valenceMin !== undefined) next.set('valenceMin', String(newFilters.valenceMin));
         if (newFilters.valenceMax !== undefined) next.set('valenceMax', String(newFilters.valenceMax));
+        if (newFilters.downloadedOnly) next.set('downloadedOnly', 'true');
         return next;
       });
     },
@@ -409,6 +415,23 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
           currentBrowserId={currentBrowserId}
           onSelectBrowser={setCurrentBrowserId}
         />
+
+        {/* Downloaded only filter toggle */}
+        <button
+          onClick={() => setFilters({ ...filters, downloadedOnly: !filters.downloadedOnly })}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
+            filters.downloadedOnly
+              ? 'bg-green-600 text-white'
+              : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+          }`}
+          title={filters.downloadedOnly ? 'Show all tracks' : 'Show only downloaded tracks'}
+        >
+          <Download className="w-4 h-4" />
+          <span className="hidden sm:inline">Downloaded</span>
+          {filters.downloadedOnly && offlineIds.size > 0 && (
+            <span className="text-xs opacity-75">({offlineIds.size})</span>
+          )}
+        </button>
       </div>
 
       {/* Filter breadcrumbs */}
@@ -484,6 +507,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
             onEditTrack={handleEditTrack}
             filters={filters}
             onFilterChange={handleFilterChange}
+            offlineTrackIds={offlineIds}
           />
         ) : (
           <div className="flex items-center justify-center py-20 text-zinc-500">

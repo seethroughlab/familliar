@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Downloads view** - dedicated section for browsing all downloaded/offline tracks
+  - New "Downloads" button in Playlists tab (below Favorites) with green gradient styling
+  - Shows total track count and storage size used
+  - Full track list with play, context menu, and remove from downloads actions
+  - Empty state guidance when no tracks are downloaded
+- **Downloaded-only filter** - filter to show only offline-available tracks
+  - **Library view**: "Downloaded" toggle button in toolbar filters entire library
+  - **Smart Playlist detail**: "Downloaded only" button filters playlist tracks
+  - **Regular Playlist detail**: Same filter toggle for AI-generated and manual playlists
+  - Filter state persists in URL for Library view (`?downloadedOnly=true`)
+- **useDownloadedTracks hook** - returns downloaded tracks with metadata, total count, and storage size
+
 ## [0.1.0-alpha.13] - 2026-01-23
 
 ### Added

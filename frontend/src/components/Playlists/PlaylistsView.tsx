@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import {
   Sparkles, Play, MoreVertical, Trash2, Loader2,
-  ChevronDown, ChevronUp, ListMusic, Heart, CloudOff
+  ChevronDown, ChevronUp, ListMusic, Heart, CloudOff, Download, HardDrive
 } from 'lucide-react';
 import { playlistsApi, smartPlaylistsApi } from '../../api/client';
 import type { Playlist, SmartPlaylist } from '../../api/client';
@@ -11,12 +11,14 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import { PlaylistDetail } from './PlaylistDetail';
 import { FavoritesDetail } from './FavoritesDetail';
+import { DownloadsDetail } from './DownloadsDetail';
 import { SmartPlaylistList, SmartPlaylistDetail } from '../SmartPlaylists';
 import { NewReleasesView } from '../NewReleases';
 import { useFavorites } from '../../hooks/useFavorites';
+import { useDownloadedTracks } from '../../hooks/useDownloadedTracks';
 import * as playlistCache from '../../services/playlistCache';
 
-type ViewMode = 'list' | 'detail' | 'favorites' | 'smart-detail';
+type ViewMode = 'list' | 'detail' | 'favorites' | 'downloads' | 'smart-detail';
 
 interface SelectedPlaylist {
   type: 'static' | 'smart';
@@ -32,6 +34,7 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   const queryClient = useQueryClient();
   const { setQueue } = usePlayerStore();
   const { total: favoritesCount } = useFavorites();
+  const { total: downloadsCount, totalSizeFormatted: downloadsTotalSize } = useDownloadedTracks();
   const { isOffline } = useOfflineStatus();
   const [searchParams, setSearchParams] = useSearchParams();
   const [cachedPlaylistIds, setCachedPlaylistIds] = useState<Set<string>>(new Set());
@@ -45,6 +48,7 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   // Derive view mode from URL params
   const getViewModeFromUrl = useCallback((): ViewMode => {
     if (urlView === 'favorites') return 'favorites';
+    if (urlView === 'downloads') return 'downloads';
     if (urlSmartPlaylistId) return 'smart-detail';
     if (urlPlaylistId) return 'detail';
     return 'list';
@@ -84,6 +88,8 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     setViewModeState(mode);
     if (mode === 'favorites') {
       setSearchParams({ view: 'favorites' });
+    } else if (mode === 'downloads') {
+      setSearchParams({ view: 'downloads' });
     } else if (mode === 'list') {
       // Clear playlist-related params
       const newParams = new URLSearchParams(searchParams);
@@ -241,6 +247,13 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
     );
   }
 
+  // Show downloads view
+  if (viewMode === 'downloads') {
+    return (
+      <DownloadsDetail onBack={handleBack} />
+    );
+  }
+
   // Show smart playlist detail view
   if (viewMode === 'smart-detail' && selectedSmartPlaylist) {
     return (
@@ -278,6 +291,31 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
         <div className="flex-1 text-left">
           <div className="font-semibold">Favorites</div>
           <div className="text-sm text-zinc-400">{favoritesCount} tracks</div>
+        </div>
+      </button>
+
+      {/* Downloads Section */}
+      <button
+        onClick={() => setViewMode('downloads')}
+        className="w-full flex items-center gap-3 p-3 bg-gradient-to-r from-green-500/10 to-emerald-500/10 hover:from-green-500/20 hover:to-emerald-500/20 rounded-lg border border-green-500/20 transition-colors"
+      >
+        <div className="p-2 rounded-full bg-green-500/20">
+          <Download className="w-5 h-5 text-green-500" />
+        </div>
+        <div className="flex-1 text-left">
+          <div className="font-semibold">Downloads</div>
+          <div className="text-sm text-zinc-400 flex items-center gap-2">
+            <span>{downloadsCount} tracks</span>
+            {downloadsCount > 0 && (
+              <>
+                <span className="text-zinc-600">•</span>
+                <span className="flex items-center gap-1">
+                  <HardDrive className="w-3 h-3" />
+                  {downloadsTotalSize}
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </button>
 

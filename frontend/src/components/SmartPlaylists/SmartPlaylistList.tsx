@@ -250,7 +250,10 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                     />
                     <div className="absolute right-0 top-8 w-40 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-20 py-1">
                       <button
-                        onClick={() => handleEdit(playlist)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(playlist);
+                        }}
                         disabled={isOffline}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -258,7 +261,10 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                         Edit
                       </button>
                       <button
-                        onClick={() => handleRefresh(playlist.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleRefresh(playlist.id);
+                        }}
                         disabled={isOffline}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -270,7 +276,10 @@ export function SmartPlaylistList({ onSelectPlaylist }: Props) {
                         onExport={() => setMenuOpen(null)}
                       />
                       <button
-                        onClick={() => handleDelete(playlist.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(playlist.id);
+                        }}
                         disabled={isOffline}
                         className="w-full px-3 py-2 text-left text-sm hover:bg-zinc-700 flex items-center gap-2 text-red-400 disabled:opacity-50 disabled:cursor-not-allowed"
                       >

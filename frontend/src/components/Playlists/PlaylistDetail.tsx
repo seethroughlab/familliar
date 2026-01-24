@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2, CloudOff } from 'lucide-react';
@@ -99,6 +99,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
   const [usingCachedData, setUsingCachedData] = useState(false);
+  const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
 
   // Drag-to-reorder state
   const [draggedTrackId, setDraggedTrackId] = useState<string | null>(null);
@@ -229,17 +230,26 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const allTracksOffline = playlist?.tracks.every(t => offlineTrackIds.has(t.id)) ?? false;
   const offlineCount = playlist?.tracks.filter(t => offlineTrackIds.has(t.id)).length ?? 0;
 
+  // Filter by downloaded tracks if showDownloadedOnly is enabled
+  const displayedTracks = useMemo(() => {
+    if (!playlist) return [];
+    if (showDownloadedOnly) {
+      return playlist.tracks.filter(t => offlineTrackIds.has(t.id));
+    }
+    return playlist.tracks;
+  }, [playlist, showDownloadedOnly, offlineTrackIds]);
+
   const handlePlay = (startIndex = 0) => {
-    if (!playlist || playlist.tracks.length === 0) return;
+    if (displayedTracks.length === 0) return;
 
     // If clicking on the currently playing track, toggle play/pause
-    const clickedTrack = playlist.tracks[startIndex];
+    const clickedTrack = displayedTracks[startIndex];
     if (clickedTrack && currentTrack?.id === clickedTrack.id) {
       setIsPlaying(!isPlaying);
       return;
     }
 
-    const queueTracks = playlist.tracks.map(t => ({
+    const queueTracks = displayedTracks.map(t => ({
       id: t.id,
       file_path: '',
       title: t.title || 'Unknown',
@@ -519,7 +529,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           <button
             onClick={() => handlePlay()}
-            disabled={playlist.tracks.length === 0}
+            disabled={displayedTracks.length === 0}
             className="flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
           >
             <Play className="w-4 h-4" fill="currentColor" />
@@ -553,6 +563,24 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               </>
             )}
           </button>
+
+          {/* Downloaded only filter toggle */}
+          {offlineCount > 0 && (
+            <button
+              onClick={() => setShowDownloadedOnly(!showDownloadedOnly)}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full transition-colors ${
+                showDownloadedOnly
+                  ? 'bg-green-600 hover:bg-green-500'
+                  : 'bg-zinc-700 hover:bg-zinc-600'
+              }`}
+              title={showDownloadedOnly ? 'Show all tracks' : 'Show only downloaded tracks'}
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-sm">
+                {showDownloadedOnly ? `Downloaded (${offlineCount})` : 'Downloaded only'}
+              </span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -590,9 +618,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       )}
 
       {/* Track list */}
-      {playlist.tracks.length > 0 ? (
+      {displayedTracks.length > 0 ? (
         <div className="space-y-1">
-          {playlist.tracks.map((track, idx) => {
+          {displayedTracks.map((track, idx) => {
             // Convert playlist track to full Track type for context menu
             const fullTrack: Track = {
               id: track.id,
@@ -739,7 +767,7 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
           isSelected={false}
           onClose={closeContextMenu}
           onPlay={() => {
-            const idx = playlist.tracks.findIndex(t => t.id === contextMenu.track?.id);
+            const idx = displayedTracks.findIndex(t => t.id === contextMenu.track?.id);
             if (idx !== -1) handlePlay(idx);
           }}
           onQueue={() => {

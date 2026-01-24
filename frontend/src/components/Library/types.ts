@@ -35,6 +35,8 @@ export interface LibraryFilters {
   energyMax?: number;
   valenceMin?: number;
   valenceMax?: number;
+  // Offline filter
+  downloadedOnly?: boolean;
 }
 
 /**
@@ -93,6 +95,9 @@ export interface BrowserProps {
   // Filters
   filters: LibraryFilters;
   onFilterChange: (filters: Partial<LibraryFilters>) => void;
+
+  // Offline track IDs (for downloadedOnly filter)
+  offlineTrackIds?: Set<string>;
 }
 
 /**
