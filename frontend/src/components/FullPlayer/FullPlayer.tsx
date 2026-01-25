@@ -20,7 +20,7 @@ import {
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
-import { tracksApi, type LyricLine } from '../../api/client';
+import { tracksApi, playlistsApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
 import { VideoPlayer } from './VideoPlayer';
@@ -40,6 +40,7 @@ function FullPlayerDiscoverTab({
   loading,
   onGoToArtist,
   onPlayTrack,
+  onAddToWishlist,
 }: {
   discoverData: {
     similar_tracks: Array<{
@@ -64,6 +65,7 @@ function FullPlayerDiscoverTab({
   loading: boolean;
   onGoToArtist: (artistName: string) => void;
   onPlayTrack: (item: DiscoveryItem) => void;
+  onAddToWishlist: (item: DiscoveryItem) => void;
 }) {
   // Transform the discover data to match the hook's expected input
   const trackDiscoveryInput = discoverData ? {
@@ -117,6 +119,7 @@ function FullPlayerDiscoverTab({
           sections={sections}
           onItemClick={handleItemClick}
           onItemPlay={handleItemPlay}
+          onAddToWishlist={onAddToWishlist}
         />
 
         {/* External Links for Current Track */}
@@ -368,6 +371,19 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
                 const trackIndex = discoverData?.similar_tracks.findIndex(t => t.id === item.id) ?? -1;
                 if (trackIndex !== -1 && discoverData) {
                   setQueue(discoverData.similar_tracks as Track[], trackIndex);
+                }
+              }
+            }}
+            onAddToWishlist={async (item) => {
+              if (!item.inLibrary && item.name) {
+                try {
+                  await playlistsApi.addToWishlist({
+                    title: item.name,
+                    artist: item.subtitle || 'Unknown Artist',
+                    album: item.playbackContext?.album,
+                  });
+                } catch (err) {
+                  console.error('Failed to add to wishlist:', err);
                 }
               }
             }}

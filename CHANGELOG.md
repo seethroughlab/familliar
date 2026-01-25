@@ -7,8 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0-alpha.14] - 2026-01-25
+
 ### Added
 
+- **Missing Track System** - first-class support for "missing tracks" (tracks you want but don't have locally)
+  - **External Tracks model** - new `ExternalTrack` table to store metadata for tracks not in your library
+  - **Mixed playlists** - playlists can now contain both local tracks and external track placeholders
+  - **Visual distinction** - external tracks appear at 75% opacity with "Not in library" label
+  - **Preview playback** - 30-second previews from Spotify/Deezer for external tracks (amber Radio icon)
+  - **Purchase links** - external link pills to find tracks on Bandcamp, Spotify, Last.fm
+  - **Auto-matching** - when you add tracks to library, they automatically link to matching external tracks
+  - **Wishlist playlist** - special system playlist for tracks you're interested in
+  - **Add to Wishlist** - purple "+" button on discovery items to save tracks you want
+- **Spotify playlist import** - import Spotify playlists with automatic local/external track splitting
+  - `GET /spotify/playlists` - list your Spotify playlists
+  - `GET /spotify/playlists/{id}/tracks` - preview tracks with local match status
+  - `POST /spotify/playlists/{id}/import` - import playlist with local matches + external placeholders
+- **External track matching service** - intelligent matching algorithm
+  - ISRC exact match (highest confidence)
+  - Exact artist + title match
+  - Partial match with title/artist contains
+  - Fuzzy match with 85% threshold using rapidfuzz
+  - Background re-matching after library scans
+- **LLM tools for Spotify playlists** - Claude can now work with your Spotify playlists
+  - `list_spotify_playlists` - "What Spotify playlists do I have?"
+  - `get_spotify_playlist_tracks` - "What's in my Spotify workout playlist?" (shows match rate)
+  - `import_spotify_playlist` - "Import my Spotify chill playlist"
 - **Downloads view** - dedicated section for browsing all downloaded/offline tracks
   - New "Downloads" button in Playlists tab (below Favorites) with green gradient styling
   - Shows total track count and storage size used
@@ -20,6 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Regular Playlist detail**: Same filter toggle for AI-generated and manual playlists
   - Filter state persists in URL for Library view (`?downloadedOnly=true`)
 - **useDownloadedTracks hook** - returns downloaded tracks with metadata, total count, and storage size
+
+### Changed
+
+- **Playlist API responses** - now include `is_wishlist`, `local_track_count`, `external_track_count` fields
+- **Playlist tracks** - unified `PlaylistTrackItem` type with `type: 'local' | 'external'` discriminator
+- **Discovery components** - all discovery views now support "Add to Wishlist" action for non-library items
 
 ## [0.1.0-alpha.13] - 2026-01-23
 

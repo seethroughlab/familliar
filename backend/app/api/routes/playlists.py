@@ -4,10 +4,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from app.api.deps import DbSession, RequiredProfile
-from app.db.models import Playlist, PlaylistTrack, Track
+from app.db.models import ExternalTrack, ExternalTrackSource, Playlist, PlaylistTrack, Track
+from app.services.external_track_matcher import ExternalTrackMatcher
 from app.services.recommendations import RecommendationsService
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -31,14 +32,26 @@ class PlaylistUpdate(BaseModel):
 
 
 class TrackInPlaylist(BaseModel):
-    """Track in a playlist response."""
+    """Track in a playlist response.
 
-    id: str
+    Can be either a local track or an external (missing) track.
+    """
+
+    id: str  # For local tracks: track_id, for external: external_track_id
+    playlist_track_id: str  # The PlaylistTrack.id (for reordering/removal)
+    type: str  # "local" or "external"
     title: str | None
     artist: str | None
     album: str | None
     duration_seconds: float | None
     position: int
+
+    # External track fields
+    is_matched: bool = False
+    matched_track_id: str | None = None
+    match_confidence: float | None = None
+    preview_url: str | None = None
+    external_links: dict[str, str] = {}  # spotify, bandcamp, deezer URLs
 
 
 class PlaylistResponse(BaseModel):
@@ -48,8 +61,11 @@ class PlaylistResponse(BaseModel):
     name: str
     description: str | None
     is_auto_generated: bool
+    is_wishlist: bool = False
     generation_prompt: str | None
     track_count: int
+    local_track_count: int = 0
+    external_track_count: int = 0
     created_at: str
     updated_at: str
 
@@ -61,6 +77,7 @@ class PlaylistDetailResponse(BaseModel):
     name: str
     description: str | None
     is_auto_generated: bool
+    is_wishlist: bool = False
     generation_prompt: str | None
     tracks: list[TrackInPlaylist]
     created_at: str
@@ -72,6 +89,7 @@ async def list_playlists(
     db: DbSession,
     profile: RequiredProfile,
     include_auto: bool = Query(True, description="Include auto-generated playlists"),
+    include_wishlist: bool = Query(True, description="Include wishlist playlist"),
 ) -> list[PlaylistResponse]:
     """List all playlists for the current profile."""
     query = select(Playlist).where(Playlist.profile_id == profile.id)
@@ -79,28 +97,45 @@ async def list_playlists(
     if not include_auto:
         query = query.where(Playlist.is_auto_generated.is_(False))
 
-    query = query.order_by(Playlist.updated_at.desc())
+    if not include_wishlist:
+        query = query.where(Playlist.is_wishlist.is_(False))
+
+    # Wishlist first, then by updated_at
+    query = query.order_by(Playlist.is_wishlist.desc(), Playlist.updated_at.desc())
 
     result = await db.execute(query)
     playlists = result.scalars().all()
 
-    # Get track counts
+    # Get track counts (separate local and external)
     responses = []
     for playlist in playlists:
-        count_result = await db.execute(
-            select(func.count(PlaylistTrack.track_id)).where(
+        # Count total tracks
+        total_count = await db.scalar(
+            select(func.count(PlaylistTrack.id)).where(
                 PlaylistTrack.playlist_id == playlist.id
             )
-        )
-        track_count = count_result.scalar() or 0
+        ) or 0
+
+        # Count local tracks
+        local_count = await db.scalar(
+            select(func.count(PlaylistTrack.id)).where(
+                PlaylistTrack.playlist_id == playlist.id,
+                PlaylistTrack.track_id.isnot(None),
+            )
+        ) or 0
+
+        external_count = total_count - local_count
 
         responses.append(PlaylistResponse(
             id=str(playlist.id),
             name=playlist.name,
             description=playlist.description,
             is_auto_generated=playlist.is_auto_generated,
+            is_wishlist=playlist.is_wishlist,
             generation_prompt=playlist.generation_prompt,
-            track_count=track_count,
+            track_count=total_count,
+            local_track_count=local_count,
+            external_track_count=external_count,
             created_at=playlist.created_at.isoformat(),
             updated_at=playlist.updated_at.isoformat(),
         ))
@@ -175,7 +210,10 @@ async def get_playlist(
     db: DbSession,
     profile: RequiredProfile,
 ) -> PlaylistDetailResponse:
-    """Get a playlist by ID with its tracks."""
+    """Get a playlist by ID with its tracks.
+
+    Returns both local and external tracks mixed together by position.
+    """
     playlist = await db.get(Playlist, playlist_id)
 
     if not playlist or playlist.profile_id != profile.id:
@@ -184,31 +222,66 @@ async def get_playlist(
             detail="Playlist not found",
         )
 
-    # Get tracks with ordering
+    # Get all playlist tracks ordered by position
     result = await db.execute(
-        select(PlaylistTrack, Track)
-        .join(Track, PlaylistTrack.track_id == Track.id)
+        select(PlaylistTrack)
         .where(PlaylistTrack.playlist_id == playlist_id)
         .order_by(PlaylistTrack.position)
     )
+    playlist_tracks = result.scalars().all()
 
-    tracks = [
-        TrackInPlaylist(
-            id=str(track.id),
-            title=track.title,
-            artist=track.artist,
-            album=track.album,
-            duration_seconds=track.duration_seconds,
-            position=pt.position,
-        )
-        for pt, track in result.all()
-    ]
+    tracks = []
+    for pt in playlist_tracks:
+        if pt.track_id:
+            # Local track
+            track = await db.get(Track, pt.track_id)
+            if track:
+                tracks.append(TrackInPlaylist(
+                    id=str(track.id),
+                    playlist_track_id=str(pt.id),
+                    type="local",
+                    title=track.title,
+                    artist=track.artist,
+                    album=track.album,
+                    duration_seconds=track.duration_seconds,
+                    position=pt.position,
+                    is_matched=False,
+                    matched_track_id=None,
+                    match_confidence=None,
+                    preview_url=None,
+                    external_links={},
+                ))
+        elif pt.external_track_id:
+            # External track
+            ext = await db.get(ExternalTrack, pt.external_track_id)
+            if ext:
+                external_links = {}
+                if ext.external_data:
+                    if ext.external_data.get("spotify_url"):
+                        external_links["spotify"] = ext.external_data["spotify_url"]
+
+                tracks.append(TrackInPlaylist(
+                    id=str(ext.id),
+                    playlist_track_id=str(pt.id),
+                    type="external",
+                    title=ext.title,
+                    artist=ext.artist,
+                    album=ext.album,
+                    duration_seconds=ext.duration_seconds,
+                    position=pt.position,
+                    is_matched=ext.matched_track_id is not None,
+                    matched_track_id=str(ext.matched_track_id) if ext.matched_track_id else None,
+                    match_confidence=ext.match_confidence,
+                    preview_url=ext.preview_url,
+                    external_links=external_links,
+                ))
 
     return PlaylistDetailResponse(
         id=str(playlist.id),
         name=playlist.name,
         description=playlist.description,
         is_auto_generated=playlist.is_auto_generated,
+        is_wishlist=playlist.is_wishlist,
         generation_prompt=playlist.generation_prompt,
         tracks=tracks,
         created_at=playlist.created_at.isoformat(),
@@ -240,21 +313,30 @@ async def update_playlist(
     await db.commit()
     await db.refresh(playlist)
 
-    # Get track count
-    count_result = await db.execute(
-        select(func.count(PlaylistTrack.track_id)).where(
+    # Get track counts
+    total_count = await db.scalar(
+        select(func.count(PlaylistTrack.id)).where(
             PlaylistTrack.playlist_id == playlist.id
         )
-    )
-    track_count = count_result.scalar() or 0
+    ) or 0
+
+    local_count = await db.scalar(
+        select(func.count(PlaylistTrack.id)).where(
+            PlaylistTrack.playlist_id == playlist.id,
+            PlaylistTrack.track_id.isnot(None),
+        )
+    ) or 0
 
     return PlaylistResponse(
         id=str(playlist.id),
         name=playlist.name,
         description=playlist.description,
         is_auto_generated=playlist.is_auto_generated,
+        is_wishlist=playlist.is_wishlist,
         generation_prompt=playlist.generation_prompt,
-        track_count=track_count,
+        track_count=total_count,
+        local_track_count=local_count,
+        external_track_count=total_count - local_count,
         created_at=playlist.created_at.isoformat(),
         updated_at=playlist.updated_at.isoformat(),
     )
@@ -266,13 +348,22 @@ async def delete_playlist(
     db: DbSession,
     profile: RequiredProfile,
 ) -> None:
-    """Delete a playlist."""
+    """Delete a playlist.
+
+    The wishlist playlist cannot be deleted.
+    """
     playlist = await db.get(Playlist, playlist_id)
 
     if not playlist or playlist.profile_id != profile.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Playlist not found",
+        )
+
+    if playlist.is_wishlist:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete the wishlist playlist",
         )
 
     # Delete playlist tracks first (cascade should handle this, but be explicit)
@@ -346,7 +437,8 @@ async def add_tracks_to_playlist(
 class ReorderTracksRequest(BaseModel):
     """Request to reorder tracks in a playlist."""
 
-    track_ids: list[str] = Field(..., description="Track IDs in the new order")
+    track_ids: list[str] = Field(default=[], description="Track IDs in the new order (deprecated)")
+    playlist_track_ids: list[str] = Field(default=[], description="PlaylistTrack IDs in the new order")
 
 
 @router.put("/{playlist_id}/tracks/reorder", response_model=PlaylistDetailResponse)
@@ -358,8 +450,8 @@ async def reorder_playlist_tracks(
 ) -> PlaylistDetailResponse:
     """Reorder tracks in a playlist.
 
-    The track_ids list should contain all track IDs in the playlist in their new order.
-    Tracks not in the list will be removed, and invalid track IDs will be ignored.
+    Use playlist_track_ids (preferred) - the PlaylistTrack.id values.
+    Falls back to track_ids for backwards compatibility (local tracks only).
     """
     playlist = await db.get(Playlist, playlist_id)
 
@@ -369,31 +461,54 @@ async def reorder_playlist_tracks(
             detail="Playlist not found",
         )
 
-    # Get current tracks in playlist
-    result = await db.execute(
-        select(PlaylistTrack.track_id).where(PlaylistTrack.playlist_id == playlist_id)
-    )
-    current_track_ids = {str(row[0]) for row in result.all()}
-
-    # Filter to only valid track IDs that exist in the playlist
-    valid_track_ids = [tid for tid in request.track_ids if tid in current_track_ids]
-
-    # Update positions for each track
-    for position, track_id_str in enumerate(valid_track_ids):
-        try:
-            track_id = UUID(track_id_str)
-        except ValueError:
-            continue
-
-        # Update the position
-        await db.execute(
-            update(PlaylistTrack)
-            .where(
-                PlaylistTrack.playlist_id == playlist_id,
-                PlaylistTrack.track_id == track_id,
-            )
-            .values(position=position)
+    # Prefer playlist_track_ids if provided
+    if request.playlist_track_ids:
+        # Get current playlist track IDs
+        result = await db.execute(
+            select(PlaylistTrack.id).where(PlaylistTrack.playlist_id == playlist_id)
         )
+        current_pt_ids = {str(row[0]) for row in result.all()}
+
+        # Update positions for each playlist track
+        for position, pt_id_str in enumerate(request.playlist_track_ids):
+            if pt_id_str not in current_pt_ids:
+                continue
+            try:
+                pt_id = UUID(pt_id_str)
+            except ValueError:
+                continue
+
+            await db.execute(
+                update(PlaylistTrack)
+                .where(PlaylistTrack.id == pt_id)
+                .values(position=position)
+            )
+    elif request.track_ids:
+        # Backwards compatibility: use track_ids (local tracks only)
+        result = await db.execute(
+            select(PlaylistTrack.track_id).where(
+                PlaylistTrack.playlist_id == playlist_id,
+                PlaylistTrack.track_id.isnot(None),
+            )
+        )
+        current_track_ids = {str(row[0]) for row in result.all() if row[0]}
+
+        for position, track_id_str in enumerate(request.track_ids):
+            if track_id_str not in current_track_ids:
+                continue
+            try:
+                track_id = UUID(track_id_str)
+            except ValueError:
+                continue
+
+            await db.execute(
+                update(PlaylistTrack)
+                .where(
+                    PlaylistTrack.playlist_id == playlist_id,
+                    PlaylistTrack.track_id == track_id,
+                )
+                .values(position=position)
+            )
 
     await db.commit()
 
@@ -408,7 +523,11 @@ async def remove_track_from_playlist(
     db: DbSession,
     profile: RequiredProfile,
 ) -> None:
-    """Remove a track from a playlist."""
+    """Remove a track from a playlist by track_id.
+
+    For backwards compatibility. Use DELETE /playlists/{id}/items/{playlist_track_id}
+    for explicit removal of playlist items (handles both local and external tracks).
+    """
     playlist = await db.get(Playlist, playlist_id)
 
     if not playlist or playlist.profile_id != profile.id:
@@ -424,6 +543,147 @@ async def remove_track_from_playlist(
         )
     )
     await db.commit()
+
+
+@router.delete("/{playlist_id}/items/{playlist_track_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_playlist_item(
+    playlist_id: UUID,
+    playlist_track_id: UUID,
+    db: DbSession,
+    profile: RequiredProfile,
+) -> None:
+    """Remove an item from a playlist by its playlist_track_id.
+
+    Works for both local tracks and external tracks.
+    """
+    playlist = await db.get(Playlist, playlist_id)
+
+    if not playlist or playlist.profile_id != profile.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Playlist not found",
+        )
+
+    await db.execute(
+        delete(PlaylistTrack).where(
+            PlaylistTrack.id == playlist_track_id,
+            PlaylistTrack.playlist_id == playlist_id,
+        )
+    )
+    await db.commit()
+
+
+# ============================================================================
+# Wishlist Endpoints
+# ============================================================================
+
+
+class WishlistAddRequest(BaseModel):
+    """Request to add an item to the wishlist."""
+
+    title: str
+    artist: str
+    album: str | None = None
+    spotify_id: str | None = None
+    preview_url: str | None = None
+    external_data: dict | None = None
+
+
+@router.get("/wishlist", response_model=PlaylistDetailResponse)
+async def get_wishlist(
+    db: DbSession,
+    profile: RequiredProfile,
+) -> PlaylistDetailResponse:
+    """Get the wishlist playlist for the current profile.
+
+    Creates the wishlist if it doesn't exist.
+    """
+    # Find or create wishlist
+    result = await db.execute(
+        select(Playlist).where(
+            Playlist.profile_id == profile.id,
+            Playlist.is_wishlist.is_(True),
+        )
+    )
+    wishlist = result.scalar_one_or_none()
+
+    if not wishlist:
+        # Create wishlist
+        wishlist = Playlist(
+            profile_id=profile.id,
+            name="Wishlist",
+            description="Tracks I want to add to my library",
+            is_wishlist=True,
+        )
+        db.add(wishlist)
+        await db.commit()
+        await db.refresh(wishlist)
+
+    return await get_playlist(wishlist.id, db, profile)
+
+
+@router.post("/wishlist/add", response_model=PlaylistDetailResponse)
+async def add_to_wishlist(
+    request: WishlistAddRequest,
+    db: DbSession,
+    profile: RequiredProfile,
+) -> PlaylistDetailResponse:
+    """Add a track to the wishlist.
+
+    Creates an ExternalTrack and adds it to the wishlist playlist.
+    """
+    # Find or create wishlist
+    result = await db.execute(
+        select(Playlist).where(
+            Playlist.profile_id == profile.id,
+            Playlist.is_wishlist.is_(True),
+        )
+    )
+    wishlist = result.scalar_one_or_none()
+
+    if not wishlist:
+        wishlist = Playlist(
+            profile_id=profile.id,
+            name="Wishlist",
+            description="Tracks I want to add to my library",
+            is_wishlist=True,
+        )
+        db.add(wishlist)
+        await db.flush()
+
+    # Create external track
+    matcher = ExternalTrackMatcher(db)
+    external_track = await matcher.create_external_track(
+        title=request.title,
+        artist=request.artist,
+        album=request.album,
+        source=ExternalTrackSource.MANUAL,
+        spotify_id=request.spotify_id,
+        preview_url=request.preview_url,
+        preview_source="spotify" if request.preview_url else None,
+        external_data=request.external_data,
+        source_playlist_id=wishlist.id,
+        try_match=True,
+    )
+
+    # Get max position
+    max_pos = await db.scalar(
+        select(func.max(PlaylistTrack.position)).where(
+            PlaylistTrack.playlist_id == wishlist.id
+        )
+    ) or -1
+
+    # Add to wishlist
+    playlist_track = PlaylistTrack(
+        playlist_id=wishlist.id,
+        external_track_id=external_track.id,
+        position=max_pos + 1,
+    )
+    db.add(playlist_track)
+
+    await db.commit()
+
+    return await get_playlist(wishlist.id, db, profile)
 
 
 class RecommendedArtistResponse(BaseModel):

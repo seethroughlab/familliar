@@ -123,6 +123,28 @@ export interface CachedFavorites {
   cachedAt: Date;
 }
 
+// Download queue persistence for iOS resilience
+export interface PersistedDownloadJob {
+  id: string; // Job ID (e.g., "playlist-123")
+  type: 'playlist' | 'smart-playlist' | 'album';
+  name: string;
+  trackIds: string[];
+  completedIds: string[];
+  failedIds: string[];
+  status: 'queued' | 'downloading' | 'paused' | 'completed' | 'failed';
+  startedAt: Date;
+  updatedAt: Date;
+}
+
+// Track partial download progress for resume support
+export interface PartialDownload {
+  trackId: string;
+  bytesDownloaded: number;
+  totalBytes: number;
+  chunks: Blob[]; // Stored chunks for resume
+  updatedAt: Date;
+}
+
 // Player state persistence
 export interface PersistedPlayerState {
   id: string; // Profile ID (was fixed 'player-state', now per-profile)
@@ -183,6 +205,8 @@ export class FamiliarDB extends Dexie {
   cachedPlaylists!: Table<CachedPlaylist>;
   cachedSmartPlaylists!: Table<CachedSmartPlaylist>;
   cachedFavorites!: Table<CachedFavorites>;
+  downloadQueue!: Table<PersistedDownloadJob>;
+  partialDownloads!: Table<PartialDownload>;
 
   constructor() {
     super('FamiliarDB');
@@ -262,6 +286,23 @@ export class FamiliarDB extends Dexie {
       cachedPlaylists: 'id, cachedAt',
       cachedSmartPlaylists: 'id, cachedAt',
       cachedFavorites: 'profileId, cachedAt',
+    });
+
+    // Version 9: Add download queue persistence and partial download tracking for iOS resilience
+    this.version(9).stores({
+      deviceProfile: 'id',
+      chatSessions: 'id, profileId, updatedAt',
+      cachedTracks: 'id, artist, album, cachedAt',
+      offlineTracks: 'id, cachedAt',
+      offlineArtwork: 'hash, cachedAt',
+      pendingActions: '++id, profileId, type, createdAt',
+      playerState: 'id',
+      cachedProfiles: 'id, cachedAt',
+      cachedPlaylists: 'id, cachedAt',
+      cachedSmartPlaylists: 'id, cachedAt',
+      cachedFavorites: 'profileId, cachedAt',
+      downloadQueue: 'id, status, updatedAt',
+      partialDownloads: 'trackId, updatedAt',
     });
   }
 }

@@ -12,7 +12,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import SpotifyFavorite, SpotifyProfile, Track
+from app.db.models import (
+    ExternalTrack,
+    ExternalTrackSource,
+    Playlist,
+    PlaylistTrack,
+    SpotifyFavorite,
+    SpotifyProfile,
+    Track,
+)
 from app.services.app_settings import get_app_settings_service
 
 logger = logging.getLogger(__name__)
@@ -519,6 +527,283 @@ class SpotifySyncService:
             "preview_url": spotify_track.get("preview_url"),
             "external_url": spotify_track.get("external_urls", {}).get("spotify"),
         }
+
+
+class SpotifyPlaylistService:
+    """Service for importing and working with Spotify playlists."""
+
+    def __init__(self, db: AsyncSession) -> None:
+        self.db = db
+        self.spotify_service = SpotifyService()
+        self.sync_service = SpotifySyncService(db)
+
+    async def list_playlists(
+        self,
+        profile_id: UUID,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """List user's Spotify playlists.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            limit: Max playlists to return
+
+        Returns:
+            List of playlist metadata dicts
+        """
+        client = await self.spotify_service.get_client(self.db, profile_id)
+        if not client:
+            raise ValueError("Spotify not connected")
+
+        results = client.current_user_playlists(limit=limit)
+        playlists = []
+
+        for playlist in results.get("items", []):
+            images = playlist.get("images", [])
+            playlists.append({
+                "id": playlist.get("id"),
+                "name": playlist.get("name"),
+                "description": playlist.get("description"),
+                "track_count": playlist.get("tracks", {}).get("total", 0),
+                "image_url": images[0].get("url") if images else None,
+                "external_url": playlist.get("external_urls", {}).get("spotify"),
+                "owner": playlist.get("owner", {}).get("display_name"),
+                "public": playlist.get("public"),
+            })
+
+        return playlists
+
+    async def get_playlist_tracks(
+        self,
+        profile_id: UUID,
+        spotify_playlist_id: str,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        """Get tracks from a Spotify playlist with local match info.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            spotify_playlist_id: Spotify playlist ID
+            limit: Max tracks to return
+
+        Returns:
+            Dict with tracks list and match statistics
+        """
+        client = await self.spotify_service.get_client(self.db, profile_id)
+        if not client:
+            raise ValueError("Spotify not connected")
+
+        # Get playlist details first
+        playlist_info = client.playlist(spotify_playlist_id, fields="name,description")
+
+        # Get tracks
+        results = client.playlist_tracks(spotify_playlist_id, limit=limit)
+        tracks = []
+        in_library = 0
+
+        for item in results.get("items", []):
+            track = item.get("track")
+            if not track:
+                continue
+
+            # Check local match
+            local_match = await self.sync_service._match_to_local(track)
+
+            artists = track.get("artists", [])
+            album = track.get("album", {})
+
+            track_info = {
+                "spotify_id": track.get("id"),
+                "title": track.get("name"),
+                "artist": artists[0]["name"] if artists else None,
+                "album": album.get("name") if album else None,
+                "duration_ms": track.get("duration_ms"),
+                "preview_url": track.get("preview_url"),
+                "in_library": local_match is not None,
+                "local_track_id": str(local_match.id) if local_match else None,
+            }
+            tracks.append(track_info)
+
+            if local_match:
+                in_library += 1
+
+        return {
+            "playlist_name": playlist_info.get("name"),
+            "playlist_description": playlist_info.get("description"),
+            "tracks": tracks,
+            "total": len(tracks),
+            "in_library": in_library,
+            "missing": len(tracks) - in_library,
+            "match_rate": f"{(in_library / len(tracks) * 100):.0f}%" if tracks else "0%",
+        }
+
+    async def import_playlist(
+        self,
+        profile_id: UUID,
+        spotify_playlist_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        include_missing: bool = True,
+    ) -> Playlist:
+        """Import a Spotify playlist to Familiar.
+
+        Creates a local playlist with matched local tracks and optionally
+        external track placeholders for missing tracks.
+
+        Args:
+            profile_id: Profile with Spotify connection
+            spotify_playlist_id: Spotify playlist ID
+            name: Override playlist name (uses Spotify name if not provided)
+            description: Override description
+            include_missing: Whether to include unmatched tracks as ExternalTrack entries
+
+        Returns:
+            The created Playlist with tracks
+        """
+        client = await self.spotify_service.get_client(self.db, profile_id)
+        if not client:
+            raise ValueError("Spotify not connected")
+
+        # Get playlist details
+        playlist_info = client.playlist(
+            spotify_playlist_id,
+            fields="name,description,images"
+        )
+
+        # Create local playlist
+        playlist = Playlist(
+            profile_id=profile_id,
+            name=name or playlist_info.get("name") or "Imported Playlist",
+            description=description or playlist_info.get("description"),
+            is_auto_generated=False,
+        )
+        self.db.add(playlist)
+        await self.db.flush()
+
+        # Fetch all tracks (paginated)
+        offset = 0
+        limit = 100
+        position = 0
+
+        while True:
+            results = client.playlist_tracks(
+                spotify_playlist_id,
+                limit=limit,
+                offset=offset
+            )
+            items = results.get("items", [])
+
+            if not items:
+                break
+
+            for item in items:
+                track = item.get("track")
+                if not track:
+                    continue
+
+                # Try to match to local library
+                local_match = await self.sync_service._match_to_local(track)
+
+                if local_match:
+                    # Add local track to playlist
+                    playlist_track = PlaylistTrack(
+                        playlist_id=playlist.id,
+                        track_id=local_match.id,
+                        position=position,
+                    )
+                    self.db.add(playlist_track)
+                elif include_missing:
+                    # Create external track and add to playlist
+                    external_track = await self._create_external_track_from_spotify(
+                        track,
+                        playlist.id,
+                        spotify_playlist_id,
+                    )
+
+                    playlist_track = PlaylistTrack(
+                        playlist_id=playlist.id,
+                        external_track_id=external_track.id,
+                        position=position,
+                    )
+                    self.db.add(playlist_track)
+
+                position += 1
+
+            offset += limit
+
+            # Safety limit
+            if offset > 500:
+                break
+
+        await self.db.commit()
+        await self.db.refresh(playlist)
+
+        logger.info(
+            f"Imported Spotify playlist '{playlist.name}' with {position} tracks "
+            f"for profile {profile_id}"
+        )
+
+        return playlist
+
+    async def _create_external_track_from_spotify(
+        self,
+        spotify_track: dict[str, Any],
+        source_playlist_id: UUID,
+        source_spotify_playlist_id: str,
+    ) -> ExternalTrack:
+        """Create an ExternalTrack from Spotify track data.
+
+        If the track already exists (by spotify_id), returns existing.
+        """
+        spotify_id = spotify_track.get("id")
+
+        # Check if already exists
+        if spotify_id:
+            result = await self.db.execute(
+                select(ExternalTrack).where(ExternalTrack.spotify_id == spotify_id)
+            )
+            existing = result.scalar_one_or_none()
+            if existing:
+                return existing
+
+        artists = spotify_track.get("artists", [])
+        album = spotify_track.get("album", {})
+        images = album.get("images", []) if album else []
+
+        external_track = ExternalTrack(
+            title=spotify_track.get("name") or "Unknown",
+            artist=artists[0]["name"] if artists else "Unknown",
+            album=album.get("name") if album else None,
+            duration_seconds=(spotify_track.get("duration_ms") or 0) / 1000.0,
+            year=self._parse_year(album.get("release_date")) if album else None,
+            isrc=spotify_track.get("external_ids", {}).get("isrc"),
+            spotify_id=spotify_id,
+            preview_url=spotify_track.get("preview_url"),
+            preview_source="spotify" if spotify_track.get("preview_url") else None,
+            source=ExternalTrackSource.SPOTIFY_PLAYLIST,
+            source_playlist_id=source_playlist_id,
+            source_spotify_playlist_id=source_spotify_playlist_id,
+            external_data={
+                "spotify_url": spotify_track.get("external_urls", {}).get("spotify"),
+                "album_art": images[0].get("url") if images else None,
+                "artist_id": artists[0]["id"] if artists else None,
+                "album_id": album.get("id") if album else None,
+                "popularity": spotify_track.get("popularity"),
+            },
+        )
+        self.db.add(external_track)
+        await self.db.flush()
+
+        return external_track
+
+    def _parse_year(self, date_str: str | None) -> int | None:
+        """Parse year from Spotify date string (YYYY or YYYY-MM-DD)."""
+        if not date_str:
+            return None
+        try:
+            return int(date_str[:4])
+        except (ValueError, TypeError):
+            return None
 
 
 class SpotifyArtistService:

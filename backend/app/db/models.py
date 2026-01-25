@@ -7,10 +7,12 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -76,6 +78,16 @@ class ChangeScope(enum.Enum):
     DB_ONLY = "db_only"  # Just update Familiar's database
     DB_AND_ID3 = "db_and_id3"  # Also write to audio file tags
     DB_ID3_FILES = "db_id3_files"  # Also rename/move files
+
+
+class ExternalTrackSource(enum.Enum):
+    """Source of an external/missing track."""
+
+    SPOTIFY_PLAYLIST = "spotify_playlist"
+    SPOTIFY_FAVORITE = "spotify_favorite"
+    PLAYLIST_IMPORT = "playlist_import"
+    LLM_RECOMMENDATION = "llm_recommendation"
+    MANUAL = "manual"
 
 
 class Profile(Base):
@@ -270,6 +282,75 @@ class Track(Base):
     )
 
 
+class ExternalTrack(Base):
+    """External/missing track that the user wants but doesn't have locally.
+
+    First-class citizens in playlists, appearing alongside local tracks.
+    When a matching local track is added to the library, it auto-links via matched_track_id.
+
+    Sources include Spotify imports, LLM recommendations, and manual additions.
+    """
+
+    __tablename__ = "external_tracks"
+    __table_args__ = (
+        Index("ix_external_tracks_artist", "artist"),
+        Index("ix_external_tracks_isrc", "isrc"),
+        Index("ix_external_tracks_spotify_id", "spotify_id"),
+        Index("ix_external_tracks_matched", "matched_track_id"),
+        Index("ix_external_tracks_source", "source"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+
+    # Core metadata for display and matching
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    artist: Mapped[str] = mapped_column(String(500), nullable=False)
+    album: Mapped[str | None] = mapped_column(String(500))
+    duration_seconds: Mapped[float | None] = mapped_column(Float)
+    track_number: Mapped[int | None] = mapped_column(Integer)
+    year: Mapped[int | None] = mapped_column(Integer)
+
+    # External identifiers for matching
+    isrc: Mapped[str | None] = mapped_column(String(12))
+    spotify_id: Mapped[str | None] = mapped_column(String(50), unique=True)
+    musicbrainz_recording_id: Mapped[str | None] = mapped_column(String(36))
+    deezer_id: Mapped[str | None] = mapped_column(String(50))
+
+    # Preview playback
+    preview_url: Mapped[str | None] = mapped_column(String(500))  # 30-sec preview
+    preview_source: Mapped[str | None] = mapped_column(String(20))  # "spotify", "deezer", "itunes"
+
+    # Extended data (album art URLs, external URLs, etc.)
+    external_data: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
+
+    # Provenance
+    source: Mapped[ExternalTrackSource] = mapped_column(
+        Enum(ExternalTrackSource, values_callable=lambda obj: [e.value for e in obj]),
+        nullable=False,
+    )
+    source_playlist_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("playlists.id", ondelete="SET NULL")
+    )
+    source_spotify_playlist_id: Mapped[str | None] = mapped_column(String(50))
+
+    # Matching status - links to local library track when matched
+    matched_track_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tracks.id", ondelete="SET NULL")
+    )
+    matched_at: Mapped[datetime | None] = mapped_column(DateTime)
+    match_confidence: Mapped[float | None] = mapped_column(Float)  # 0.0-1.0
+    match_method: Mapped[str | None] = mapped_column(String(20))  # "isrc", "exact", "fuzzy", "manual"
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    matched_track: Mapped["Track | None"] = relationship()
+    source_playlist: Mapped["Playlist | None"] = relationship()
+    playlist_entries: Mapped[list["PlaylistTrack"]] = relationship(
+        back_populates="external_track", cascade="all, delete"
+    )
+
+
 class TrackAnalysis(Base):
     """Versioned audio analysis with JSONB features and vector embedding."""
 
@@ -318,6 +399,7 @@ class Playlist(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     is_auto_generated: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_wishlist: Mapped[bool] = mapped_column(Boolean, default=False)  # Special system playlist
     generation_prompt: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -332,22 +414,41 @@ class Playlist(Base):
 
 
 class PlaylistTrack(Base):
-    """Junction table for playlist tracks with ordering."""
+    """Junction table for playlist tracks with ordering.
+
+    Supports both local tracks and external/missing tracks.
+    Exactly one of track_id or external_track_id must be set.
+    """
 
     __tablename__ = "playlist_tracks"
-
-    playlist_id: Mapped[UUID] = mapped_column(
-        ForeignKey("playlists.id", ondelete="CASCADE"), primary_key=True
+    __table_args__ = (
+        CheckConstraint(
+            "(track_id IS NOT NULL AND external_track_id IS NULL) OR "
+            "(track_id IS NULL AND external_track_id IS NOT NULL)",
+            name="ck_playlist_track_exactly_one_ref",
+        ),
+        Index("ix_playlist_tracks_playlist", "playlist_id"),
+        Index("ix_playlist_tracks_track", "track_id"),
+        Index("ix_playlist_tracks_external", "external_track_id"),
     )
-    track_id: Mapped[UUID] = mapped_column(
-        ForeignKey("tracks.id", ondelete="CASCADE"), primary_key=True
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    playlist_id: Mapped[UUID] = mapped_column(
+        ForeignKey("playlists.id", ondelete="CASCADE"), nullable=False
+    )
+    track_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("tracks.id", ondelete="CASCADE")
+    )
+    external_track_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("external_tracks.id", ondelete="CASCADE")
     )
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     added_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     # Relationships
     playlist: Mapped["Playlist"] = relationship(back_populates="tracks")
-    track: Mapped["Track"] = relationship(back_populates="playlist_entries")
+    track: Mapped["Track | None"] = relationship(back_populates="playlist_entries")
+    external_track: Mapped["ExternalTrack | None"] = relationship(back_populates="playlist_entries")
 
 
 class ProfileFavorite(Base):

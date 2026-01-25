@@ -25,6 +25,7 @@ from app.api.routes import (
     bandcamp,
     chat,
     diagnostics,
+    external_tracks,
     favorites,
     health,
     lastfm,
@@ -279,6 +280,7 @@ app.include_router(artwork.router, prefix="/api/v1")
 app.include_router(background.router, prefix="/api/v1")
 app.include_router(diagnostics.router, prefix="/api/v1")
 app.include_router(plugins.router, prefix="/api/v1")
+app.include_router(external_tracks.router, prefix="/api/v1")
 
 
 # Serve frontend static files in production

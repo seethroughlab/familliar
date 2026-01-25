@@ -11,7 +11,7 @@ import {
   Download,
   Check,
 } from 'lucide-react';
-import { libraryApi } from '../../api/client';
+import { libraryApi, playlistsApi } from '../../api/client';
 import { AlbumArtwork } from '../AlbumArtwork';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -206,12 +206,26 @@ function AlbumDiscoverySection({
     }
   };
 
+  const handleAddToWishlist = async (item: DiscoveryItem) => {
+    if (!item.inLibrary && item.name) {
+      try {
+        await playlistsApi.addToWishlist({
+          title: item.name,
+          artist: item.subtitle || 'Unknown Artist',
+        });
+      } catch (err) {
+        console.error('Failed to add to wishlist:', err);
+      }
+    }
+  };
+
   return (
     <DiscoveryPanel
       sections={sections}
       collapsible
       onItemClick={handleItemClick}
       onItemPlay={handleItemPlay}
+      onAddToWishlist={handleAddToWishlist}
     />
   );
 }

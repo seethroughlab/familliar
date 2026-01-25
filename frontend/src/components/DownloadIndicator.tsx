@@ -1,10 +1,12 @@
 /**
  * Global download progress indicator.
  * Shows in the app header when downloads are in progress.
+ * Includes iOS-specific warning about keeping the app open.
  */
-import { useState } from 'react';
-import { Download, X, Check, AlertCircle, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import { useDownloadStore, type DownloadJob } from '../stores/downloadStore';
+import { useState, useEffect } from 'react';
+import { Download, X, Check, AlertCircle, Loader2, ChevronDown, ChevronUp, Smartphone } from 'lucide-react';
+import { useDownloadStore, type DownloadJob, restoreDownloadQueue } from '../stores/downloadStore';
+import { isIOS } from '../utils/platform';
 
 function JobProgress({ job }: { job: DownloadJob }) {
   const { cancelDownload } = useDownloadStore();
@@ -72,6 +74,17 @@ function JobProgress({ job }: { job: DownloadJob }) {
 export function DownloadIndicator() {
   const { jobs, getActiveJob } = useDownloadStore();
   const [expanded, setExpanded] = useState(false);
+  const [showIOSWarning, setShowIOSWarning] = useState(false);
+
+  // Restore download queue from IndexedDB on mount
+  useEffect(() => {
+    restoreDownloadQueue();
+  }, []);
+
+  // Check if we're on iOS and should show the warning
+  useEffect(() => {
+    setShowIOSWarning(isIOS());
+  }, []);
 
   // Get all active/queued/recent jobs
   const allJobs = Array.from(jobs.values());
@@ -131,6 +144,19 @@ export function DownloadIndicator() {
             <div className="text-xs font-medium text-zinc-400 px-2 py-1">
               Downloads
             </div>
+            {/* iOS warning banner */}
+            {showIOSWarning && isDownloading && (
+              <div className="flex items-start gap-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
+                <Smartphone className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-200">
+                  <span className="font-medium">Keep Familiar open</span>
+                  <br />
+                  <span className="text-amber-300/80">
+                    iOS pauses downloads when you switch apps. Downloads will resume if interrupted.
+                  </span>
+                </div>
+              </div>
+            )}
             {allJobs.map((job) => (
               <JobProgress key={job.id} job={job} />
             ))}

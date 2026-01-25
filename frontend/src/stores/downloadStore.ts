@@ -1,9 +1,10 @@
 /**
  * Global download queue store for managing offline downloads across navigation.
- * Downloads persist in memory and continue even when navigating away from the source view.
+ * Downloads persist to IndexedDB and can resume after app restart (iOS resilience).
  */
 import { create } from 'zustand';
 import * as offlineService from '../services/offlineService';
+import { db, type PersistedDownloadJob } from '../db';
 
 export type DownloadJobStatus = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
 
@@ -41,6 +42,94 @@ interface DownloadState {
 // Track the current abort controller for cancellation
 let currentAbortController: AbortController | null = null;
 
+// Flag to track if we've restored from IndexedDB
+let hasRestoredFromDB = false;
+
+/**
+ * Persist a job to IndexedDB.
+ */
+async function persistJob(job: DownloadJob): Promise<void> {
+  const persisted: PersistedDownloadJob = {
+    id: job.id,
+    type: job.type,
+    name: job.name,
+    trackIds: job.trackIds,
+    completedIds: job.completedIds,
+    failedIds: job.failedIds,
+    status: job.status === 'cancelled' ? 'paused' : job.status,
+    startedAt: job.startedAt,
+    updatedAt: new Date(),
+  };
+  await db.downloadQueue.put(persisted);
+}
+
+/**
+ * Remove a job from IndexedDB.
+ */
+async function removePersistedJob(id: string): Promise<void> {
+  await db.downloadQueue.delete(id);
+}
+
+/**
+ * Restore download queue from IndexedDB on app start.
+ * Called automatically when the store is first accessed.
+ */
+export async function restoreDownloadQueue(): Promise<void> {
+  if (hasRestoredFromDB) return;
+  hasRestoredFromDB = true;
+
+  try {
+    const persistedJobs = await db.downloadQueue.toArray();
+
+    if (persistedJobs.length === 0) return;
+
+    console.log('[Download] Restoring', persistedJobs.length, 'jobs from IndexedDB');
+
+    const jobs = new Map<string, DownloadJob>();
+
+    for (const persisted of persistedJobs) {
+      // Skip completed/failed jobs older than 1 hour
+      if (
+        (persisted.status === 'completed' || persisted.status === 'failed') &&
+        Date.now() - persisted.updatedAt.getTime() > 60 * 60 * 1000
+      ) {
+        await removePersistedJob(persisted.id);
+        continue;
+      }
+
+      // Convert downloading/paused jobs back to queued for retry
+      const status: DownloadJobStatus =
+        persisted.status === 'downloading' || persisted.status === 'paused'
+          ? 'queued'
+          : persisted.status;
+
+      const job: DownloadJob = {
+        id: persisted.id,
+        type: persisted.type,
+        name: persisted.name,
+        trackIds: persisted.trackIds,
+        completedIds: persisted.completedIds,
+        failedIds: persisted.failedIds,
+        currentTrackId: null,
+        currentProgress: 0,
+        status,
+        startedAt: persisted.startedAt,
+      };
+
+      jobs.set(job.id, job);
+    }
+
+    if (jobs.size > 0) {
+      useDownloadStore.setState({ jobs });
+      console.log('[Download] Restored', jobs.size, 'jobs, starting queue processing');
+      // Auto-resume downloads
+      processNextJob();
+    }
+  } catch (error) {
+    console.error('[Download] Failed to restore queue from IndexedDB:', error);
+  }
+}
+
 export const useDownloadStore = create<DownloadState>((set, get) => ({
   jobs: new Map(),
   activeJobId: null,
@@ -76,6 +165,11 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
     newJobs.set(id, job);
     set({ jobs: newJobs });
 
+    // Persist to IndexedDB for iOS resilience
+    persistJob(job).catch((err) =>
+      console.error('[Download] Failed to persist new job:', err)
+    );
+
     // If no active job, start processing
     if (!state.activeJobId) {
       processNextJob();
@@ -102,11 +196,16 @@ export const useDownloadStore = create<DownloadState>((set, get) => ({
     });
 
     // Remove cancelled job after a brief delay
-    setTimeout(() => {
+    setTimeout(async () => {
       const currentState = get();
       const currentJobs = new Map(currentState.jobs);
       currentJobs.delete(id);
       set({ jobs: currentJobs });
+
+      // Also remove from IndexedDB
+      await removePersistedJob(id).catch((err) =>
+        console.error('[Download] Failed to remove cancelled job:', err)
+      );
     }, 2000);
 
     // Process next job if this was the active one
@@ -261,20 +360,33 @@ function updateJob(id: string, updates: Partial<DownloadJob>) {
   const job = state.jobs.get(id);
   if (!job) return;
 
+  const updatedJob = { ...job, ...updates };
   const newJobs = new Map(state.jobs);
-  newJobs.set(id, { ...job, ...updates });
+  newJobs.set(id, updatedJob);
   useDownloadStore.setState({ jobs: newJobs });
+
+  // Persist significant status changes to IndexedDB (not progress updates)
+  if (updates.status || updates.completedIds || updates.failedIds) {
+    persistJob(updatedJob).catch((err) =>
+      console.error('[Download] Failed to persist job:', err)
+    );
+  }
 }
 
 function scheduleJobRemoval(id: string) {
   // Keep completed jobs visible for a few seconds before auto-removing
-  setTimeout(() => {
+  setTimeout(async () => {
     const state = useDownloadStore.getState();
     const job = state.jobs.get(id);
     if (job && (job.status === 'completed' || job.status === 'failed')) {
       const newJobs = new Map(state.jobs);
       newJobs.delete(id);
       useDownloadStore.setState({ jobs: newJobs });
+
+      // Also remove from IndexedDB
+      await removePersistedJob(id).catch((err) =>
+        console.error('[Download] Failed to remove persisted job:', err)
+      );
     }
   }, 5000);
 }

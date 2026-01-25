@@ -443,6 +443,63 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["source_artist", "target_artist", "reason"]
         }
+    },
+    # Spotify playlist tools
+    {
+        "name": "list_spotify_playlists",
+        "description": "List the user's Spotify playlists. Returns playlist names, track counts, and IDs. Use this when the user asks about their Spotify playlists or wants to import one.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Max playlists to return (default 20)",
+                    "default": 20
+                }
+            }
+        }
+    },
+    {
+        "name": "get_spotify_playlist_tracks",
+        "description": "Get tracks from a Spotify playlist. Shows which tracks exist locally vs are missing. Use this to understand what's in a Spotify playlist or to recreate it with local tracks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "playlist_id": {
+                    "type": "string",
+                    "description": "Spotify playlist ID"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max tracks to return (default 50)",
+                    "default": 50
+                }
+            },
+            "required": ["playlist_id"]
+        }
+    },
+    {
+        "name": "import_spotify_playlist",
+        "description": "Import a Spotify playlist to Familiar. Creates a local playlist with matched tracks and missing track placeholders. Missing tracks show preview playback.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "spotify_playlist_id": {
+                    "type": "string",
+                    "description": "Spotify playlist ID"
+                },
+                "name": {
+                    "type": "string",
+                    "description": "Override playlist name (optional, uses Spotify name if not provided)"
+                },
+                "include_missing": {
+                    "type": "boolean",
+                    "description": "Include unmatched tracks as missing track placeholders (default true)",
+                    "default": True
+                }
+            },
+            "required": ["spotify_playlist_id"]
+        }
     }
 ]
 

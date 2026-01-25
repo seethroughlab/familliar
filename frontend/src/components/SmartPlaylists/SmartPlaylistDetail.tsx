@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Loader2, Music, Zap, Clock, Download, Check, WifiOff, Heart, RefreshCw, CloudOff } from 'lucide-react';
-import { smartPlaylistsApi, tracksApi } from '../../api/client';
+import { smartPlaylistsApi, tracksApi, playlistsApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -53,6 +53,28 @@ function SmartPlaylistDiscoverySection({
     }
   };
 
+  const handleAddToWishlist = async (item: DiscoveryItem) => {
+    if (!item.inLibrary && item.name) {
+      try {
+        if (item.entityType === 'artist') {
+          // For artists, add a placeholder track
+          await playlistsApi.addToWishlist({
+            title: `Tracks by ${item.name}`,
+            artist: item.name,
+          });
+        } else {
+          await playlistsApi.addToWishlist({
+            title: item.name,
+            artist: item.subtitle || 'Unknown Artist',
+            album: item.playbackContext?.album,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to add to wishlist:', err);
+      }
+    }
+  };
+
   return (
     <div className="mt-6 border-t border-zinc-800 pt-4">
       <DiscoveryPanel
@@ -62,6 +84,7 @@ function SmartPlaylistDiscoverySection({
         defaultExpanded
         onItemClick={handleItemClick}
         onItemPlay={onPlayTrack}
+        onAddToWishlist={handleAddToWishlist}
       />
     </div>
   );

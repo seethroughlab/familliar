@@ -27,6 +27,60 @@ export interface TrackFeatures {
   speechiness: number | null;
 }
 
+// External/Missing tracks (tracks user wants but doesn't have locally)
+export type ExternalTrackSource =
+  | 'spotify_playlist'
+  | 'spotify_favorite'
+  | 'playlist_import'
+  | 'llm_recommendation'
+  | 'manual';
+
+export interface ExternalTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album: string | null;
+  duration_seconds: number | null;
+  track_number: number | null;
+  year: number | null;
+  source: ExternalTrackSource;
+  preview_url: string | null;
+  preview_source: string | null;
+  external_data: Record<string, unknown>;
+
+  // Matching status
+  is_matched: boolean;
+  matched_track_id: string | null;
+  matched_at: string | null;
+  match_confidence: number | null;
+  match_method: string | null;
+
+  // External IDs
+  spotify_id: string | null;
+  isrc: string | null;
+
+  created_at: string;
+}
+
+// Playlist track - can be local or external
+export interface PlaylistTrackItem {
+  id: string; // track_id or external_track_id
+  playlist_track_id: string; // PlaylistTrack.id for reordering/removal
+  type: 'local' | 'external';
+  title: string | null;
+  artist: string | null;
+  album: string | null;
+  duration_seconds: number | null;
+  position: number;
+
+  // External track fields (only present when type === 'external')
+  is_matched?: boolean;
+  matched_track_id?: string | null;
+  match_confidence?: number | null;
+  preview_url?: string | null;
+  external_links?: Record<string, string>;
+}
+
 export interface TrackListResponse {
   items: Track[];
   total: number;

@@ -1,7 +1,13 @@
 /**
  * Offline service for managing track downloads and offline playback.
  */
-import { db, type OfflineTrack, type OfflineArtwork, type CachedTrack } from '../db';
+import {
+  db,
+  type OfflineTrack,
+  type OfflineArtwork,
+  type CachedTrack,
+  type PartialDownload,
+} from '../db';
 import { computeAlbumHash } from '../utils/albumHash';
 
 /**
@@ -14,7 +20,42 @@ export type DownloadProgressCallback = (progress: {
 }) => void;
 
 /**
+ * Check if a partial download exists for a track.
+ */
+export async function getPartialDownload(
+  trackId: string
+): Promise<PartialDownload | undefined> {
+  return db.partialDownloads.get(trackId);
+}
+
+/**
+ * Save partial download progress.
+ */
+async function savePartialProgress(
+  trackId: string,
+  bytesDownloaded: number,
+  totalBytes: number,
+  chunks: Blob[]
+): Promise<void> {
+  await db.partialDownloads.put({
+    trackId,
+    bytesDownloaded,
+    totalBytes,
+    chunks,
+    updatedAt: new Date(),
+  });
+}
+
+/**
+ * Clear partial download after completion or failure.
+ */
+async function clearPartialDownload(trackId: string): Promise<void> {
+  await db.partialDownloads.delete(trackId);
+}
+
+/**
  * Download a track for offline playback with optional progress tracking.
+ * Supports resuming interrupted downloads using HTTP Range requests.
  * Also downloads album artwork if track metadata is available.
  */
 export async function downloadTrackForOffline(
@@ -29,50 +70,96 @@ export async function downloadTrackForOffline(
     return;
   }
 
+  // Check for partial download to resume
+  const partial = await getPartialDownload(trackId);
+  const resumeFrom = partial?.bytesDownloaded || 0;
+  const existingChunks: Blob[] = partial?.chunks || [];
+
+  // Build request headers for resume
+  const headers: HeadersInit = {};
+  if (resumeFrom > 0) {
+    headers['Range'] = `bytes=${resumeFrom}-`;
+    console.log('[Offline] Resuming download from byte:', resumeFrom);
+  }
+
   // Fetch the audio file with progress tracking
-  console.log('[Offline] Fetching track:', trackId);
-  const response = await fetch(`/api/v1/tracks/${trackId}/stream`);
-  if (!response.ok) {
+  console.log('[Offline] Fetching track:', trackId, resumeFrom > 0 ? '(resuming)' : '');
+  const response = await fetch(`/api/v1/tracks/${trackId}/stream`, { headers });
+
+  // Check for successful response (200 OK or 206 Partial Content)
+  if (!response.ok && response.status !== 206) {
     console.error('[Offline] Fetch failed:', response.status, response.statusText);
     throw new Error(`Failed to download track: ${response.statusText}`);
   }
-  console.log('[Offline] Response OK, content-length:', response.headers.get('content-length'));
+
+  // Determine total size
+  let total: number;
+  if (response.status === 206) {
+    // Partial content - parse Content-Range header
+    const contentRange = response.headers.get('content-range');
+    if (contentRange) {
+      // Format: "bytes 1000-1999/2000" or "bytes 1000-1999/*"
+      const match = contentRange.match(/bytes \d+-\d+\/(\d+|\*)/);
+      total = match && match[1] !== '*' ? parseInt(match[1], 10) : 0;
+    } else {
+      total = partial?.totalBytes || 0;
+    }
+    console.log('[Offline] Resume response, total size:', total);
+  } else {
+    // Full response
+    const contentLength = response.headers.get('content-length');
+    total = contentLength ? parseInt(contentLength, 10) : 0;
+    console.log('[Offline] Full response, content-length:', total);
+  }
 
   let blob: Blob;
+  const contentType = response.headers.get('content-type') || 'audio/mpeg';
 
-  // Use streaming if available and progress callback provided
-  if (onProgress && response.body) {
-    const contentLength = response.headers.get('content-length');
-    const total = contentLength ? parseInt(contentLength, 10) : 0;
+  // Use streaming if available
+  if (response.body) {
+    const reader = response.body.getReader();
+    const chunks: Blob[] = [...existingChunks];
+    let loaded = resumeFrom;
+    let chunksSinceLastSave = 0;
+    const SAVE_INTERVAL = 10; // Save progress every 10 chunks (~640KB with 64KB chunks)
 
-    if (total > 0) {
-      const reader = response.body.getReader();
-      const chunks: BlobPart[] = [];
-      let loaded = 0;
-
+    try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
-        chunks.push(value);
+        chunks.push(new Blob([value]));
         loaded += value.length;
-        onProgress({
+        chunksSinceLastSave++;
+
+        onProgress?.({
           loaded,
-          total,
-          percentage: Math.round((loaded / total) * 100),
+          total: total || loaded,
+          percentage: total > 0 ? Math.round((loaded / total) * 100) : 0,
         });
+
+        // Periodically save progress for resume (iOS resilience)
+        if (chunksSinceLastSave >= SAVE_INTERVAL && total > 0) {
+          await savePartialProgress(trackId, loaded, total, chunks);
+          chunksSinceLastSave = 0;
+        }
       }
 
-      blob = new Blob(chunks, {
-        type: response.headers.get('content-type') || 'audio/mpeg',
-      });
-    } else {
-      // No content-length header, can't track progress
-      blob = await response.blob();
-      onProgress({ loaded: blob.size, total: blob.size, percentage: 100 });
+      blob = new Blob(chunks, { type: contentType });
+    } catch (error) {
+      // Save progress before throwing so we can resume later
+      if (chunks.length > existingChunks.length && total > 0) {
+        console.log('[Offline] Saving partial progress before error:', loaded, 'bytes');
+        await savePartialProgress(trackId, loaded, total, chunks);
+      }
+      throw error;
     }
   } else {
     blob = await response.blob();
+    if (existingChunks.length > 0) {
+      // Combine existing chunks with new data
+      blob = new Blob([...existingChunks, blob], { type: contentType });
+    }
   }
 
   // Store in IndexedDB
@@ -84,6 +171,9 @@ export async function downloadTrackForOffline(
 
   console.log('[Offline] Storing track in IndexedDB:', trackId, 'size:', blob.size);
   await db.offlineTracks.put(offlineTrack);
+
+  // Clear partial download record on success
+  await clearPartialDownload(trackId);
   console.log('[Offline] Track stored successfully:', trackId);
 
   // Also download artwork if we have track metadata

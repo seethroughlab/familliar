@@ -81,6 +81,10 @@ class ToolExecutor:
             "get_visible_tracks": self._get_visible_tracks,
             # Discovery tools
             "get_similar_artists_in_library": self._get_similar_artists_in_library,
+            # Spotify playlist tools
+            "list_spotify_playlists": self._list_spotify_playlists,
+            "get_spotify_playlist_tracks": self._get_spotify_playlist_tracks,
+            "import_spotify_playlist": self._import_spotify_playlist,
         }
 
         handler = handlers.get(tool_name)
@@ -1468,3 +1472,155 @@ Respond with ONLY the playlist name, nothing else."""
             "bandcamp_search_url": f"https://bandcamp.com/search?q={artist.replace(' ', '+')}" if not requested_artist_in_library else None,
             "note": f"Found {len(artists_in_library)} similar artists in your library. Search for their tracks to build a playlist." if artists_in_library else "No similar artists found in library.",
         }
+
+    # --- Spotify playlist tools ---
+
+    async def _list_spotify_playlists(self, limit: int = 20) -> dict[str, Any]:
+        """List user's Spotify playlists."""
+        try:
+            limit = int(float(limit)) if limit else 20
+        except (ValueError, TypeError):
+            limit = 20
+
+        if not self.profile_id:
+            return {
+                "playlists": [],
+                "count": 0,
+                "error": "No profile ID provided. User needs to be logged in.",
+            }
+
+        from app.services.spotify import SpotifyPlaylistService
+
+        try:
+            service = SpotifyPlaylistService(self.db)
+            playlists = await service.list_playlists(self.profile_id, limit=limit)
+
+            return {
+                "playlists": playlists,
+                "count": len(playlists),
+                "note": "Use get_spotify_playlist_tracks to see tracks in a playlist, or import_spotify_playlist to import one.",
+            }
+        except ValueError as e:
+            return {
+                "playlists": [],
+                "count": 0,
+                "error": str(e),
+                "note": "User needs to connect Spotify in Settings first.",
+            }
+        except Exception as e:
+            logger.error(f"Error listing Spotify playlists: {e}")
+            return {
+                "playlists": [],
+                "count": 0,
+                "error": "Failed to fetch Spotify playlists",
+            }
+
+    async def _get_spotify_playlist_tracks(
+        self,
+        playlist_id: str,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Get tracks from a Spotify playlist with local match info."""
+        try:
+            limit = int(float(limit)) if limit else 50
+        except (ValueError, TypeError):
+            limit = 50
+
+        if not self.profile_id:
+            return {
+                "tracks": [],
+                "error": "No profile ID provided.",
+            }
+
+        from app.services.spotify import SpotifyPlaylistService
+
+        try:
+            service = SpotifyPlaylistService(self.db)
+            result = await service.get_playlist_tracks(
+                self.profile_id,
+                playlist_id,
+                limit=limit,
+            )
+
+            return {
+                "playlist_name": result.get("playlist_name"),
+                "tracks": result.get("tracks", []),
+                "total": result.get("total", 0),
+                "in_library": result.get("in_library", 0),
+                "missing": result.get("missing", 0),
+                "match_rate": result.get("match_rate", "0%"),
+                "note": "Use import_spotify_playlist to import this playlist to Familiar.",
+            }
+        except ValueError as e:
+            return {
+                "tracks": [],
+                "error": str(e),
+            }
+        except Exception as e:
+            logger.error(f"Error getting Spotify playlist tracks: {e}")
+            return {
+                "tracks": [],
+                "error": "Failed to fetch playlist tracks",
+            }
+
+    async def _import_spotify_playlist(
+        self,
+        spotify_playlist_id: str,
+        name: str | None = None,
+        include_missing: bool = True,
+    ) -> dict[str, Any]:
+        """Import a Spotify playlist to Familiar."""
+        if not self.profile_id:
+            return {
+                "error": "No profile ID provided.",
+                "imported": False,
+            }
+
+        from app.services.spotify import SpotifyPlaylistService
+
+        try:
+            service = SpotifyPlaylistService(self.db)
+            playlist = await service.import_playlist(
+                profile_id=self.profile_id,
+                spotify_playlist_id=spotify_playlist_id,
+                name=name,
+                include_missing=include_missing,
+            )
+
+            # Get track counts
+            from sqlalchemy import func, select
+            from app.db.models import PlaylistTrack
+
+            total_count = await self.db.scalar(
+                select(func.count(PlaylistTrack.id)).where(
+                    PlaylistTrack.playlist_id == playlist.id
+                )
+            ) or 0
+
+            local_count = await self.db.scalar(
+                select(func.count(PlaylistTrack.id)).where(
+                    PlaylistTrack.playlist_id == playlist.id,
+                    PlaylistTrack.track_id.isnot(None),
+                )
+            ) or 0
+
+            return {
+                "imported": True,
+                "playlist_id": str(playlist.id),
+                "playlist_name": playlist.name,
+                "total_tracks": total_count,
+                "local_tracks": local_count,
+                "missing_tracks": total_count - local_count,
+                "message": f"Successfully imported playlist '{playlist.name}' with {total_count} tracks ({local_count} local, {total_count - local_count} missing).",
+            }
+        except ValueError as e:
+            return {
+                "error": str(e),
+                "imported": False,
+            }
+        except Exception as e:
+            logger.error(f"Error importing Spotify playlist: {e}")
+            return {
+                "error": "Failed to import playlist",
+                "imported": False,
+            }

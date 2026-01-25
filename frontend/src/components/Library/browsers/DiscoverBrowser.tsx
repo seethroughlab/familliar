@@ -15,7 +15,7 @@ import {
   Loader2,
   ChevronRight,
 } from 'lucide-react';
-import { libraryApi } from '../../../api/client';
+import { libraryApi, playlistsApi } from '../../../api/client';
 import { registerBrowser, type BrowserProps } from '../types';
 import {
   useLibraryDiscovery,
@@ -96,6 +96,28 @@ export function DiscoverBrowser({ onGoToArtist }: BrowserProps) {
     }
   };
 
+  const handleAddToWishlist = async (item: DiscoveryItem) => {
+    if (!item.inLibrary && item.name) {
+      try {
+        if (item.entityType === 'artist') {
+          // For artists, add a placeholder track
+          await playlistsApi.addToWishlist({
+            title: `Tracks by ${item.name}`,
+            artist: item.name,
+          });
+        } else {
+          await playlistsApi.addToWishlist({
+            title: item.name,
+            artist: item.subtitle || 'Unknown Artist',
+            album: item.playbackContext?.album,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to add to wishlist:', err);
+      }
+    }
+  };
+
   // Empty state
   if (!hasDiscovery) {
     return (
@@ -151,6 +173,7 @@ export function DiscoverBrowser({ onGoToArtist }: BrowserProps) {
             showHeader={false}
             gridColumns={4}
             onItemClick={handleItemClick}
+            onAddToWishlist={handleAddToWishlist}
           />
         </section>
       )}
@@ -163,6 +186,7 @@ export function DiscoverBrowser({ onGoToArtist }: BrowserProps) {
             showHeader={true}
             gridColumns={6}
             onItemClick={handleItemClick}
+            onAddToWishlist={handleAddToWishlist}
           />
         </section>
       )}
@@ -174,6 +198,7 @@ export function DiscoverBrowser({ onGoToArtist }: BrowserProps) {
             section={externalArtistsSection}
             showHeader={true}
             gridColumns={6}
+            onAddToWishlist={handleAddToWishlist}
           />
         </section>
       )}
@@ -195,6 +220,7 @@ export function DiscoverBrowser({ onGoToArtist }: BrowserProps) {
           <DiscoverySectionView
             section={unmatchedFavoritesSection}
             showHeader={false}
+            onAddToWishlist={handleAddToWishlist}
           />
         </section>
       )}

@@ -169,8 +169,11 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
               name: p.name,
               description: p.description,
               is_auto_generated: p.is_auto_generated,
+              is_wishlist: false,
               generation_prompt: p.generation_prompt,
               track_count: p.track_count,
+              local_track_count: p.track_count,
+              external_track_count: 0,
               created_at: '',
               updated_at: '',
             }));

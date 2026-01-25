@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2, CloudOff } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2, CloudOff, ExternalLink, Radio } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
@@ -69,6 +69,28 @@ function PlaylistDiscoverySection({
     }
   };
 
+  const handleAddToWishlist = async (item: DiscoveryItem) => {
+    if (!item.inLibrary && item.name) {
+      try {
+        if (item.entityType === 'artist') {
+          // For artists, add a placeholder track
+          await playlistsApi.addToWishlist({
+            title: `Tracks by ${item.name}`,
+            artist: item.name,
+          });
+        } else {
+          await playlistsApi.addToWishlist({
+            title: item.name,
+            artist: item.subtitle || 'Unknown Artist',
+            album: item.playbackContext?.album,
+          });
+        }
+      } catch (err) {
+        console.error('Failed to add to wishlist:', err);
+      }
+    }
+  };
+
   return (
     <div className="mt-6 border-t border-zinc-800 pt-4">
       <DiscoveryPanel
@@ -79,6 +101,7 @@ function PlaylistDiscoverySection({
         defaultExpanded
         onItemClick={handleItemClick}
         onItemPlay={onPlayItem}
+        onAddToWishlist={handleAddToWishlist}
       />
     </div>
   );
@@ -156,9 +179,12 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               name: cached.name,
               description: cached.description,
               is_auto_generated: cached.is_auto_generated,
+              is_wishlist: false,
               generation_prompt: cached.generation_prompt,
               tracks: tracks.map((t, idx) => ({
                 id: t.id,
+                playlist_track_id: t.id, // Use track ID as fallback
+                type: 'local' as const,
                 title: t.title,
                 artist: t.artist,
                 album: t.album,
@@ -197,8 +223,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const handleDownloadPlaylist = async () => {
     if (!playlist || playlist.tracks.length === 0) return;
 
-    // Get tracks that need to be downloaded
-    const tracksToDownload = playlist.tracks.filter(
+    // Get local tracks that need to be downloaded (can't download external tracks)
+    const localTracks = playlist.tracks.filter(t => t.type === 'local');
+    const tracksToDownload = localTracks.filter(
       (t) => !offlineTrackIds.has(t.id)
     );
     if (tracksToDownload.length === 0) return;
@@ -225,8 +252,10 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
     }
   }, [downloadJob?.status]);
 
-  const allTracksOffline = playlist?.tracks.every(t => offlineTrackIds.has(t.id)) ?? false;
-  const offlineCount = playlist?.tracks.filter(t => offlineTrackIds.has(t.id)).length ?? 0;
+  // Count only local tracks for offline status
+  const localTracks = playlist?.tracks.filter(t => t.type === 'local') ?? [];
+  const allTracksOffline = localTracks.length > 0 && localTracks.every(t => offlineTrackIds.has(t.id));
+  const offlineCount = localTracks.filter(t => offlineTrackIds.has(t.id)).length;
 
   // Filter by downloaded tracks if showDownloadedOnly is enabled
   const displayedTracks = useMemo(() => {
@@ -339,8 +368,8 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
     }
 
     const tracks = [...playlist.tracks];
-    const draggedIndex = tracks.findIndex(t => t.id === draggedTrackId);
-    const targetIndex = tracks.findIndex(t => t.id === targetId);
+    const draggedIndex = tracks.findIndex(t => t.playlist_track_id === draggedTrackId);
+    const targetIndex = tracks.findIndex(t => t.playlist_track_id === targetId);
 
     if (draggedIndex === -1 || targetIndex === -1) {
       setDraggedTrackId(null);
@@ -361,9 +390,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
     setDraggedTrackId(null);
     setDropTargetId(null);
 
-    // Persist to backend
+    // Persist to backend using playlist_track_ids
     try {
-      await playlistsApi.reorderTracks(playlistId, tracks.map(t => t.id));
+      await playlistsApi.reorderItems(playlistId, tracks.map(t => t.playlist_track_id));
     } catch (error) {
       console.error('Failed to reorder tracks:', error);
       // Revert on error
@@ -496,6 +525,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
             {playlist.is_auto_generated && (
               <Sparkles className="w-5 h-5 text-purple-400 flex-shrink-0" />
             )}
+            {playlist.is_wishlist && (
+              <Heart className="w-5 h-5 text-pink-400 flex-shrink-0" />
+            )}
             <h2 className="text-xl font-bold truncate">{playlist.name}</h2>
             {usingCachedData && (
               <span className="flex items-center gap-1 px-2 py-0.5 text-xs bg-amber-500/20 text-amber-400 rounded-full">
@@ -619,8 +651,12 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
       {displayedTracks.length > 0 ? (
         <div className="space-y-1">
           {displayedTracks.map((track, idx) => {
-            // Convert playlist track to full Track type for context menu
-            const fullTrack: Track = {
+            const isExternal = track.type === 'external';
+            const isMatched = isExternal && track.is_matched && track.matched_track_id;
+            const hasPreview = isExternal && track.preview_url;
+
+            // Convert playlist track to full Track type for context menu (only for local tracks)
+            const fullTrack: Track | null = !isExternal ? {
               id: track.id,
               file_path: '',
               title: track.title || null,
@@ -635,26 +671,27 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
               duration_seconds: track.duration_seconds || null,
               format: null,
               analysis_version: 0,
-            };
-            const isSelected = selectedTrackIds.has(track.id);
-            const isDragged = draggedTrackId === track.id;
-            const isDropTarget = dropTargetId === track.id;
+            } : null;
+            const isSelected = selectedTrackIds.has(track.playlist_track_id);
+            const isDragged = draggedTrackId === track.playlist_track_id;
+            const isDropTarget = dropTargetId === track.playlist_track_id;
             return (
             <div
-              key={track.id}
+              key={track.playlist_track_id}
               draggable={!isOffline && !usingCachedData}
-              onDragStart={(e) => !isOffline && !usingCachedData && handleDragStart(track.id, e)}
-              onDragOver={(e) => !isOffline && !usingCachedData && handleDragOver(e, track.id)}
+              onDragStart={(e) => !isOffline && !usingCachedData && handleDragStart(track.playlist_track_id, e)}
+              onDragOver={(e) => !isOffline && !usingCachedData && handleDragOver(e, track.playlist_track_id)}
               onDragLeave={handleDragLeave}
-              onDrop={() => !isOffline && !usingCachedData && handleDrop(track.id)}
+              onDrop={() => !isOffline && !usingCachedData && handleDrop(track.playlist_track_id)}
               onDragEnd={handleDragEnd}
               onClick={(e) => handleTrackClick(track.id, idx, e)}
-              onContextMenu={(e) => handleContextMenu(fullTrack, e)}
+              onContextMenu={(e) => fullTrack && handleContextMenu(fullTrack, e)}
               className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-all ${
                 currentTrack?.id === track.id ? 'bg-zinc-800/30' : ''
               } ${isSelected ? 'bg-green-900/30 ring-1 ring-green-500/50' : ''
               } ${isDragged ? 'opacity-50' : ''
-              } ${isDropTarget ? 'border-t-2 border-green-500' : ''}`}
+              } ${isDropTarget ? 'border-t-2 border-green-500' : ''
+              } ${isExternal && !isMatched ? 'opacity-60' : ''}`}
             >
               {/* Drag handle - hidden when offline */}
               <div className={`w-4 flex-shrink-0 cursor-grab active:cursor-grabbing transition-opacity ${
@@ -685,6 +722,15 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                       fill="currentColor"
                     />
                   </>
+                ) : isExternal && hasPreview ? (
+                  <>
+                    <span className="group-hover:hidden text-sm text-zinc-500">{idx + 1}</span>
+                    <span title="Play preview">
+                      <Radio
+                        className="hidden group-hover:block w-4 h-4 mx-auto text-amber-400"
+                      />
+                    </span>
+                  </>
                 ) : (
                   <>
                     <span className="group-hover:hidden text-sm text-zinc-500">{idx + 1}</span>
@@ -698,8 +744,20 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
 
               {/* Track info */}
               <div className="flex-1 min-w-0">
-                <div className={`font-medium truncate ${currentTrack?.id === track.id ? 'text-green-500' : ''}`}>
-                  {track.title || 'Unknown Title'}
+                <div className="flex items-center gap-2">
+                  <span className={`font-medium truncate ${currentTrack?.id === track.id ? 'text-green-500' : ''}`}>
+                    {track.title || 'Unknown Title'}
+                  </span>
+                  {isExternal && !isMatched && (
+                    <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] bg-amber-500/20 text-amber-400 rounded">
+                      Not in library
+                    </span>
+                  )}
+                  {isExternal && hasPreview && (
+                    <span className="flex-shrink-0 px-1.5 py-0.5 text-[10px] bg-blue-500/20 text-blue-400 rounded">
+                      Preview
+                    </span>
+                  )}
                 </div>
                 <div className="text-sm text-zinc-400 truncate">
                   {track.artist || 'Unknown Artist'}
@@ -709,24 +767,40 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
                 </div>
               </div>
 
-              {/* Favorite button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFavorite(track.id);
-                }}
-                className={`p-1 transition-colors ${
-                  isFavorite(track.id)
-                    ? 'text-pink-500 hover:text-pink-400'
-                    : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
-                }`}
-                title={isFavorite(track.id) ? 'Remove from favorites' : 'Add to favorites'}
-              >
-                <Heart className="w-4 h-4" fill={isFavorite(track.id) ? 'currentColor' : 'none'} />
-              </button>
+              {/* External links for missing tracks */}
+              {isExternal && !isMatched && track.external_links && Object.keys(track.external_links).length > 0 && (
+                <a
+                  href={Object.values(track.external_links)[0]}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="p-1 text-zinc-500 hover:text-green-400 transition-colors"
+                  title="Open in Spotify"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              )}
 
-              {/* Offline indicator */}
-              {offlineTrackIds.has(track.id) && (
+              {/* Favorite button - only for local tracks */}
+              {!isExternal && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFavorite(track.id);
+                  }}
+                  className={`p-1 transition-colors ${
+                    isFavorite(track.id)
+                      ? 'text-pink-500 hover:text-pink-400'
+                      : 'text-zinc-500 hover:text-pink-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100'
+                  }`}
+                  title={isFavorite(track.id) ? 'Remove from favorites' : 'Add to favorites'}
+                >
+                  <Heart className="w-4 h-4" fill={isFavorite(track.id) ? 'currentColor' : 'none'} />
+                </button>
+              )}
+
+              {/* Offline indicator - only for local tracks */}
+              {!isExternal && offlineTrackIds.has(track.id) && (
                 <span title="Available offline">
                   <WifiOff className="w-4 h-4 text-green-500" />
                 </span>

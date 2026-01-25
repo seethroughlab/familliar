@@ -24,6 +24,7 @@ export function DiscoveryPanel({
   defaultExpanded = true,
   onItemClick,
   onItemPlay,
+  onAddToWishlist,
 }: DiscoveryPanelProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -117,6 +118,7 @@ export function DiscoveryPanel({
           showHeader={false}
           onItemClick={onItemClick}
           onItemPlay={onItemPlay}
+          onAddToWishlist={onAddToWishlist}
         />
       </div>
     );
@@ -163,6 +165,7 @@ interface SimpleDiscoveryPanelProps {
   defaultExpanded?: boolean;
   onItemClick?: (item: DiscoveryItem) => void;
   onItemPlay?: (item: DiscoveryItem) => void;
+  onAddToWishlist?: (item: DiscoveryItem) => void;
 }
 
 export function SimpleDiscoveryPanel({

@@ -8,9 +8,9 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import delete
 
-from app.api.deps import CurrentProfile, DbSession
+from app.api.deps import CurrentProfile, DbSession, RequiredProfile
 from app.db.models import SpotifyFavorite, SpotifyProfile
-from app.services.spotify import SpotifyService, SpotifySyncService
+from app.services.spotify import SpotifyPlaylistService, SpotifyService, SpotifySyncService
 from app.services.tasks import get_spotify_sync_progress
 
 logger = logging.getLogger(__name__)
@@ -371,3 +371,178 @@ async def disconnect_spotify(
     await db.commit()
 
     return {"status": "disconnected"}
+
+
+# ============================================================================
+# Spotify Playlist Import
+# ============================================================================
+
+
+class SpotifyPlaylistInfo(BaseModel):
+    """Spotify playlist information."""
+
+    id: str
+    name: str
+    description: str | None
+    track_count: int
+    image_url: str | None
+    external_url: str | None
+    owner: str | None
+    public: bool | None
+
+
+class SpotifyPlaylistTrack(BaseModel):
+    """Track from a Spotify playlist."""
+
+    spotify_id: str
+    title: str
+    artist: str | None
+    album: str | None
+    duration_ms: int | None
+    preview_url: str | None
+    in_library: bool
+    local_track_id: str | None
+
+
+class SpotifyPlaylistTracksResponse(BaseModel):
+    """Response for Spotify playlist tracks."""
+
+    playlist_name: str
+    playlist_description: str | None
+    tracks: list[SpotifyPlaylistTrack]
+    total: int
+    in_library: int
+    missing: int
+    match_rate: str
+
+
+class PlaylistImportRequest(BaseModel):
+    """Request to import a Spotify playlist."""
+
+    name: str | None = None
+    description: str | None = None
+    include_missing: bool = True
+
+
+class ImportedPlaylistResponse(BaseModel):
+    """Response for imported playlist."""
+
+    id: str
+    name: str
+    description: str | None
+    track_count: int
+
+
+@router.get("/playlists", response_model=list[SpotifyPlaylistInfo])
+async def list_spotify_playlists(
+    db: DbSession,
+    profile: RequiredProfile,
+    limit: int = Query(50, ge=1, le=100),
+) -> list[SpotifyPlaylistInfo]:
+    """List user's Spotify playlists.
+
+    Returns playlists available for import with track counts.
+    Requires Spotify to be connected.
+    """
+    service = SpotifyPlaylistService(db)
+
+    try:
+        playlists = await service.list_playlists(profile.id, limit=limit)
+        return [SpotifyPlaylistInfo(**p) for p in playlists]
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error listing Spotify playlists: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch playlists")
+
+
+@router.get(
+    "/playlists/{spotify_playlist_id}/tracks",
+    response_model=SpotifyPlaylistTracksResponse,
+)
+async def get_spotify_playlist_tracks(
+    spotify_playlist_id: str,
+    db: DbSession,
+    profile: RequiredProfile,
+    limit: int = Query(100, ge=1, le=200),
+) -> SpotifyPlaylistTracksResponse:
+    """Get tracks from a Spotify playlist with local match info.
+
+    Shows which tracks exist locally vs missing.
+    Use this to preview before importing.
+    """
+    service = SpotifyPlaylistService(db)
+
+    try:
+        result = await service.get_playlist_tracks(
+            profile.id,
+            spotify_playlist_id,
+            limit=limit,
+        )
+        return SpotifyPlaylistTracksResponse(
+            playlist_name=result["playlist_name"],
+            playlist_description=result.get("playlist_description"),
+            tracks=[SpotifyPlaylistTrack(**t) for t in result["tracks"]],
+            total=result["total"],
+            in_library=result["in_library"],
+            missing=result["missing"],
+            match_rate=result["match_rate"],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error getting Spotify playlist tracks: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch playlist tracks")
+
+
+@router.post(
+    "/playlists/{spotify_playlist_id}/import",
+    response_model=ImportedPlaylistResponse,
+)
+async def import_spotify_playlist(
+    spotify_playlist_id: str,
+    db: DbSession,
+    profile: RequiredProfile,
+    request: PlaylistImportRequest | None = None,
+) -> ImportedPlaylistResponse:
+    """Import a Spotify playlist to Familiar.
+
+    Creates a local playlist with:
+    - Matched local tracks (playable immediately)
+    - External track placeholders for missing tracks (with preview playback)
+
+    Set include_missing=false to only import tracks that exist locally.
+    """
+    service = SpotifyPlaylistService(db)
+
+    try:
+        req = request or PlaylistImportRequest()
+        playlist = await service.import_playlist(
+            profile_id=profile.id,
+            spotify_playlist_id=spotify_playlist_id,
+            name=req.name,
+            description=req.description,
+            include_missing=req.include_missing,
+        )
+
+        # Get track count
+        from sqlalchemy import func, select
+        from app.db.models import PlaylistTrack
+        count_result = await db.execute(
+            select(func.count(PlaylistTrack.id)).where(
+                PlaylistTrack.playlist_id == playlist.id
+            )
+        )
+        track_count = count_result.scalar() or 0
+
+        return ImportedPlaylistResponse(
+            id=str(playlist.id),
+            name=playlist.name,
+            description=playlist.description,
+            track_count=track_count,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error importing Spotify playlist: {e}")
+        raise HTTPException(status_code=500, detail="Failed to import playlist")

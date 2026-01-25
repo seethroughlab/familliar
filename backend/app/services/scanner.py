@@ -446,6 +446,21 @@ class LibraryScanner:
             f"{results['unchanged']} unchanged"
         )
 
+        # Match new tracks to external/missing tracks
+        if results["new"] > 0:
+            try:
+                from app.services.external_track_matcher import ExternalTrackMatcher
+
+                matcher = ExternalTrackMatcher(self.db)
+                match_stats = await matcher.rematch_all_unmatched()
+                if match_stats["matched"] > 0:
+                    logger.info(
+                        f"Matched {match_stats['matched']} external tracks to new library additions"
+                    )
+                    results["external_matched"] = match_stats["matched"]
+            except Exception as e:
+                logger.warning(f"External track matching failed (non-fatal): {e}")
+
         return results
 
     async def cleanup_orphaned_tracks(self, configured_paths: list[Path]) -> dict[str, int]:
