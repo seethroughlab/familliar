@@ -1,9 +1,10 @@
+import os
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Fixed library path inside container - configure host path via docker-compose volume mount
-MUSIC_LIBRARY_PATH = Path("/music")
+# Library path - defaults to /music (Docker), can be overridden via MUSIC_LIBRARY_PATH env var
+MUSIC_LIBRARY_PATH = Path(os.environ.get("MUSIC_LIBRARY_PATH", "/music"))
 
 
 def get_app_version() -> str:

@@ -1,6 +1,9 @@
 /**
  * Playwright global setup - runs once before all tests.
- * Configures the music library path and scans for tracks.
+ * Triggers a library sync to ensure test fixtures are available.
+ *
+ * The music library path is configured via MUSIC_LIBRARY_PATH env var
+ * on the backend (set in CI workflow).
  */
 import { request } from '@playwright/test';
 
@@ -14,27 +17,8 @@ async function globalSetup() {
   });
 
   try {
-    // 1. Configure the music library path to use test fixtures
-    // The fixtures are in backend/tests/fixtures/audio/ relative to repo root
-    // In CI, the working directory is the repo root
-    const fixturesPath = process.env.CI
-      ? '/home/runner/work/familiar/familiar/backend/tests/fixtures/audio'
-      : process.cwd().replace('/frontend', '') + '/backend/tests/fixtures/audio';
-
-    console.log(`📁 Configuring library path: ${fixturesPath}`);
-
-    const settingsResponse = await context.put('/api/v1/settings', {
-      data: {
-        music_library_paths: [fixturesPath],
-      },
-    });
-
-    if (!settingsResponse.ok()) {
-      console.error('Failed to configure library path:', await settingsResponse.text());
-      throw new Error('Failed to configure library path');
-    }
-
-    // 2. Trigger a library sync (scan + analysis)
+    // Trigger a library sync (scan + analysis)
+    // The MUSIC_LIBRARY_PATH env var on the backend points to test fixtures
     console.log('🔍 Starting library sync...');
     const syncResponse = await context.post('/api/v1/library/sync');
 
@@ -43,7 +27,7 @@ async function globalSetup() {
       throw new Error('Failed to start library sync');
     }
 
-    // 3. Poll for sync completion
+    // Poll for sync completion
     console.log('⏳ Waiting for sync to complete...');
 
     let attempts = 0;
@@ -55,10 +39,10 @@ async function globalSetup() {
       if (statusResponse.ok()) {
         const status = await statusResponse.json();
 
-        if (status.status === 'idle' || status.status === 'complete') {
+        if (status.status === 'idle' || status.status === 'complete' || status.status === 'completed') {
           const progress = status.progress;
           console.log(
-            `✅ Sync completed: ${progress?.files_discovered || 0} files, ${progress?.tracks_added || 0} tracks added`
+            `✅ Sync completed: ${progress?.files_discovered || 0} files, ${progress?.tracks_added || progress?.new_tracks || 0} tracks added`
           );
           break;
         } else if (status.status === 'error') {
@@ -76,7 +60,7 @@ async function globalSetup() {
       console.warn('⚠️ Sync timed out after 120 seconds');
     }
 
-    // 4. Verify tracks are available
+    // Verify tracks are available
     const tracksResponse = await context.get('/api/v1/library/tracks?limit=1');
     if (tracksResponse.ok()) {
       const tracks = await tracksResponse.json();
