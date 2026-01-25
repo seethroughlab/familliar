@@ -1,15 +1,21 @@
 /**
  * Hook for managing offline album download state.
+ * Uses the global download store for background downloads.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  downloadTracksForOffline,
   removeOfflineTrack,
   getOfflineTrackIds,
 } from '../services/offlineService';
+import { useDownloadStore, getAlbumJobId } from '../stores/downloadStore';
 
 interface AlbumTrack {
   id: string;
+}
+
+interface UseOfflineAlbumOptions {
+  artist: string;
+  album: string;
 }
 
 interface UseOfflineAlbumResult {
@@ -39,16 +45,35 @@ interface UseOfflineAlbumResult {
 
 /**
  * Hook to manage offline status for an entire album.
+ * Uses global download store for background downloads.
  */
-export function useOfflineAlbum(tracks: AlbumTrack[]): UseOfflineAlbumResult {
+export function useOfflineAlbum(
+  tracks: AlbumTrack[],
+  options?: UseOfflineAlbumOptions
+): UseOfflineAlbumResult {
   const [offlineIds, setOfflineIds] = useState<Set<string>>(new Set());
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [currentTrack, setCurrentTrack] = useState(0);
-  const [currentTrackProgress, setCurrentTrackProgress] = useState(0);
-  const [overallProgress, setOverallProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const trackIds = useMemo(() => tracks.map((t) => t.id), [tracks]);
+
+  // Get download job from global store
+  const { jobs, startDownload } = useDownloadStore();
+  const jobId = options ? getAlbumJobId(options.artist, options.album) : null;
+  const downloadJob = jobId ? jobs.get(jobId) : undefined;
+
+  // Derive download state from job
+  const isDownloading =
+    downloadJob?.status === 'downloading' || downloadJob?.status === 'queued';
+  const currentTrack = downloadJob
+    ? downloadJob.completedIds.length + (downloadJob.currentProgress > 0 ? 1 : 0)
+    : 0;
+  const currentTrackProgress = downloadJob?.currentProgress ?? 0;
+  const overallProgress =
+    downloadJob && downloadJob.trackIds.length > 0
+      ? Math.round(
+          (downloadJob.completedIds.length / downloadJob.trackIds.length) * 100
+        )
+      : 0;
 
   // Check initial offline status for all tracks
   useEffect(() => {
@@ -74,55 +99,48 @@ export function useOfflineAlbum(tracks: AlbumTrack[]): UseOfflineAlbumResult {
     };
   }, [trackIds]);
 
+  // Update offline IDs when download completes
+  useEffect(() => {
+    if (downloadJob?.status === 'completed' || downloadJob?.status === 'failed') {
+      getOfflineTrackIds().then((ids) => {
+        const offlineSet = new Set(ids);
+        const albumOfflineIds = new Set(
+          trackIds.filter((id) => offlineSet.has(id))
+        );
+        setOfflineIds(albumOfflineIds);
+      });
+
+      if (downloadJob.error) {
+        setError(downloadJob.error);
+      }
+    }
+  }, [downloadJob?.status, downloadJob?.error, trackIds]);
+
   const offlineCount = offlineIds.size;
   const totalCount = tracks.length;
   const isFullyOffline = totalCount > 0 && offlineCount === totalCount;
   const isPartiallyOffline = offlineCount > 0 && offlineCount < totalCount;
 
   const download = useCallback(async () => {
-    if (isDownloading || isFullyOffline || tracks.length === 0) return;
+    if (isDownloading || isFullyOffline || tracks.length === 0 || !jobId || !options) return;
 
-    setIsDownloading(true);
     setError(null);
-    setCurrentTrack(0);
-    setCurrentTrackProgress(0);
-    setOverallProgress(0);
 
     // Only download tracks that aren't already offline
     const tracksToDownload = trackIds.filter((id) => !offlineIds.has(id));
 
     if (tracksToDownload.length === 0) {
-      setIsDownloading(false);
       return;
     }
 
-    try {
-      const result = await downloadTracksForOffline(
-        tracksToDownload,
-        (progress) => {
-          setCurrentTrack(progress.currentTrack);
-          setCurrentTrackProgress(progress.currentTrackProgress);
-          setOverallProgress(progress.overallPercentage);
-        }
-      );
-
-      // Refresh offline status
-      const allOfflineIds = await getOfflineTrackIds();
-      const offlineSet = new Set(allOfflineIds);
-      const albumOfflineIds = new Set(
-        trackIds.filter((id) => offlineSet.has(id))
-      );
-      setOfflineIds(albumOfflineIds);
-
-      if (result.failed > 0) {
-        setError(`${result.failed} track(s) failed to download`);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Download failed');
-    } finally {
-      setIsDownloading(false);
-    }
-  }, [isDownloading, isFullyOffline, tracks.length, trackIds, offlineIds]);
+    // Start download via global store
+    startDownload(
+      jobId,
+      'album',
+      `${options.artist} - ${options.album}`,
+      tracksToDownload
+    );
+  }, [isDownloading, isFullyOffline, tracks.length, trackIds, offlineIds, jobId, options, startDownload]);
 
   const remove = useCallback(async () => {
     if (offlineCount === 0) return;
@@ -136,7 +154,6 @@ export function useOfflineAlbum(tracks: AlbumTrack[]): UseOfflineAlbumResult {
       }
 
       setOfflineIds(new Set());
-      setOverallProgress(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Remove failed');
     }

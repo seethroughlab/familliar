@@ -98,7 +98,13 @@ interface AlbumTrack {
   id: string;
 }
 
-function AlbumOfflineButton({ tracks }: { tracks: AlbumTrack[] }) {
+interface AlbumOfflineButtonProps {
+  tracks: AlbumTrack[];
+  artist: string;
+  album: string;
+}
+
+function AlbumOfflineButton({ tracks, artist, album }: AlbumOfflineButtonProps) {
   const {
     offlineCount,
     totalCount,
@@ -109,7 +115,7 @@ function AlbumOfflineButton({ tracks }: { tracks: AlbumTrack[] }) {
     overallProgress,
     download,
     remove,
-  } = useOfflineAlbum(tracks);
+  } = useOfflineAlbum(tracks, { artist, album });
 
   if (isDownloading) {
     return (
@@ -446,7 +452,7 @@ export function AlbumDetail({
                 <Play className="w-4 h-4" fill="currentColor" />
                 Play
               </button>
-              <AlbumOfflineButton tracks={album.tracks} />
+              <AlbumOfflineButton tracks={album.tracks} artist={album.artist} album={album.name} />
             </div>
           </div>
         </div>
@@ -461,7 +467,7 @@ export function AlbumDetail({
             <Play className="w-5 h-5" fill="currentColor" />
             Play
           </button>
-          <AlbumOfflineButton tracks={album.tracks} />
+          <AlbumOfflineButton tracks={album.tracks} artist={album.artist} album={album.name} />
         </div>
       </div>
 

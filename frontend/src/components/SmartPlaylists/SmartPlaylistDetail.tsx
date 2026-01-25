@@ -6,6 +6,7 @@ import { smartPlaylistsApi, tracksApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
+import { useDownloadStore, getSmartPlaylistJobId } from '../../stores/downloadStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
 import * as offlineService from '../../services/offlineService';
@@ -76,12 +77,20 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const { isOffline } = useOfflineStatus();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
-  const [isDownloading, setIsDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState({ current: 0, total: 0 });
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
   const [, setSearchParams] = useSearchParams();
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
+
+  // Use global download store
+  const { jobs, startDownload } = useDownloadStore();
+  const jobId = getSmartPlaylistJobId(playlist.id);
+  const downloadJob = jobs.get(jobId);
+  const isDownloading = downloadJob?.status === 'downloading' || downloadJob?.status === 'queued';
+  const downloadProgress = {
+    current: downloadJob ? downloadJob.completedIds.length + (downloadJob.currentProgress > 0 ? 1 : 0) : 0,
+    total: downloadJob?.trackIds.length ?? 0,
+  };
 
   // Fetch tracks for this smart playlist with offline fallback
   const { data: tracksResponse, isLoading: tracksLoading, refetch } = useQuery({
@@ -179,49 +188,38 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
   }, []);
 
   const handleDownloadPlaylist = async () => {
-    if (tracks.length === 0) return;
+    if (allTracks.length === 0) return;
 
-    // Get tracks that need to be downloaded
-    const tracksToDownload = tracks.filter(
+    // Get tracks that need to be downloaded (use allTracks, not filtered tracks)
+    const tracksToDownload = allTracks.filter(
       (t) => !offlineTrackIds.has(t.id)
     );
     if (tracksToDownload.length === 0) return;
 
-    setIsDownloading(true);
-    setDownloadProgress({ current: 0, total: tracksToDownload.length });
+    // Start download via global store
+    startDownload(
+      jobId,
+      'smart-playlist',
+      playlist.name,
+      tracksToDownload.map((t) => t.id)
+    );
 
-    try {
-      await offlineService.downloadTracksForOffline(
-        tracksToDownload.map((t) => t.id),
-        (progress) => {
-          setDownloadProgress({
-            current: progress.currentTrack,
-            total: progress.totalTracks,
-          });
-          // Update offline IDs as tracks complete
-          if (progress.currentTrackProgress === 100) {
-            const completedTrack = tracksToDownload[progress.currentTrack - 1];
-            if (completedTrack) {
-              setOfflineTrackIds((prev) => new Set([...prev, completedTrack.id]));
-            }
-          }
-        }
-      );
-      // Final update to ensure all are marked
-      const ids = await offlineService.getOfflineTrackIds();
-      setOfflineTrackIds(new Set(ids));
-
-      // Auto-cache the smart playlist metadata for offline access
-      await playlistCache.cacheSmartPlaylist(
-        playlist,
-        tracks.map((t) => t.id)
-      );
-    } catch (error) {
-      console.error('Failed to download playlist:', error);
-    } finally {
-      setIsDownloading(false);
-    }
+    // Cache the smart playlist metadata for offline access
+    await playlistCache.cacheSmartPlaylist(
+      playlist,
+      allTracks.map((t) => t.id)
+    );
   };
+
+  // Update offline track IDs when download job completes
+  useEffect(() => {
+    if (downloadJob?.status === 'completed' || downloadJob?.status === 'failed') {
+      // Refresh offline IDs after download completes
+      offlineService.getOfflineTrackIds().then((ids) => {
+        setOfflineTrackIds(new Set(ids));
+      });
+    }
+  }, [downloadJob?.status]);
 
   const allTracksOffline = allTracks.every(t => offlineTrackIds.has(t.id));
   const offlineCount = allTracks.filter(t => offlineTrackIds.has(t.id)).length;

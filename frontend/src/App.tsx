@@ -14,6 +14,7 @@ import { ProfileSelector } from './components/Profiles';
 import { HealthIndicator } from './components/HealthIndicator';
 import { BackgroundJobsIndicator } from './components/BackgroundJobsIndicator';
 import { ProposedChangesIndicator } from './components/ProposedChangesIndicator';
+import { DownloadIndicator } from './components/DownloadIndicator';
 import { WorkerAlert } from './components/WorkerAlert';
 import { GlobalDropZone, ImportModal } from './components/Import';
 import { ColumnSelector } from './components/Library/ColumnSelector';
@@ -441,6 +442,9 @@ function AppContent() {
 
                   {/* Spacer to push indicators right */}
                   <div className="flex-1" />
+
+                  {/* Download progress indicator - shows when downloads are in progress */}
+                  <DownloadIndicator />
 
                   {/* Proposed changes indicator - shows when changes need review */}
                   <ProposedChangesIndicator />

@@ -1,0 +1,293 @@
+/**
+ * Global download queue store for managing offline downloads across navigation.
+ * Downloads persist in memory and continue even when navigating away from the source view.
+ */
+import { create } from 'zustand';
+import * as offlineService from '../services/offlineService';
+
+export type DownloadJobStatus = 'queued' | 'downloading' | 'completed' | 'failed' | 'cancelled';
+
+export interface DownloadJob {
+  id: string;                    // Unique job ID (e.g., "playlist-123", "album-artist-albumname")
+  type: 'playlist' | 'smart-playlist' | 'album';
+  name: string;                  // Display name
+  trackIds: string[];            // All track IDs to download
+  completedIds: string[];        // Successfully downloaded
+  failedIds: string[];           // Failed downloads
+  currentTrackId: string | null; // Currently downloading
+  currentProgress: number;       // 0-100 for current track
+  status: DownloadJobStatus;
+  startedAt: Date;
+  error?: string;
+}
+
+interface DownloadState {
+  jobs: Map<string, DownloadJob>;
+  activeJobId: string | null;
+
+  // Actions
+  startDownload: (
+    id: string,
+    type: DownloadJob['type'],
+    name: string,
+    trackIds: string[]
+  ) => void;
+  cancelDownload: (id: string) => void;
+  getJob: (id: string) => DownloadJob | undefined;
+  getActiveJob: () => DownloadJob | undefined;
+  clearCompletedJobs: () => void;
+}
+
+// Track the current abort controller for cancellation
+let currentAbortController: AbortController | null = null;
+
+export const useDownloadStore = create<DownloadState>((set, get) => ({
+  jobs: new Map(),
+  activeJobId: null,
+
+  startDownload: (id, type, name, trackIds) => {
+    const state = get();
+
+    console.log('[Download] startDownload called:', id, 'with', trackIds.length, 'tracks');
+
+    // If this job already exists and is downloading, don't start another
+    const existingJob = state.jobs.get(id);
+    if (existingJob && (existingJob.status === 'downloading' || existingJob.status === 'queued')) {
+      console.log('[Download] Job already in progress, skipping');
+      return;
+    }
+
+    // Filter out already-downloaded tracks (will be checked async)
+    const job: DownloadJob = {
+      id,
+      type,
+      name,
+      trackIds,
+      completedIds: [],
+      failedIds: [],
+      currentTrackId: null,
+      currentProgress: 0,
+      status: 'queued',
+      startedAt: new Date(),
+    };
+
+    // Add job to queue
+    const newJobs = new Map(state.jobs);
+    newJobs.set(id, job);
+    set({ jobs: newJobs });
+
+    // If no active job, start processing
+    if (!state.activeJobId) {
+      processNextJob();
+    }
+  },
+
+  cancelDownload: (id) => {
+    const state = get();
+    const job = state.jobs.get(id);
+    if (!job) return;
+
+    // If this is the active job, abort it
+    if (state.activeJobId === id && currentAbortController) {
+      currentAbortController.abort();
+      currentAbortController = null;
+    }
+
+    // Update job status
+    const newJobs = new Map(state.jobs);
+    newJobs.set(id, { ...job, status: 'cancelled' });
+    set({
+      jobs: newJobs,
+      activeJobId: state.activeJobId === id ? null : state.activeJobId,
+    });
+
+    // Remove cancelled job after a brief delay
+    setTimeout(() => {
+      const currentState = get();
+      const currentJobs = new Map(currentState.jobs);
+      currentJobs.delete(id);
+      set({ jobs: currentJobs });
+    }, 2000);
+
+    // Process next job if this was the active one
+    if (state.activeJobId === id) {
+      processNextJob();
+    }
+  },
+
+  getJob: (id) => get().jobs.get(id),
+
+  getActiveJob: () => {
+    const state = get();
+    return state.activeJobId ? state.jobs.get(state.activeJobId) : undefined;
+  },
+
+  clearCompletedJobs: () => {
+    const state = get();
+    const newJobs = new Map(state.jobs);
+    for (const [id, job] of newJobs) {
+      if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+        newJobs.delete(id);
+      }
+    }
+    set({ jobs: newJobs });
+  },
+}));
+
+// Process the next queued job
+async function processNextJob() {
+  const state = useDownloadStore.getState();
+
+  // Find next queued job
+  let nextJob: DownloadJob | undefined;
+  for (const job of state.jobs.values()) {
+    if (job.status === 'queued') {
+      nextJob = job;
+      break;
+    }
+  }
+
+  if (!nextJob) {
+    useDownloadStore.setState({ activeJobId: null });
+    return;
+  }
+
+  console.log('[Download] Starting job:', nextJob.id, 'with', nextJob.trackIds.length, 'tracks');
+
+  // Set as active
+  useDownloadStore.setState({ activeJobId: nextJob.id });
+
+  // Get already-downloaded track IDs
+  const offlineIds = new Set(await offlineService.getOfflineTrackIds());
+  const tracksToDownload = nextJob.trackIds.filter(id => !offlineIds.has(id));
+
+  console.log('[Download] Already offline:', offlineIds.size, 'To download:', tracksToDownload.length);
+
+  // If all tracks already downloaded, mark as complete
+  if (tracksToDownload.length === 0) {
+    console.log('[Download] All tracks already offline, marking job as complete');
+    updateJob(nextJob.id, {
+      status: 'completed',
+      completedIds: nextJob.trackIds,
+    });
+    scheduleJobRemoval(nextJob.id);
+    processNextJob();
+    return;
+  }
+
+  // Start downloading
+  updateJob(nextJob.id, {
+    status: 'downloading',
+    completedIds: nextJob.trackIds.filter(id => offlineIds.has(id)),
+  });
+
+  currentAbortController = new AbortController();
+  const abortSignal = currentAbortController.signal;
+
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < tracksToDownload.length; i++) {
+    // Check for cancellation
+    if (abortSignal.aborted) {
+      break;
+    }
+
+    const trackId = tracksToDownload[i];
+
+    updateJob(nextJob.id, {
+      currentTrackId: trackId,
+      currentProgress: 0,
+    });
+
+    try {
+      console.log('[Download] Downloading track', i + 1, 'of', tracksToDownload.length, ':', trackId);
+      await offlineService.downloadTrackForOffline(trackId, (progress) => {
+        updateJob(nextJob.id, {
+          currentProgress: progress.percentage,
+        });
+      });
+
+      succeeded++;
+      console.log('[Download] Track completed:', trackId);
+
+      // Update completed IDs
+      const currentJob = useDownloadStore.getState().jobs.get(nextJob.id);
+      if (currentJob) {
+        updateJob(nextJob.id, {
+          completedIds: [...currentJob.completedIds, trackId],
+        });
+      }
+    } catch (error) {
+      if (!abortSignal.aborted) {
+        console.error(`[Download] Failed to download track ${trackId}:`, error);
+        failed++;
+
+        const currentJob = useDownloadStore.getState().jobs.get(nextJob.id);
+        if (currentJob) {
+          updateJob(nextJob.id, {
+            failedIds: [...currentJob.failedIds, trackId],
+          });
+        }
+      }
+    }
+  }
+
+  currentAbortController = null;
+
+  // Check if job was cancelled
+  const finalJob = useDownloadStore.getState().jobs.get(nextJob.id);
+  if (finalJob && finalJob.status !== 'cancelled') {
+    const finalStatus = failed > 0 && succeeded === 0 ? 'failed' : 'completed';
+    console.log('[Download] Job finished:', nextJob.id, 'status:', finalStatus, 'succeeded:', succeeded, 'failed:', failed);
+
+    updateJob(nextJob.id, {
+      status: finalStatus,
+      currentTrackId: null,
+      currentProgress: 0,
+      error: failed > 0 ? `${failed} track(s) failed to download` : undefined,
+    });
+
+    // Schedule removal after completion
+    scheduleJobRemoval(nextJob.id);
+  }
+
+  // Process next job
+  processNextJob();
+}
+
+function updateJob(id: string, updates: Partial<DownloadJob>) {
+  const state = useDownloadStore.getState();
+  const job = state.jobs.get(id);
+  if (!job) return;
+
+  const newJobs = new Map(state.jobs);
+  newJobs.set(id, { ...job, ...updates });
+  useDownloadStore.setState({ jobs: newJobs });
+}
+
+function scheduleJobRemoval(id: string) {
+  // Keep completed jobs visible for a few seconds before auto-removing
+  setTimeout(() => {
+    const state = useDownloadStore.getState();
+    const job = state.jobs.get(id);
+    if (job && (job.status === 'completed' || job.status === 'failed')) {
+      const newJobs = new Map(state.jobs);
+      newJobs.delete(id);
+      useDownloadStore.setState({ jobs: newJobs });
+    }
+  }, 5000);
+}
+
+// Helper to generate job IDs
+export function getPlaylistJobId(playlistId: string): string {
+  return `playlist-${playlistId}`;
+}
+
+export function getSmartPlaylistJobId(playlistId: string): string {
+  return `smart-playlist-${playlistId}`;
+}
+
+export function getAlbumJobId(artist: string, album: string): string {
+  return `album-${artist}-${album}`;
+}

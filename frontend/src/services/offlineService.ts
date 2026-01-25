@@ -24,15 +24,19 @@ export async function downloadTrackForOffline(
   // Check if already downloaded
   const existing = await db.offlineTracks.get(trackId);
   if (existing) {
+    console.log('[Offline] Track already exists in IndexedDB:', trackId);
     onProgress?.({ loaded: 1, total: 1, percentage: 100 });
     return;
   }
 
   // Fetch the audio file with progress tracking
+  console.log('[Offline] Fetching track:', trackId);
   const response = await fetch(`/api/v1/tracks/${trackId}/stream`);
   if (!response.ok) {
+    console.error('[Offline] Fetch failed:', response.status, response.statusText);
     throw new Error(`Failed to download track: ${response.statusText}`);
   }
+  console.log('[Offline] Response OK, content-length:', response.headers.get('content-length'));
 
   let blob: Blob;
 
@@ -78,7 +82,9 @@ export async function downloadTrackForOffline(
     cachedAt: new Date(),
   };
 
+  console.log('[Offline] Storing track in IndexedDB:', trackId, 'size:', blob.size);
   await db.offlineTracks.put(offlineTrack);
+  console.log('[Offline] Track stored successfully:', trackId);
 
   // Also download artwork if we have track metadata
   const trackInfo = await db.cachedTracks.get(trackId);

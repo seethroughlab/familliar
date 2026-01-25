@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Bug, RefreshCw, Trash2 } from 'lucide-react';
+import { Bug, RefreshCw, Trash2, Download } from 'lucide-react';
 import {
   getAudioContext,
   getAudioAnalyser,
@@ -8,6 +8,8 @@ import {
   isVisualizerAvailable,
 } from '../../hooks/useAudioEngine';
 import { usePlayerStore } from '../../stores/playerStore';
+import { useDownloadStore } from '../../stores/downloadStore';
+import * as offlineService from '../../services/offlineService';
 
 // Capture console logs
 const logBuffer: { time: string; level: string; message: string }[] = [];
@@ -59,18 +61,24 @@ if (typeof window !== 'undefined' && !(window as unknown as { __debugLogsSetup: 
 export function DebugSettings() {
   const [expanded, setExpanded] = useState(false);
   const [logs, setLogs] = useState<typeof logBuffer>([]);
+  const [offlineCount, setOfflineCount] = useState<number | null>(null);
   const { isPlaying, currentTrack } = usePlayerStore();
+  const { jobs, activeJobId } = useDownloadStore();
 
-  // Refresh logs periodically when expanded
+  // Refresh logs and offline count periodically when expanded
   useEffect(() => {
     if (!expanded) return;
 
-    const interval = setInterval(() => {
+    const refreshData = async () => {
       setLogs([...logBuffer]);
-    }, 1000);
+      const ids = await offlineService.getOfflineTrackIds();
+      setOfflineCount(ids.length);
+    };
+
+    const interval = setInterval(refreshData, 500);
 
     // Initial load
-    setLogs([...logBuffer]);
+    refreshData();
 
     return () => clearInterval(interval);
   }, [expanded]);
@@ -193,6 +201,59 @@ export function DebugSettings() {
             </div>
           </div>
 
+          {/* Download State */}
+          <div className="bg-zinc-900/50 rounded-lg p-3">
+            <h5 className="text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Download State
+            </h5>
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono mb-3">
+              <div className="text-zinc-400">Offline tracks in DB:</div>
+              <div className="text-zinc-200">{offlineCount ?? 'loading...'}</div>
+
+              <div className="text-zinc-400">Active jobs:</div>
+              <div className="text-zinc-200">{jobs.size}</div>
+
+              <div className="text-zinc-400">Active job ID:</div>
+              <div className="text-zinc-200">{activeJobId || 'none'}</div>
+            </div>
+
+            {jobs.size > 0 && (
+              <div className="space-y-2">
+                {Array.from(jobs.values()).map((job) => (
+                  <div key={job.id} className="bg-zinc-800 rounded p-2 text-xs font-mono">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-zinc-300 font-medium truncate">{job.name}</span>
+                      <span className={`px-1.5 py-0.5 rounded text-xs ${
+                        job.status === 'downloading' ? 'bg-blue-500/20 text-blue-400' :
+                        job.status === 'queued' ? 'bg-yellow-500/20 text-yellow-400' :
+                        job.status === 'completed' ? 'bg-green-500/20 text-green-400' :
+                        job.status === 'failed' ? 'bg-red-500/20 text-red-400' :
+                        'bg-zinc-500/20 text-zinc-400'
+                      }`}>
+                        {job.status}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-1 text-zinc-400">
+                      <div>trackIds: {job.trackIds.length}</div>
+                      <div>completed: {job.completedIds.length}</div>
+                      <div>failed: {job.failedIds.length}</div>
+                      <div>progress: {job.currentProgress}%</div>
+                      <div className="col-span-2">currentTrack: {job.currentTrackId || 'none'}</div>
+                    </div>
+                    {job.error && (
+                      <div className="text-red-400 mt-1">{job.error}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {jobs.size === 0 && (
+              <div className="text-zinc-500 text-xs italic">No active download jobs</div>
+            )}
+          </div>
+
           {/* Console Logs */}
           <div className="bg-zinc-900/50 rounded-lg p-3">
             <div className="flex items-center justify-between mb-2">
@@ -238,6 +299,37 @@ export function DebugSettings() {
                 className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded"
               >
                 Log Test
+              </button>
+              <button
+                onClick={async () => {
+                  console.log('[Test] Checking IndexedDB...');
+                  try {
+                    const ids = await offlineService.getOfflineTrackIds();
+                    console.log('[Test] Offline track IDs:', ids.length, ids.slice(0, 5));
+                    const usage = await offlineService.getOfflineStorageUsage();
+                    console.log('[Test] Storage usage:', usage);
+                  } catch (e) {
+                    console.error('[Test] IndexedDB error:', e);
+                  }
+                }}
+                className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded"
+              >
+                Check IndexedDB
+              </button>
+              <button
+                onClick={async () => {
+                  console.log('[Test] Testing track stream API...');
+                  try {
+                    // Try to fetch headers only for a test track
+                    const response = await fetch('/api/v1/tracks/test-id/stream', { method: 'HEAD' });
+                    console.log('[Test] Stream API response:', response.status, response.statusText);
+                  } catch (e) {
+                    console.error('[Test] Stream API error:', e);
+                  }
+                }}
+                className="px-3 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded"
+              >
+                Test Stream API
               </button>
               <button
                 onClick={() => {
