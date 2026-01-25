@@ -109,6 +109,12 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // More specific routes must come first - Vite matches in order
+      '/api/v1/tracks': {
+        target: process.env.VITE_API_TARGET || 'http://localhost:4400',
+        changeOrigin: true,
+        timeout: 0, // No timeout for streaming/downloads (can take 10+ minutes over slow connections)
+      },
       '/api': {
         target: process.env.VITE_API_TARGET || 'http://localhost:4400',
         changeOrigin: true,
