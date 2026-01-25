@@ -1589,6 +1589,7 @@ Respond with ONLY the playlist name, nothing else."""
 
             # Get track counts
             from sqlalchemy import func, select
+
             from app.db.models import PlaylistTrack
 
             total_count = await self.db.scalar(

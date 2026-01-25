@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import httpx
 import musicbrainzngs
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

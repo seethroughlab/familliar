@@ -576,6 +576,53 @@ export function TrackListBrowser({
     setContextMenu(initialContextMenuState);
   }, []);
 
+  // Threshold for using lazy queue mode vs loading all tracks
+  const LAZY_QUEUE_THRESHOLD = 200;
+
+  // Track loading state for play all (must be before early returns)
+  const [isLoadingPlayAll, setIsLoadingPlayAll] = useState(false);
+
+  const handlePlayAll = useCallback(async () => {
+    if (total === 0) return;
+
+    // For large result sets, use lazy queue mode with server-side ordering
+    // Pass global shuffle state so server returns shuffled IDs if enabled
+    if (total >= LAZY_QUEUE_THRESHOLD) {
+      setIsLoadingPlayAll(true);
+      try {
+        const response = await tracksApi.getIds({
+          shuffle: shuffle,
+          search: filters.search,
+          artist: filters.artist,
+          album: filters.album,
+          year_from: filters.yearFrom,
+          year_to: filters.yearTo,
+          energy_min: filters.energyMin,
+          energy_max: filters.energyMax,
+          valence_min: filters.valenceMin,
+          valence_max: filters.valenceMax,
+        });
+        if (response.ids.length > 0) {
+          await setLazyQueue(response.ids);
+        }
+      } catch (error) {
+        console.error('Failed to play all tracks:', error);
+      } finally {
+        setIsLoadingPlayAll(false);
+      }
+      return;
+    }
+
+    // For smaller result sets, use regular queue
+    // setQueue() already respects the global shuffle toggle
+    if (allTracks.length > 0) {
+      setQueue(allTracks, 0);
+    }
+  }, [total, shuffle, filters, setLazyQueue, allTracks, setQueue]);
+
+  // Check if currently playing from lazy queue
+  const isInLazyQueueMode = lazyQueueIds !== null && lazyQueueIds.length > 0;
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -632,53 +679,6 @@ export function TrackListBrowser({
     }
     return `${mins} min`;
   };
-
-  // Threshold for using lazy queue mode vs loading all tracks
-  const LAZY_QUEUE_THRESHOLD = 200;
-
-  // Track loading state for play all
-  const [isLoadingPlayAll, setIsLoadingPlayAll] = useState(false);
-
-  const handlePlayAll = useCallback(async () => {
-    if (total === 0) return;
-
-    // For large result sets, use lazy queue mode with server-side ordering
-    // Pass global shuffle state so server returns shuffled IDs if enabled
-    if (total >= LAZY_QUEUE_THRESHOLD) {
-      setIsLoadingPlayAll(true);
-      try {
-        const response = await tracksApi.getIds({
-          shuffle: shuffle,
-          search: filters.search,
-          artist: filters.artist,
-          album: filters.album,
-          year_from: filters.yearFrom,
-          year_to: filters.yearTo,
-          energy_min: filters.energyMin,
-          energy_max: filters.energyMax,
-          valence_min: filters.valenceMin,
-          valence_max: filters.valenceMax,
-        });
-        if (response.ids.length > 0) {
-          await setLazyQueue(response.ids);
-        }
-      } catch (error) {
-        console.error('Failed to play all tracks:', error);
-      } finally {
-        setIsLoadingPlayAll(false);
-      }
-      return;
-    }
-
-    // For smaller result sets, use regular queue
-    // setQueue() already respects the global shuffle toggle
-    if (allTracks.length > 0) {
-      setQueue(allTracks, 0);
-    }
-  }, [total, shuffle, filters, setLazyQueue, allTracks, setQueue]);
-
-  // Check if currently playing from lazy queue
-  const isInLazyQueueMode = lazyQueueIds !== null && lazyQueueIds.length > 0;
 
   return (
     <div>

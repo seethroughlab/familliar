@@ -63,7 +63,7 @@ export function useOfflineQuery<TData, TError = Error>(
     queryFn,
     cacheData,
     loadCachedData,
-    maxAge = 24 * 60 * 60 * 1000, // 24 hours
+    maxAge: _maxAge = 24 * 60 * 60 * 1000, // 24 hours
     ...queryOptions
   } = options;
 

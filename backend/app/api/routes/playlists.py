@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.api.deps import DbSession, RequiredProfile
 from app.db.models import ExternalTrack, ExternalTrackSource, Playlist, PlaylistTrack, Track

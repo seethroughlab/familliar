@@ -74,7 +74,7 @@ function FullPlayerDiscoverTab({
     getArtistImageUrl: () => '', // Not needed for this use case
   } : undefined;
 
-  const { sections, hasDiscovery } = useTrackDiscovery({ data: trackDiscoveryInput as any });
+  const { sections, hasDiscovery } = useTrackDiscovery({ data: trackDiscoveryInput });
 
   if (loading) {
     return (

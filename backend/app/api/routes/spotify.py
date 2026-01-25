@@ -527,6 +527,7 @@ async def import_spotify_playlist(
 
         # Get track count
         from sqlalchemy import func, select
+
         from app.db.models import PlaylistTrack
         count_result = await db.execute(
             select(func.count(PlaylistTrack.id)).where(

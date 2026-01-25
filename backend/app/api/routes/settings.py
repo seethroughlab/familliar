@@ -1,6 +1,5 @@
 """App settings endpoints for user-configurable settings."""
 
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter

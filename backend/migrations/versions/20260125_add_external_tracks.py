@@ -23,18 +23,42 @@ depends_on = None
 def upgrade() -> None:
     conn = op.get_bind()
 
-    # Create ExternalTrackSource enum
-    external_track_source = postgresql.ENUM(
-        "spotify_playlist",
-        "spotify_favorite",
-        "playlist_import",
-        "llm_recommendation",
-        "manual",
-        name="externaltracksource",
+    # Create ExternalTrackSource enum (check if exists first for idempotency)
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM pg_type WHERE typname = 'externaltracksource'
+            )
+            """
+        )
     )
-    external_track_source.create(conn, checkfirst=True)
+    if not result.scalar():
+        external_track_source = postgresql.ENUM(
+            "spotify_playlist",
+            "spotify_favorite",
+            "playlist_import",
+            "llm_recommendation",
+            "manual",
+            name="externaltracksource",
+        )
+        external_track_source.create(conn)
 
-    # Create external_tracks table
+    # Create external_tracks table (check if exists for idempotency)
+    result = conn.execute(
+        sa.text(
+            """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'external_tracks'
+            )
+            """
+        )
+    )
+    if result.scalar():
+        # Table already exists, skip creation
+        return
+
     op.create_table(
         "external_tracks",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
