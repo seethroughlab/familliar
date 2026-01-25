@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.1.0-alpha.14] - 2026-01-25
+## [0.1.0-alpha.5] - 2026-01-25
+
+External Tracks & Offline
 
 ### Added
 
@@ -52,40 +54,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Playlist tracks** - unified `PlaylistTrackItem` type with `type: 'local' | 'external'` discriminator
 - **Discovery components** - all discovery views now support "Add to Wishlist" action for non-library items
 
-## [0.1.0-alpha.13] - 2026-01-23
+## [0.1.0-alpha.4] - 2026-01-15 to 2026-01-23
+
+Playback & Mobile
 
 ### Added
 
-- **Audio Effects Panel** - comprehensive real-time audio effects system (desktop only)
-  - **3-Band EQ** - Low (250 Hz), Mid (1 kHz), High (4 kHz) shelving filters with ±12 dB range
-  - **Compressor** - Dynamics compression with threshold, ratio, attack, release, knee, and makeup gain
-  - **Reverb** - Convolution reverb with 5 algorithmic presets (Small Room, Medium Room, Large Hall, Plate, Cathedral)
-  - **Delay** - Echo effect with time, feedback, mix controls and ping-pong stereo mode
-  - **Filters** - High-pass and low-pass filters with adjustable frequency and Q
-  - 5 built-in presets: Warm Vinyl, Live Concert, Studio Polish, Bass Boost, Dreamy
-  - Custom preset save/load with persistence
-  - Quick-access button in FullPlayer header for fast preset switching
-  - Settings panel in Playback section with collapsible effect sections
-  - Effects chain inserted after volume control, before visualizer (effected audio visible in visualizations)
-- **Debug Settings panel** - new Developer section at bottom of Settings
-  - Platform detection info (iOS, mobile, hybrid mode)
-  - Audio engine state (AudioContext, Analyser, current mode)
-  - Live console log viewer with filtering
-  - Test buttons for AudioContext and visibility state
-
-### Fixed
-
-- **iOS background playback** - audio now continues playing when app is backgrounded on iOS
-  - Implemented hybrid audio mode that switches between Web Audio (for visualizer) and direct playback (for background)
-  - Default: uses direct playback for reliable background audio
-  - When visualizer is visible: switches to Web Audio mode for visualizer to work
-  - When app backgrounds or visualizer closes: switches back to direct playback
-  - Audio effects not available on iOS (they require Web Audio routing which breaks background playback)
-
-## [0.1.0-alpha.11] - 2026-01-21
-
-### Added
-
+- **Non-Places visualizer enhancements** - inspired by "Islands: Non-Places" game
+  - New objects with glowing parts: vending machine, ATM, streetlight, exit sign
+  - New palm tree silhouette with detailed fronds
+  - Ground plane with parallax depth and subtle horizon line
+  - Shadows beneath objects (darker/sharper for closer objects)
+  - Gentle swaying animation on plant fronds
+- **Rain Window visualizer** - new calm visualizer for ambient music
+  - Rain droplets with physics-based trails sliding down glass
+  - Soft bokeh lights in background using album artwork colors
+  - Subtle bass reactivity for spawn rate and brightness
 - **Import quality comparison** - duplicate detection now compares audio quality
   - Shows whether incoming file is higher/lower/equal quality vs existing track
   - Quality factors: format tier (FLAC > AAC > MP3), bitrate, sample rate, bit depth
@@ -106,6 +90,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Returns Bandcamp search URL when requested artist isn't in library
   - Updated system prompt with discovery suggestions workflow
 - **README tools reference** - expandable "Available AI Tools (25)" section documenting all LLM capabilities
+- **Audio Effects Panel** - comprehensive real-time audio effects system (desktop only)
+  - **3-Band EQ** - Low (250 Hz), Mid (1 kHz), High (4 kHz) shelving filters with ±12 dB range
+  - **Compressor** - Dynamics compression with threshold, ratio, attack, release, knee, and makeup gain
+  - **Reverb** - Convolution reverb with 5 algorithmic presets (Small Room, Medium Room, Large Hall, Plate, Cathedral)
+  - **Delay** - Echo effect with time, feedback, mix controls and ping-pong stereo mode
+  - **Filters** - High-pass and low-pass filters with adjustable frequency and Q
+  - 5 built-in presets: Warm Vinyl, Live Concert, Studio Polish, Bass Boost, Dreamy
+  - Custom preset save/load with persistence
+  - Quick-access button in FullPlayer header for fast preset switching
+  - Settings panel in Playback section with collapsible effect sections
+  - Effects chain inserted after volume control, before visualizer (effected audio visible in visualizations)
+- **Debug Settings panel** - new Developer section at bottom of Settings
+  - Platform detection info (iOS, mobile, hybrid mode)
+  - Audio engine state (AudioContext, Analyser, current mode)
+  - Live console log viewer with filtering
+  - Test buttons for AudioContext and visibility state
 
 ### Changed
 
@@ -135,28 +135,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Visualizer type selection persists across navigation
   - Tab switching clears irrelevant URL params
 - **Discovery section shows album names** for recommended tracks in library
-
-### Fixed
-
-- **Playlist detail overflow** - header now stacks vertically on mobile, preventing title/button clipping
-- **Track skipping during queue changes** - fixed race condition where tracks could skip unexpectedly
-  - Added transition tracking to ignore spurious "ended" events during queue/track loading
-  - Prevents double-advancing when rapidly changing tracks
-
-## [0.1.0-alpha.10] - 2026-01-15
-
-### Added
-
-- **Non-Places visualizer enhancements** - inspired by "Islands: Non-Places" game
-  - New objects with glowing parts: vending machine, ATM, streetlight, exit sign
-  - New palm tree silhouette with detailed fronds
-  - Ground plane with parallax depth and subtle horizon line
-  - Shadows beneath objects (darker/sharper for closer objects)
-  - Gentle swaying animation on plant fronds
-- **Rain Window visualizer** - new calm visualizer for ambient music
-  - Rain droplets with physics-based trails sliding down glass
-  - Soft bokeh lights in background using album artwork colors
-  - Subtle bass reactivity for spawn rate and brightness
+- **Non-Places object distribution** - weighted toward iconic glowing objects
+  - Vending machines, ATMs, streetlights appear 2x as often
+  - Palm trees appear 3x as often (good silhouette)
+  - Removed abstract "ring" shape (didn't fit aesthetic)
 
 ### Fixed
 
@@ -166,75 +148,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plant frond rotation** - fronds now point upward correctly instead of sideways
   - Added -π/2 offset to canvas rotation so angle 0 means "up" not "right"
   - Affects both potted plant and palm tree shapes
+- **Playlist detail overflow** - header now stacks vertically on mobile, preventing title/button clipping
+- **Track skipping during queue changes** - fixed race condition where tracks could skip unexpectedly
+  - Added transition tracking to ignore spurious "ended" events during queue/track loading
+  - Prevents double-advancing when rapidly changing tracks
+- **iOS background playback** - audio now continues playing when app is backgrounded on iOS
+  - Implemented hybrid audio mode that switches between Web Audio (for visualizer) and direct playback (for background)
+  - Default: uses direct playback for reliable background audio
+  - When visualizer is visible: switches to Web Audio mode for visualizer to work
+  - When app backgrounds or visualizer closes: switches back to direct playback
+  - Audio effects not available on iOS (they require Web Audio routing which breaks background playback)
 
-### Changed
+## [0.1.0-alpha.3] - 2026-01-11 to 2026-01-14
 
-- **Non-Places object distribution** - weighted toward iconic glowing objects
-  - Vending machines, ATMs, streetlights appear 2x as often
-  - Palm trees appear 3x as often (good silhouette)
-  - Removed abstract "ring" shape (didn't fit aesthetic)
-
-## [0.1.0-alpha.9] - 2026-01-14
-
-### Added
-
-- **Semantic search** for natural language music queries
-  - New `semantic_search` LLM tool uses CLAP text embeddings
-  - Ask for "gloomy with Eastern influences" or "dreamy atmospheric synths" and find sonically matching tracks
-  - Works by encoding your text description into the same embedding space as the audio
-  - Gracefully falls back to metadata search when CLAP is disabled
-
-## [0.1.0-alpha.8] - 2026-01-14
-
-### Added
-
-- **Album/artist name normalization** for consistent matching
-  - Case-insensitive grouping: "Alice In Ultraland" and "Alice in Ultraland" now appear as one album
-  - Handles diacritics (Björk = Bjork), quotes, dashes, and whitespace variations
-  - Applied to album grouping, artwork hash computation, and compilation detection
-- **Duplicate artist detection** LLM tools
-  - `find_duplicate_artists` - detects artists with variant spellings (e.g., "Arovane_Phonem" vs "Arovane and Phonem")
-  - `merge_duplicate_artists` - proposes merging duplicates via the review queue
-- **Proposed Changes as main view** - now accessible from Library browser picker
-  - Click the amber indicator to jump directly to the Proposed Changes view
-  - Removed from Settings panel (now has its own dedicated view)
-  - Improved card layout with more space for reviewing changes
-
-### Changed
-
-- **Artwork fetch order** - Last.fm checked first when API key is configured (faster than MusicBrainz)
-- **Background Jobs indicator** now shows queue count (e.g., "5/10 (3 queued)")
-- **Bulk change display** - shows unique values instead of raw JSON with track IDs
-  - Before: `{"uuid1":"proem","uuid2":"Proem",...}`
-  - After: `proem, Proem`
-
-### Fixed
-
-- Settings page crash caused by API responses not being arrays
-- Proposed Changes API endpoint missing trailing slash
-
-## [0.1.0-alpha.7] - 2026-01-14
-
-### Added
-
-- **Proposed Changes system** for metadata corrections
-  - LLM can suggest metadata fixes that go to a review queue
-  - New Settings panel to view, approve, reject, and apply proposed changes
-  - Support for different scopes: database only, ID3 tags, or file organization
-  - New LLM tools: `lookup_correct_metadata`, `propose_metadata_change`, `get_album_tracks`, `mark_album_as_compilation`, `propose_album_artwork`
-  - MusicBrainz integration for looking up correct metadata
-  - Cover Art Archive integration for album artwork
-- **Proposed Changes indicator** in header bar
-  - Amber badge shows count of pending changes
-  - Click for quick preview popover
-  - Links to full review interface in Settings
-
-### Fixed
-
-- Header popovers (Background Jobs, Proposed Changes, Health) now display above album art
-  - Added proper z-index stacking: header z-30, PlayerBar z-20, popovers z-60
-
-## [0.1.0-alpha.6] - 2026-01-11
+Discovery & Metadata Intelligence
 
 ### Added
 
@@ -259,19 +186,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Click to see detailed progress for each job type
   - Tracks: Library Sync, Spotify Sync, New Releases Check, Artwork Fetch
 - **"Explore Similar Artists"** context menu item - right-click any track to open the Music Map centered on that artist
+- **Proposed Changes system** for metadata corrections
+  - LLM can suggest metadata fixes that go to a review queue
+  - New Settings panel to view, approve, reject, and apply proposed changes
+  - Support for different scopes: database only, ID3 tags, or file organization
+  - New LLM tools: `lookup_correct_metadata`, `propose_metadata_change`, `get_album_tracks`, `mark_album_as_compilation`, `propose_album_artwork`
+  - MusicBrainz integration for looking up correct metadata
+  - Cover Art Archive integration for album artwork
+- **Proposed Changes indicator** in header bar
+  - Amber badge shows count of pending changes
+  - Click for quick preview popover
+  - Links to full review interface in Settings
+- **Album/artist name normalization** for consistent matching
+  - Case-insensitive grouping: "Alice In Ultraland" and "Alice in Ultraland" now appear as one album
+  - Handles diacritics (Björk = Bjork), quotes, dashes, and whitespace variations
+  - Applied to album grouping, artwork hash computation, and compilation detection
+- **Duplicate artist detection** LLM tools
+  - `find_duplicate_artists` - detects artists with variant spellings (e.g., "Arovane_Phonem" vs "Arovane and Phonem")
+  - `merge_duplicate_artists` - proposes merging duplicates via the review queue
+- **Proposed Changes as main view** - now accessible from Library browser picker
+  - Click the amber indicator to jump directly to the Proposed Changes view
+  - Removed from Settings panel (now has its own dedicated view)
+  - Improved card layout with more space for reviewing changes
+- **Semantic search** for natural language music queries
+  - New `semantic_search` LLM tool uses CLAP text embeddings
+  - Ask for "gloomy with Eastern influences" or "dreamy atmospheric synths" and find sonically matching tracks
+  - Works by encoding your text description into the same embedding space as the audio
+  - Gracefully falls back to metadata search when CLAP is disabled
 
 ### Changed
 
 - Music Map now uses ego-centric layout instead of UMAP projection (scales beyond 200 artists)
+- **Artwork fetch order** - Last.fm checked first when API key is configured (faster than MusicBrainz)
+- **Background Jobs indicator** now shows queue count (e.g., "5/10 (3 queued)")
+- **Bulk change display** - shows unique values instead of raw JSON with track IDs
+  - Before: `{"uuid1":"proem","uuid2":"Proem",...}`
+  - After: `proem, Proem`
 
 ### Fixed
 
 - Broken image placeholders - Music Map and 3D Explorer now show Music icon instead of broken image link
+- Header popovers (Background Jobs, Proposed Changes, Health) now display above album art
+  - Added proper z-index stacking: header z-30, PlayerBar z-20, popovers z-60
+- Settings page crash caused by API responses not being arrays
+- Proposed Changes API endpoint missing trailing slash
 
-## [0.1.0-alpha.5] - 2026-01-09
+## [0.1.0-alpha.2] - 2026-01-04 to 2026-01-09
+
+Infrastructure & Library UX
 
 ### Added
 
+- Memory tracking in analysis subprocess for debugging OOM issues
+- **Split analysis into separate phases** for better memory efficiency
+  - Phase 1: Feature extraction (librosa, artwork, AcoustID) - ~1-2GB memory
+  - Phase 2: Embedding generation (CLAP model) - ~2-3GB memory
+  - Each phase runs in its own subprocess that exits after completion
+  - Peak memory reduced from ~5GB to ~3GB, works on 4GB containers
+- **Updated sync UI** to show 4 phases: Discover → Read → Features → Embeddings
+- **Environment variable** `DISABLE_CLAP_EMBEDDINGS=true` to skip embedding phase
+- **Artist images** in library browser with fallback chain (Last.fm → Spotify → album artwork)
+- **Infinite scroll** for all library views (Artists, Albums, Tracks)
+- **View persistence** - app remembers your selected library view
 - **Track metadata editing** - right-click any track and select "Edit Metadata..."
   - Tabbed modal with Basic, Extended, Sort, Lyrics, and Analysis tabs
   - Edit core fields: title, artist, album, album artist, track/disc number, year, genre
@@ -291,58 +267,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Extended Track database model with new metadata fields
-- Improved MusicBrainz release selection (prefers original albums over compilations)
-
-### Fixed
-
-- Artist detail URL persistence - artist selection now stored in URL, survives page reload
-- YouTube video search - add yt-dlp to Docker image (was missing, causing empty search results)
-
-## [0.1.0-alpha.4] - 2026-01-06
-
-### Added
-
-- **Artist images** in library browser with fallback chain (Last.fm → Spotify → album artwork)
-- **Infinite scroll** for all library views (Artists, Albums, Tracks)
-- **View persistence** - app remembers your selected library view
-
-### Changed
-
 - **Default library view** changed from Tracks to Artists
 - **Artists view** redesigned as visual grid with artwork (matches Albums view)
 - Skip tracks shorter than 30 seconds or longer than 30 minutes during analysis
-
-### Fixed
-
-- **Compilation album duplication** - Albums like "80's Wave" no longer appear multiple times
-  - Sync now auto-detects compilation albums (multiple artists, no album_artist set)
-  - Sets `album_artist = "Various Artists"` for tracks in detected compilations
-- Process pool crashing during analysis
-- Tab selection now persists in URL hash across page reloads
-- Simplify sync queue management to prevent stalls during feature extraction
-
-## [0.1.0-alpha.3] - 2026-01-05
-
-### Added
-
-- **Split analysis into separate phases** for better memory efficiency
-  - Phase 1: Feature extraction (librosa, artwork, AcoustID) - ~1-2GB memory
-  - Phase 2: Embedding generation (CLAP model) - ~2-3GB memory
-  - Each phase runs in its own subprocess that exits after completion
-  - Peak memory reduced from ~5GB to ~3GB, works on 4GB containers
-- **Updated sync UI** to show 4 phases: Discover → Read → Features → Embeddings
-- **Environment variable** `DISABLE_CLAP_EMBEDDINGS=true` to skip embedding phase
-
-### Fixed
-
-- Library Sync progress bar now correctly shows progress during Features and Embeddings phases
-
-## [0.1.0-alpha.2] - 2026-01-04
-
-### Added
-
-- Memory tracking in analysis subprocess for debugging OOM issues
+- Add restart policies to postgres and redis containers in docker-compose
+- Disable Docker layer cache for more reliable builds
+- More aggressive disk cleanup during Docker build
+- Extended Track database model with new metadata fields
+- Improved MusicBrainz release selection (prefers original albums over compilations)
 
 ### Fixed
 
@@ -352,12 +284,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Install PyTorch after uv sync to prevent package removal during build
 - Configure logging in analysis subprocess for better debugging
 - Reduce uvicorn workers to 1 to prevent OOM during analysis
-
-### Changed
-
-- Add restart policies to postgres and redis containers in docker-compose
-- Disable Docker layer cache for more reliable builds
-- More aggressive disk cleanup during Docker build
+- Library Sync progress bar now correctly shows progress during Features and Embeddings phases
+- **Compilation album duplication** - Albums like "80's Wave" no longer appear multiple times
+  - Sync now auto-detects compilation albums (multiple artists, no album_artist set)
+  - Sets `album_artist = "Various Artists"` for tracks in detected compilations
+- Process pool crashing during analysis
+- Tab selection now persists in URL hash across page reloads
+- Simplify sync queue management to prevent stalls during feature extraction
+- Artist detail URL persistence - artist selection now stored in URL, survives page reload
+- YouTube video search - add yt-dlp to Docker image (was missing, causing empty search results)
 
 ## [0.1.0-alpha.1] - 2026-01-03
 
@@ -413,13 +348,7 @@ First alpha release of Familiar - an LLM-powered local music player.
 - Audio analysis can be memory-intensive on systems with <8GB RAM
 - MoodMap accuracy depends on proper key detection
 
-[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.11...HEAD
-[0.1.0-alpha.11]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.10...v0.1.0-alpha.11
-[0.1.0-alpha.10]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.9...v0.1.0-alpha.10
-[0.1.0-alpha.9]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.8...v0.1.0-alpha.9
-[0.1.0-alpha.8]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.7...v0.1.0-alpha.8
-[0.1.0-alpha.7]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.6...v0.1.0-alpha.7
-[0.1.0-alpha.6]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.5...v0.1.0-alpha.6
+[Unreleased]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.5...HEAD
 [0.1.0-alpha.5]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.4...v0.1.0-alpha.5
 [0.1.0-alpha.4]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.3...v0.1.0-alpha.4
 [0.1.0-alpha.3]: https://github.com/seethroughlab/familiar/compare/v0.1.0-alpha.2...v0.1.0-alpha.3
