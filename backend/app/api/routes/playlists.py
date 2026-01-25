@@ -182,6 +182,8 @@ async def create_playlist(
         db.add(playlist_track)
         tracks_added.append(TrackInPlaylist(
             id=str(track.id),
+            playlist_track_id=str(playlist_track.id),
+            type="local",
             title=track.title,
             artist=track.artist,
             album=track.album,

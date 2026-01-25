@@ -754,7 +754,7 @@ class BackgroundManager:
         logger.info(f"Starting bulk identify task {task_id} for {len(track_ids)} tracks")
 
         # Initialize progress in Redis
-        progress = {
+        progress: dict[str, Any] = {
             "status": "running",
             "phase": "identifying",
             "total_tracks": len(track_ids),

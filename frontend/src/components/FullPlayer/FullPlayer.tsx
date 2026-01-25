@@ -74,7 +74,8 @@ function FullPlayerDiscoverTab({
     getArtistImageUrl: () => '', // Not needed for this use case
   } : undefined;
 
-  const { sections, hasDiscovery } = useTrackDiscovery({ data: trackDiscoveryInput });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { sections, hasDiscovery } = useTrackDiscovery({ data: trackDiscoveryInput as any });
 
   if (loading) {
     return (
