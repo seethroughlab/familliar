@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from app.services.llm.executor import ToolExecutor
-from app.services.llm.tools import MUSIC_TOOLS, convert_tools_to_ollama_format
+from app.services.llm.tools import MUSIC_TOOLS
 
 
 class TestToolExecutorDispatch:
@@ -422,36 +422,6 @@ class TestMusicTools:
 
         for tool in essential_tools:
             assert tool in tool_names, f"Essential tool missing: {tool}"
-
-
-class TestConvertToolsToOllamaFormat:
-    """Tests for Ollama tool format conversion."""
-
-    def test_converts_all_tools(self):
-        """All tools should be converted."""
-        result = convert_tools_to_ollama_format(MUSIC_TOOLS)
-        assert len(result) == len(MUSIC_TOOLS)
-
-    def test_ollama_format_structure(self):
-        """Converted tools should have Ollama structure."""
-        result = convert_tools_to_ollama_format(MUSIC_TOOLS)
-
-        for tool in result:
-            assert tool["type"] == "function"
-            assert "function" in tool
-            assert "name" in tool["function"]
-            assert "description" in tool["function"]
-            assert "parameters" in tool["function"]
-
-    def test_preserves_tool_data(self):
-        """Conversion should preserve tool data."""
-        result = convert_tools_to_ollama_format(MUSIC_TOOLS)
-
-        # Find search_library in converted format
-        search_tool = next(t for t in result if t["function"]["name"] == "search_library")
-
-        assert search_tool["function"]["description"] is not None
-        assert "query" in search_tool["function"]["parameters"]["properties"]
 
 
 class TestFilterTracksByFeatures:

@@ -1,6 +1,6 @@
 """App settings endpoints for user-configurable settings."""
 
-from typing import Any, Literal
+from typing import Any
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -46,11 +46,6 @@ class SettingsResponse(BaseModel):
     anthropic_api_key: str | None
     acoustid_api_key: str | None
 
-    # LLM Settings
-    llm_provider: str
-    ollama_url: str
-    ollama_model: str
-
     # Metadata enrichment
     auto_enrich_metadata: bool
     enrich_overwrite_existing: bool
@@ -70,6 +65,8 @@ class SettingsResponse(BaseModel):
     # Computed status fields
     spotify_configured: bool
     lastfm_configured: bool
+    anthropic_configured: bool
+    acoustid_configured: bool
     music_library_configured: bool
 
 
@@ -83,11 +80,6 @@ class SettingsUpdateRequest(BaseModel):
     lastfm_api_secret: str | None = None
     anthropic_api_key: str | None = None
     acoustid_api_key: str | None = None
-
-    # LLM Settings
-    llm_provider: Literal["claude", "ollama"] | None = None
-    ollama_url: str | None = None
-    ollama_model: str | None = None
 
     # Metadata enrichment
     auto_enrich_metadata: bool | None = None
@@ -162,6 +154,8 @@ async def get_settings() -> SettingsResponse:
         clap_status=ClapStatus(**clap_status_data),
         spotify_configured=service.has_spotify_credentials(),
         lastfm_configured=service.has_lastfm_credentials(),
+        anthropic_configured=service.has_anthropic_key(),
+        acoustid_configured=service.has_acoustid_key(),
         music_library_configured=service.has_music_library_configured(),
     )
 
@@ -198,6 +192,8 @@ async def update_settings(request: SettingsUpdateRequest) -> SettingsResponse:
         clap_status=ClapStatus(**clap_status_data),
         spotify_configured=service.has_spotify_credentials(),
         lastfm_configured=service.has_lastfm_credentials(),
+        anthropic_configured=service.has_anthropic_key(),
+        acoustid_configured=service.has_acoustid_key(),
         music_library_configured=service.has_music_library_configured(),
     )
 

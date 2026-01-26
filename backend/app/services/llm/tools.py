@@ -584,18 +584,3 @@ Example response format when artist not in library:
 [Bandcamp link from tool result]"
 
 NEVER make up track names. Only mention tracks returned by tools."""
-
-
-def convert_tools_to_ollama_format(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Convert Claude tool format to Ollama/OpenAI format."""
-    ollama_tools = []
-    for tool in tools:
-        ollama_tools.append({
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool["description"],
-                "parameters": tool["input_schema"],
-            }
-        })
-    return ollama_tools

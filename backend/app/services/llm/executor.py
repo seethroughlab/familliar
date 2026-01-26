@@ -7,7 +7,6 @@ from typing import Any
 from uuid import UUID
 
 import anthropic
-import httpx
 from sqlalchemy import func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -141,39 +140,21 @@ Rules:
 Respond with ONLY the playlist name, nothing else."""
 
         try:
-            app_settings = get_app_settings_service().get()
+            api_key = get_app_settings_service().get_effective("anthropic_api_key")
+            if not api_key:
+                raise ValueError("No API key")
 
-            if app_settings.llm_provider == "ollama":
-                client = httpx.AsyncClient(timeout=30.0)
-                try:
-                    response = await client.post(
-                        f"{app_settings.ollama_url.rstrip('/')}/api/generate",
-                        json={
-                            "model": app_settings.ollama_model,
-                            "prompt": prompt,
-                            "stream": False,
-                        },
-                    )
-                    response.raise_for_status()
-                    name = response.json().get("response", "").strip()
-                finally:
-                    await client.aclose()
-            else:
-                api_key = get_app_settings_service().get_effective("anthropic_api_key")
-                if not api_key:
-                    raise ValueError("No API key")
-
-                anthropic_client = anthropic.Anthropic(api_key=api_key)
-                message = anthropic_client.messages.create(
-                    model="claude-3-5-haiku-20241022",
-                    max_tokens=50,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                name = ""
-                if message.content:
-                    first_block = message.content[0]
-                    if hasattr(first_block, "text"):
-                        name = first_block.text.strip()
+            anthropic_client = anthropic.Anthropic(api_key=api_key)
+            message = anthropic_client.messages.create(
+                model="claude-3-5-haiku-20241022",
+                max_tokens=50,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            name = ""
+            if message.content:
+                first_block = message.content[0]
+                if hasattr(first_block, "text"):
+                    name = first_block.text.strip()
 
             name = name.strip('"\'').strip()
             logger.info(f"LLM generated playlist name: '{name}'")

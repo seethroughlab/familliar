@@ -6,35 +6,22 @@ from typing import Any, cast
 from uuid import UUID
 
 import anthropic
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.app_settings import get_app_settings_service
 
 from .executor import ToolExecutor
-from .providers import OllamaClient
 from .tools import MUSIC_TOOLS, SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
 
 class LLMService:
-    """Service for conversational music discovery using Claude or Ollama."""
+    """Service for conversational music discovery using Claude."""
 
     def __init__(self) -> None:
-        self.app_settings = get_app_settings_service().get()
-        self.provider = self.app_settings.llm_provider
-
-        if self.provider == "claude":
-            api_key = self._get_api_key()
-            self.claude_client: anthropic.Anthropic | None = anthropic.Anthropic(api_key=api_key)
-            self.ollama_client: OllamaClient | None = None
-        else:
-            self.claude_client = None
-            self.ollama_client = OllamaClient(
-                base_url=self.app_settings.ollama_url,
-                model=self.app_settings.ollama_model,
-            )
+        api_key = self._get_api_key()
+        self.claude_client = anthropic.Anthropic(api_key=api_key)
 
     def _get_api_key(self) -> str | None:
         """Get Anthropic API key with proper precedence."""
@@ -59,12 +46,8 @@ class LLMService:
         - {"type": "playback", "action": "..."}
         - {"type": "done"}
         """
-        if self.provider == "ollama":
-            async for event in self._chat_ollama(message, conversation_history, db, profile_id, visible_track_ids):
-                yield event
-        else:
-            async for event in self._chat_claude(message, conversation_history, db, profile_id, visible_track_ids):
-                yield event
+        async for event in self._chat_claude(message, conversation_history, db, profile_id, visible_track_ids):
+            yield event
 
     async def _chat_claude(
         self,
@@ -192,109 +175,3 @@ class LLMService:
             yield {"type": "text", "content": "I found some tracks for you."}
             yield {"type": "done"}
 
-    async def _chat_ollama(
-        self,
-        message: str,
-        conversation_history: list[dict[str, Any]],
-        db: AsyncSession,
-        profile_id: UUID | None = None,
-        visible_track_ids: list[str] | None = None,
-    ) -> AsyncIterator[dict[str, Any]]:
-        """Chat using Ollama API with tool support."""
-        if not self.ollama_client:
-            yield {"type": "error", "content": "Ollama client not configured"}
-            return
-
-        tool_executor = ToolExecutor(db, profile_id, user_message=message, visible_track_ids=visible_track_ids)
-        messages = conversation_history + [{"role": "user", "content": message}]
-
-        max_iterations = 10
-        iteration = 0
-
-        try:
-            while iteration < max_iterations:
-                iteration += 1
-
-                response = await self.ollama_client.chat(
-                    messages=messages,
-                    system=SYSTEM_PROMPT,
-                    tools=MUSIC_TOOLS,
-                )
-
-                msg = response.get("message", {})
-                content = msg.get("content", "")
-                tool_calls = msg.get("tool_calls", [])
-
-                if content:
-                    yield {"type": "text", "content": content}
-
-                if tool_calls:
-                    for tool_call in tool_calls:
-                        func = tool_call.get("function", {})
-                        tool_name = func.get("name", "")
-                        tool_args_str = func.get("arguments", "{}")
-
-                        try:
-                            tool_input = (
-                                json.loads(tool_args_str)
-                                if isinstance(tool_args_str, str)
-                                else tool_args_str
-                            )
-                        except json.JSONDecodeError:
-                            tool_input = {}
-
-                        yield {
-                            "type": "tool_call",
-                            "id": tool_call.get("id", ""),
-                            "name": tool_name,
-                            "input": tool_input,
-                        }
-
-                        result = await tool_executor.execute(tool_name, tool_input)
-
-                        yield {"type": "tool_result", "name": tool_name, "result": result}
-
-                        # Check for navigation hint in result
-                        if isinstance(result, dict) and "_navigate" in result:
-                            yield {"type": "navigate", "view": result["_navigate"]}
-
-                        messages.append({
-                            "role": "assistant",
-                            "content": content,
-                            "tool_calls": tool_calls,
-                        })
-                        messages.append({
-                            "role": "tool",
-                            "content": json.dumps(result),
-                        })
-
-                    continue
-
-                queued, clear_queue = tool_executor.get_queued_tracks()
-                if queued:
-                    yield {"type": "queue", "tracks": queued, "clear": clear_queue}
-
-                auto_playlist = tool_executor.get_auto_saved_playlist()
-                if auto_playlist and auto_playlist.get("saved"):
-                    yield {
-                        "type": "playlist_created",
-                        "playlist_id": auto_playlist.get("playlist_id"),
-                        "playlist_name": auto_playlist.get("playlist_name"),
-                        "track_count": auto_playlist.get("tracks_saved"),
-                    }
-
-                action = tool_executor.get_playback_action()
-                if action:
-                    yield {"type": "playback", "action": action}
-
-                yield {"type": "done"}
-                break
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"Ollama API error: {e}")
-            yield {"type": "text", "content": f"Error communicating with Ollama: {e}"}
-            yield {"type": "done"}
-        except Exception as e:
-            logger.error(f"Ollama chat error: {e}")
-            yield {"type": "text", "content": f"Error: {e}"}
-            yield {"type": "done"}

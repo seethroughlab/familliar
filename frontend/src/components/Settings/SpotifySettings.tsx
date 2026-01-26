@@ -157,11 +157,7 @@ export function SpotifySettings() {
               <div>
                 <p className="text-sm text-amber-400">Spotify API not configured</p>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Configure Spotify API credentials via the{' '}
-                  <a href="/admin" className="text-green-400 hover:underline">
-                    admin setup
-                  </a>
-                  {' '}to enable Spotify integration.
+                  Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in docker/.env to enable Spotify integration.
                 </p>
               </div>
             </div>

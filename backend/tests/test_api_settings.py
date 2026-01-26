@@ -40,11 +40,6 @@ def test_get_settings_default(
     assert response.status_code == 200
     data = response.json()
 
-    # Check default values
-    assert data["llm_provider"] == "claude"
-    assert data["ollama_url"] == "http://localhost:11434"
-    assert data["ollama_model"] == "llama3.2"
-
     # Secrets should be None initially
     assert data["spotify_client_id"] is None
     assert data["spotify_client_secret"] is None
@@ -65,7 +60,6 @@ def test_update_settings(
         "/api/v1/settings",
         json={
             "anthropic_api_key": "sk-ant-test123456789",
-            "llm_provider": "claude",
         },
     )
     assert response.status_code == 200
@@ -74,7 +68,6 @@ def test_update_settings(
     # Key should be masked in response
     assert data["anthropic_api_key"].startswith("sk-a")
     assert "•" in data["anthropic_api_key"]
-    assert data["llm_provider"] == "claude"
 
 
 def test_update_spotify_credentials(
@@ -117,27 +110,6 @@ def test_update_lastfm_credentials(
 
     # Should now be configured
     assert data["lastfm_configured"] is True
-
-
-def test_update_ollama_settings(
-    client: TestClient,
-    mock_settings_service: AppSettingsService,
-) -> None:
-    """Test updating Ollama settings."""
-    response = client.put(
-        "/api/v1/settings",
-        json={
-            "llm_provider": "ollama",
-            "ollama_url": "http://custom:11434",
-            "ollama_model": "mistral",
-        },
-    )
-    assert response.status_code == 200
-    data = response.json()
-
-    assert data["llm_provider"] == "ollama"
-    assert data["ollama_url"] == "http://custom:11434"
-    assert data["ollama_model"] == "mistral"
 
 
 def test_settings_persist(
@@ -224,14 +196,14 @@ def test_partial_update(
         "/api/v1/settings",
         json={
             "anthropic_api_key": "sk-ant-key1",
-            "llm_provider": "claude",
+            "auto_enrich_metadata": True,
         },
     )
 
     # Update only one setting
     client.put(
         "/api/v1/settings",
-        json={"ollama_model": "codellama"},
+        json={"auto_enrich_metadata": False},
     )
 
     # Verify both are preserved
@@ -239,5 +211,4 @@ def test_partial_update(
     data = response.json()
 
     assert data["anthropic_api_key"] is not None  # Still set
-    assert data["llm_provider"] == "claude"  # Still set
-    assert data["ollama_model"] == "codellama"  # Updated
+    assert data["auto_enrich_metadata"] is False  # Updated

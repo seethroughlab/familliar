@@ -101,7 +101,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Default environment variables
 ENV DATABASE_URL=postgresql+asyncpg://familiar:familiar@postgres:5432/familiar \
     REDIS_URL=redis://redis:6379/0 \
-    MUSIC_LIBRARY_PATH=/data/music \
+    MUSIC_LIBRARY_PATH=/music \
     ART_PATH=/data/art \
     VIDEOS_PATH=/data/videos
 

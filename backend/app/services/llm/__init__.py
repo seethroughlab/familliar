@@ -15,15 +15,12 @@ Usage:
 """
 
 from .executor import ToolExecutor
-from .providers import OllamaClient
 from .service import LLMService
-from .tools import MUSIC_TOOLS, SYSTEM_PROMPT, convert_tools_to_ollama_format
+from .tools import MUSIC_TOOLS, SYSTEM_PROMPT
 
 __all__ = [
     "LLMService",
     "ToolExecutor",
-    "OllamaClient",
     "MUSIC_TOOLS",
     "SYSTEM_PROMPT",
-    "convert_tools_to_ollama_format",
 ]

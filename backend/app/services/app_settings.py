@@ -14,7 +14,7 @@ for any setting with proper precedence applied.
 Settings by Source
 ------------------
 **Admin UI only (settings.json)**:
-- music_library_paths, llm_provider, ollama_url, ollama_model
+- music_library_paths
 
 **Admin UI with env fallback**:
 - anthropic_api_key, spotify_client_id, spotify_client_secret
@@ -27,7 +27,7 @@ Settings by Source
 
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -49,9 +49,6 @@ class AppSettings(BaseModel):
 
     # LLM Settings
     anthropic_api_key: str | None = None
-    llm_provider: Literal["claude", "ollama"] = "claude"
-    ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.2"  # Default model with tool support
 
     # Audio fingerprinting
     acoustid_api_key: str | None = None  # Get free key at https://acoustid.org/new-application
@@ -152,14 +149,24 @@ class AppSettingsService:
         return data
 
     def has_spotify_credentials(self) -> bool:
-        """Check if Spotify credentials are configured."""
-        settings = self.get()
-        return bool(settings.spotify_client_id and settings.spotify_client_secret)
+        """Check if Spotify credentials are configured (from settings.json or env vars)."""
+        client_id = self.get_effective("spotify_client_id")
+        client_secret = self.get_effective("spotify_client_secret")
+        return bool(client_id and client_secret)
 
     def has_lastfm_credentials(self) -> bool:
-        """Check if Last.fm credentials are configured."""
-        settings = self.get()
-        return bool(settings.lastfm_api_key and settings.lastfm_api_secret)
+        """Check if Last.fm credentials are configured (from settings.json or env vars)."""
+        api_key = self.get_effective("lastfm_api_key")
+        api_secret = self.get_effective("lastfm_api_secret")
+        return bool(api_key and api_secret)
+
+    def has_anthropic_key(self) -> bool:
+        """Check if Anthropic API key is configured (from settings.json or env vars)."""
+        return bool(self.get_effective("anthropic_api_key"))
+
+    def has_acoustid_key(self) -> bool:
+        """Check if AcoustID API key is configured (from settings.json or env vars)."""
+        return bool(self.get_effective("acoustid_api_key"))
 
     def has_music_library_configured(self) -> bool:
         """Check if the music library is accessible at /music."""
@@ -219,9 +226,6 @@ class AppSettingsService:
 
         # Settings from AppSettings only
         result["music_library_paths"] = app.music_library_paths
-        result["llm_provider"] = app.llm_provider
-        result["ollama_url"] = app.ollama_url
-        result["ollama_model"] = app.ollama_model
 
         # Settings from environment only
         result["database_url"] = env_settings.database_url

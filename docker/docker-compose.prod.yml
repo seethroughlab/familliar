@@ -87,6 +87,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://familiar:${POSTGRES_PASSWORD:-familiar}@postgres:5432/familiar
       - REDIS_URL=redis://redis:6379/0
+      - MUSIC_LIBRARY_PATH=/music
       - ART_PATH=/data/art
       - VIDEOS_PATH=/data/videos
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

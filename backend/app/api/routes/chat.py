@@ -26,18 +26,11 @@ async def get_chat_status() -> dict[str, Any]:
     appropriate warnings before the user tries to chat.
     """
     settings_service = get_app_settings_service()
-    app_settings = settings_service.get()
-    provider = app_settings.llm_provider
-
-    if provider == "claude":
-        configured = bool(settings_service.get_effective("anthropic_api_key"))
-    else:
-        # For Ollama, assume configured (would need to ping to verify)
-        configured = True
+    configured = bool(settings_service.get_effective("anthropic_api_key"))
 
     return {
         "configured": configured,
-        "provider": provider,
+        "provider": "claude",
     }
 
 
@@ -117,12 +110,7 @@ async def chat_stream(
     """
     # Check for API key with proper precedence
     settings_service = get_app_settings_service()
-    app_settings = settings_service.get()
     has_api_key = bool(settings_service.get_effective("anthropic_api_key"))
-
-    # If using Ollama, we don't need an Anthropic key
-    if app_settings.llm_provider == "ollama":
-        has_api_key = True
 
     if not has_api_key:
         raise HTTPException(
@@ -167,12 +155,7 @@ async def chat(
     """
     # Check for API key with proper precedence
     settings_service = get_app_settings_service()
-    app_settings = settings_service.get()
     has_api_key = bool(settings_service.get_effective("anthropic_api_key"))
-
-    # If using Ollama, we don't need an Anthropic key
-    if app_settings.llm_provider == "ollama":
-        has_api_key = True
 
     if not has_api_key:
         raise HTTPException(

@@ -69,11 +69,7 @@ export function LastfmSettings() {
           <div>
             <p className="text-sm text-amber-400">Last.fm API not configured</p>
             <p className="text-xs text-zinc-500 mt-1">
-              Configure Last.fm API credentials via the{' '}
-              <a href="/admin" className="text-red-400 hover:underline">
-                admin setup
-              </a>
-              {' '}to enable scrobbling.
+              Set LASTFM_API_KEY and LASTFM_API_SECRET in docker/.env to enable scrobbling.
             </p>
           </div>
         </div>
