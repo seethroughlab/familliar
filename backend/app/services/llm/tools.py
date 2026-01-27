@@ -500,6 +500,70 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["spotify_playlist_id"]
         }
+    },
+    # Web page reading tools
+    {
+        "name": "fetch_webpage",
+        "description": "Fetch a web page and extract its readable content. Use this when the user provides a URL to an article, list, or page containing music information (artists, albums, tracks). Returns the page content for analysis.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "The URL to fetch"
+                }
+            },
+            "required": ["url"]
+        }
+    },
+    {
+        "name": "create_playlist_from_items",
+        "description": "Create a playlist from a list of music items (artists, albums, tracks). Matches items to local library and creates missing track placeholders for items not found. Use after analyzing web page content with fetch_webpage.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Playlist name"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "artist": {
+                                "type": "string",
+                                "description": "Artist name"
+                            },
+                            "album": {
+                                "type": "string",
+                                "description": "Album name (optional)"
+                            },
+                            "track": {
+                                "type": "string",
+                                "description": "Track name (optional, use for specific tracks)"
+                            },
+                            "year": {
+                                "type": "integer",
+                                "description": "Release year (optional)"
+                            }
+                        },
+                        "required": ["artist"]
+                    },
+                    "description": "List of music items to include in the playlist"
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Playlist description (optional, e.g., source URL)"
+                },
+                "tracks_per_album": {
+                    "type": "integer",
+                    "description": "How many tracks to include per album (default 3)",
+                    "default": 3
+                }
+            },
+            "required": ["name", "items"]
+        }
     }
 ]
 
@@ -582,5 +646,20 @@ Example response format when artist not in library:
 
 **Want to add [Artist] to your collection?**
 [Bandcamp link from tool result]"
+
+## Web Page Music Discovery
+
+When a user provides a URL to an article, blog post, or list about music:
+1. Use fetch_webpage to get the content
+2. Analyze the content to extract music references (artists, albums, tracks, years)
+3. Use create_playlist_from_items with the extracted data
+4. Report results: how many items found locally vs marked as missing
+
+Example workflow:
+- User: "make me a playlist from this article: https://example.com/best-albums-2024"
+- fetch_webpage(url="https://...")
+- Analyze content, extract: [{"artist": "...", "album": "...", "year": 2024}, ...]
+- create_playlist_from_items(name="Best Albums 2024", items=[...], description="From: https://...")
+- Response: "Created playlist with X tracks. Y are in your library, Z are marked as missing."
 
 NEVER make up track names. Only mention tracks returned by tools."""

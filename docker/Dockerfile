@@ -64,10 +64,12 @@ ARG VERSION=dev
 RUN echo "${VERSION}" > /app/VERSION
 
 # Install runtime dependencies
+# libcurl4-openssl-dev is required for curl_cffi (TLS fingerprint impersonation)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     ffmpeg \
     gosu \
+    libcurl4-openssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Python virtual environment from deps stage
