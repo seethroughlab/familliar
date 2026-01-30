@@ -1931,7 +1931,7 @@ Respond with ONLY the playlist name, nothing else."""
             if "timeout" in error_msg.lower():
                 return {"error": "Request timed out"}
             if "403" in error_msg:
-                return {"error": f"Access denied (403) - site is blocking automated access"}
+                return {"error": "Access denied (403) - site is blocking automated access"}
             return {"error": f"Failed to fetch page: {error_msg}"}
 
         # Extract readable content with trafilatura
