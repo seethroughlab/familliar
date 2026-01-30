@@ -87,6 +87,7 @@ export function PlaylistsView({ selectedPlaylistId, onPlaylistViewed }: Props = 
   const setViewMode = useCallback((mode: ViewMode) => {
     setViewModeState(mode);
     if (mode === 'favorites') {
+      // setSearchParams handles both params and hash update via React Router
       setSearchParams({ view: 'favorites' });
     } else if (mode === 'downloads') {
       setSearchParams({ view: 'downloads' });

@@ -1,9 +1,9 @@
 import { useState, useCallback, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, Music, Maximize2, Shuffle, Repeat } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { tracksApi } from '../../api/client';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
@@ -71,7 +71,7 @@ export function PlayerBar({
   } = usePlayerStore();
 
   const { seek, togglePlayPause } = useAudioEngine();
-  const [, setSearchParams] = useSearchParams();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
 
   // Prefetch artwork for the current track
   const prefetchArtwork = useArtworkPrefetch();
@@ -304,18 +304,12 @@ export function PlayerBar({
           }}
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
-              setSearchParams({ artistDetail: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
-              setSearchParams({
-                view: 'track-list',
-                artist: contextMenu.track.artist,
-                album: contextMenu.track.album,
-              });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {

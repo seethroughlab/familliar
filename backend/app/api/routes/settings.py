@@ -62,6 +62,9 @@ class SettingsResponse(BaseModel):
     community_cache_contribute: bool
     community_cache_url: str
 
+    # Playlist generation
+    playlist_discovery_mode: str  # "library_only" or "suggest_missing"
+
     # Computed status fields
     spotify_configured: bool
     lastfm_configured: bool
@@ -95,6 +98,9 @@ class SettingsUpdateRequest(BaseModel):
     community_cache_enabled: bool | None = None
     community_cache_contribute: bool | None = None
     community_cache_url: str | None = None
+
+    # Playlist generation
+    playlist_discovery_mode: str | None = None  # "library_only" or "suggest_missing"
 
 
 def _get_library_status() -> LibraryStatus:

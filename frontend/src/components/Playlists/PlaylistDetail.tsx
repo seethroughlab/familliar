@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Loader2, Music, Sparkles, Clock, Download, Check, WifiOff, Heart, GripVertical, X, ListPlus, Trash2, CloudOff, ExternalLink, Radio } from 'lucide-react';
 import { playlistsApi } from '../../api/client';
 import { usePlayerStore } from '../../stores/playerStore';
@@ -8,6 +7,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { useDownloadStore, getPlaylistJobId } from '../../stores/downloadStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { DiscoveryPanel, usePlaylistDiscovery, type DiscoveryItem } from '../Discovery';
 import * as offlineService from '../../services/offlineService';
 import * as playlistCache from '../../services/playlistCache';
@@ -117,9 +117,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const { isOffline } = useOfflineStatus();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
 
@@ -826,7 +826,9 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
         <PlaylistDiscoverySection
           recommendations={recommendations}
           loading={recommendationsLoading}
-          onGoToArtist={(artistName) => setSearchParams({ artistDetail: artistName })}
+          onGoToArtist={(artistName) => {
+            navigateToArtist(artistName);
+          }}
           onPlayItem={handlePlayDiscoveryItem}
         />
       )}
@@ -849,14 +851,12 @@ export function PlaylistDetail({ playlistId, onBack }: Props) {
           }}
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
-              setSearchParams({ artist: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
-              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {

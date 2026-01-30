@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Playlist Discovery Mode** - AI-generated playlists can now suggest tracks you don't own
+  - **New setting** - Settings > AI Assistant > Playlist Discovery Mode
+  - **Library Only mode** - legacy behavior, only uses local tracks
+  - **Include Suggestions mode** (default) - includes local tracks + suggests missing tracks you might want
+  - **`identify_track` tool** - LLM can now disambiguate "based on [song] by [artist]" requests
+  - **`get_similar_tracks_external` tool** - queries Last.fm for similar tracks not in library
+  - **Enhanced `queue_tracks`** - supports `suggested_tracks` parameter for discovery mode
+  - **Updated system prompt** - guides LLM to use identify_track first for "based on" requests
+- **Download management improvements** - better control over offline tracks
+  - **Clear All Downloads** - red button in Downloads view with confirmation dialog showing track count and storage size
+  - **Multi-select bulk delete** - Cmd/Ctrl+click to select individual tracks, Shift+click for range selection
+  - **Selection toolbar** - appears when tracks selected with count display and "Remove from Downloads" action
+  - **Checkboxes** - visible checkbox column for quick selection, green highlight on selected rows
+  - **Context menu delete** - "Remove from Downloads" option in right-click menu
+
+### Changed
+
+- **Clickable genres and years** - navigation links throughout the UI
+  - Artist view tags now link to genre filter (previously non-interactive)
+  - Artist view album years now link to year filter
+  - Album grid years now link to year filter
+  - Album detail already had clickable year/genre (unchanged)
+
+### Fixed
+
+- **Artist view back button** - no longer gets stuck when navigating back
+  - Fixed auto-switch useEffect that would re-open artist detail after closing
+  - Now clears both `artistDetail` and `artist` filter params on back
+- **Album not found from Artist view** - clicking albums now works correctly
+  - Fixed mismatch between Artist Detail (groups by `track.artist`) and Album Detail (looked up by `album_artist`)
+  - Album Detail now falls back to `track.artist` lookup if `album_artist` lookup fails
+- **Playlist discovery artist navigation** - now correctly switches to library tab
+  - Added missing `window.location.hash = 'library'` when navigating to artist from playlist discovery section
+
 ## [0.1.0-alpha.5] - 2026-01-25
 
 External Tracks & Offline

@@ -45,7 +45,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Browser selection - read from URL, fall back to persisted preference
-  const currentBrowserId = searchParams.get('view') || selectedBrowserId;
+  const currentBrowserId = searchParams.get('browser') || selectedBrowserId;
 
   const setCurrentBrowserId = useCallback(
     (browserId: string) => {
@@ -56,9 +56,9 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         if (browserId === DEFAULT_BROWSER_ID) {
-          next.delete('view');
+          next.delete('browser');
         } else {
-          next.set('view', browserId);
+          next.set('browser', browserId);
         }
         return next;
       });
@@ -191,6 +191,9 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
     setSearchParams((prev) => {
       const next = new URLSearchParams(prev);
       next.delete('artistDetail');
+      // Also clear artist filter to prevent auto-switch useEffect from
+      // immediately re-opening the artist detail view
+      next.delete('artist');
       return next;
     });
   }, [setSearchParams]);
@@ -204,7 +207,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('artistDetail');
         next.delete('artist');
         next.delete('album');
-        next.delete('view');
+        next.delete('browser');
         next.delete('yearFrom');
         next.delete('yearTo');
         next.delete('energyMin');
@@ -242,7 +245,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('valenceMin');
         next.delete('valenceMax');
         // Explicitly switch to track-list to show filtered tracks
-        next.set('view', 'track-list');
+        next.set('browser', 'track-list');
         next.set('yearFrom', String(year));
         next.set('yearTo', String(year));
         return next;
@@ -264,7 +267,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('valenceMin');
         next.delete('valenceMax');
         // Explicitly switch to track-list to show filtered tracks
-        next.set('view', 'track-list');
+        next.set('browser', 'track-list');
         next.set('yearFrom', String(yearFrom));
         next.set('yearTo', String(yearTo));
         return next;
@@ -287,7 +290,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('valenceMin');
         next.delete('valenceMax');
         // Explicitly switch to track-list to show filtered tracks
-        next.set('view', 'track-list');
+        next.set('browser', 'track-list');
         // Set mood filters
         next.set('energyMin', String(energyMin));
         next.set('energyMax', String(energyMax));
@@ -317,7 +320,7 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
         next.delete('albumDetailAlbum');
         next.delete('artistDetail');
         // Explicitly switch to track-list to show filtered tracks
-        next.set('view', 'track-list');
+        next.set('browser', 'track-list');
         next.set('genre', genre);
         return next;
       });
@@ -374,6 +377,8 @@ export function LibraryView({ initialSearch }: LibraryViewProps) {
             artistName={selectedArtist}
             onBack={handleBackFromArtist}
             onGoToAlbum={handleGoToAlbum}
+            onGoToGenre={handleGoToGenre}
+            onGoToYear={handleGoToYear}
           />
         </div>
       </div>

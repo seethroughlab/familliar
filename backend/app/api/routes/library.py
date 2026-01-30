@@ -991,6 +991,7 @@ async def get_album_detail(
     album_artist_col = func.coalesce(func.nullif(Track.album_artist, ""), Track.artist)
 
     # Get album metadata and tracks
+    # First try matching by album_artist (for compilations/soundtracks)
     album_query = (
         select(Track)
         .where(
@@ -1002,6 +1003,21 @@ async def get_album_detail(
     )
     result = await db.execute(album_query)
     tracks_list = result.scalars().all()
+
+    # If not found by album_artist, try matching by track artist
+    # This handles navigation from ArtistDetail which groups by Track.artist
+    if not tracks_list:
+        album_query_by_artist = (
+            select(Track)
+            .where(
+                func.lower(func.trim(Track.artist)) == artist_normalized,
+                func.lower(func.trim(Track.album)) == album_normalized,
+                Track.status == TrackStatus.ACTIVE,
+            )
+            .order_by(Track.disc_number, Track.track_number, Track.title)
+        )
+        result = await db.execute(album_query_by_artist)
+        tracks_list = result.scalars().all()
 
     if not tracks_list:
         raise HTTPException(status_code=404, detail="Album not found in library")

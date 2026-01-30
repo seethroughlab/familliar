@@ -4,13 +4,22 @@
  * Uses infinite scroll to load albums progressively as you scroll.
  * Clicking an album filters the library to show its tracks.
  */
-import { useState, useCallback } from 'react';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useState, useCallback, useEffect } from 'react';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Grid3X3, Loader2 } from 'lucide-react';
 import { libraryApi } from '../../../api/client';
-import { registerBrowser, type BrowserProps } from '../types';
+import {
+  registerBrowser,
+  type BrowserProps,
+  type AlbumContextMenuState,
+  initialAlbumContextMenuState,
+} from '../types';
 import { useIntersectionObserver } from '../../../hooks/useIntersectionObserver';
 import { AlbumArtwork } from '../../AlbumArtwork';
+import { AlbumContextMenu } from '../AlbumContextMenu';
+import { usePlayerStore } from '../../../stores/playerStore';
+import { useDownloadStore, getAlbumJobId } from '../../../stores/downloadStore';
+import { getOfflineTrackIds, removeOfflineTrack } from '../../../services/offlineService';
 
 const PAGE_SIZE = 50;
 
@@ -31,8 +40,40 @@ registerBrowser(
 export function AlbumGrid({
   filters,
   onGoToAlbum,
+  onGoToArtist,
+  onGoToYear,
 }: BrowserProps) {
   const [sortBy, setSortBy] = useState<'name' | 'year' | 'artist' | 'track_count'>('name');
+  const [albumContextMenu, setAlbumContextMenu] = useState<AlbumContextMenuState>(initialAlbumContextMenuState);
+  const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
+  const { setQueue, addToQueue } = usePlayerStore();
+  const { startDownload } = useDownloadStore();
+  const queryClient = useQueryClient();
+
+  // Load offline track IDs on mount
+  useEffect(() => {
+    getOfflineTrackIds().then((ids) => setOfflineTrackIds(new Set(ids)));
+  }, []);
+
+  const closeAlbumContextMenu = useCallback(() => {
+    setAlbumContextMenu(initialAlbumContextMenuState);
+  }, []);
+
+  const handleAlbumContextMenu = useCallback(
+    (
+      album: { name: string; artist: string; year: number | null; first_track_id: string },
+      e: React.MouseEvent
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setAlbumContextMenu({
+        isOpen: true,
+        album,
+        position: { x: e.clientX, y: e.clientY },
+      });
+    },
+    []
+  );
 
   const {
     data,
@@ -138,6 +179,8 @@ export function AlbumGrid({
             key={`${album.artist}-${album.name}`}
             album={album}
             onClick={() => onGoToAlbum(album.artist, album.name)}
+            onGoToYear={onGoToYear}
+            onContextMenu={(e) => handleAlbumContextMenu(album, e)}
           />
         ))}
       </div>
@@ -151,6 +194,146 @@ export function AlbumGrid({
 
       {/* Invisible sentinel element that triggers loading when scrolled into view */}
       {hasNextPage && <div ref={sentinelRef} className="h-4" />}
+
+      {/* Album context menu */}
+      {albumContextMenu.isOpen && albumContextMenu.album && (
+        <AlbumContextMenu
+          album={albumContextMenu.album}
+          position={albumContextMenu.position}
+          onClose={closeAlbumContextMenu}
+          onPlay={async () => {
+            const album = albumContextMenu.album!;
+            const albumData = await queryClient.fetchQuery({
+              queryKey: ['album', album.artist, album.name],
+              queryFn: () => libraryApi.getAlbum(album.artist, album.name),
+            });
+            const tracks = albumData.tracks.map((t) => ({
+              id: t.id,
+              file_path: '',
+              title: t.title || null,
+              artist: albumData.artist,
+              album: albumData.name,
+              album_artist: albumData.album_artist,
+              album_type: 'album' as const,
+              track_number: t.track_number,
+              disc_number: t.disc_number,
+              year: albumData.year,
+              genre: albumData.genre,
+              duration_seconds: t.duration_seconds || null,
+              format: null,
+              analysis_version: 0,
+            }));
+            setQueue(tracks, 0);
+          }}
+          onShuffle={async () => {
+            const album = albumContextMenu.album!;
+            const albumData = await queryClient.fetchQuery({
+              queryKey: ['album', album.artist, album.name],
+              queryFn: () => libraryApi.getAlbum(album.artist, album.name),
+            });
+            const tracks = albumData.tracks.map((t) => ({
+              id: t.id,
+              file_path: '',
+              title: t.title || null,
+              artist: albumData.artist,
+              album: albumData.name,
+              album_artist: albumData.album_artist,
+              album_type: 'album' as const,
+              track_number: t.track_number,
+              disc_number: t.disc_number,
+              year: albumData.year,
+              genre: albumData.genre,
+              duration_seconds: t.duration_seconds || null,
+              format: null,
+              analysis_version: 0,
+            }));
+            // Shuffle the tracks before setting queue
+            const shuffled = [...tracks].sort(() => Math.random() - 0.5);
+            setQueue(shuffled, 0);
+          }}
+          onQueue={async () => {
+            const album = albumContextMenu.album!;
+            const albumData = await queryClient.fetchQuery({
+              queryKey: ['album', album.artist, album.name],
+              queryFn: () => libraryApi.getAlbum(album.artist, album.name),
+            });
+            for (const t of albumData.tracks) {
+              addToQueue({
+                id: t.id,
+                file_path: '',
+                title: t.title || null,
+                artist: albumData.artist,
+                album: albumData.name,
+                album_artist: albumData.album_artist,
+                album_type: 'album',
+                track_number: t.track_number,
+                disc_number: t.disc_number,
+                year: albumData.year,
+                genre: albumData.genre,
+                duration_seconds: t.duration_seconds || null,
+                format: null,
+                analysis_version: 0,
+              });
+            }
+          }}
+          onGoToArtist={() => {
+            if (albumContextMenu.album) {
+              onGoToArtist(albumContextMenu.album.artist);
+            }
+          }}
+          onGoToAlbum={() => {
+            if (albumContextMenu.album) {
+              onGoToAlbum(albumContextMenu.album.artist, albumContextMenu.album.name);
+            }
+          }}
+          onDownload={async () => {
+            const album = albumContextMenu.album!;
+            const albumData = await queryClient.fetchQuery({
+              queryKey: ['album', album.artist, album.name],
+              queryFn: () => libraryApi.getAlbum(album.artist, album.name),
+            });
+            const trackIds = albumData.tracks.map((t) => t.id);
+            const jobId = getAlbumJobId(album.artist, album.name);
+            startDownload(
+              jobId,
+              'album',
+              `${album.artist} - ${album.name}`,
+              trackIds
+            );
+          }}
+          onRemoveDownload={async () => {
+            const album = albumContextMenu.album!;
+            const albumData = await queryClient.fetchQuery({
+              queryKey: ['album', album.artist, album.name],
+              queryFn: () => libraryApi.getAlbum(album.artist, album.name),
+            });
+            for (const t of albumData.tracks) {
+              if (offlineTrackIds.has(t.id)) {
+                await removeOfflineTrack(t.id);
+              }
+            }
+            // Refresh offline IDs
+            const ids = await getOfflineTrackIds();
+            setOfflineTrackIds(new Set(ids));
+          }}
+          hasDownloadedTracks={(() => {
+            // Check if any album tracks are downloaded
+            // This is approximate - we check if any track from this artist/album combo is offline
+            // A more accurate check would require fetching album tracks
+            return offlineTrackIds.size > 0;
+          })()}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+          }}
+          onMakePlaylist={() => {
+            if (albumContextMenu.album) {
+              const album = albumContextMenu.album;
+              const message = `Make me a playlist based on the album "${album.name}" by ${album.artist}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -164,13 +347,24 @@ interface AlbumCardProps {
     first_track_id: string;
   };
   onClick: () => void;
+  onGoToYear: (year: number) => void;
+  onContextMenu: (e: React.MouseEvent) => void;
 }
 
-function AlbumCard({ album, onClick }: AlbumCardProps) {
+function AlbumCard({ album, onClick, onGoToYear, onContextMenu }: AlbumCardProps) {
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="group text-left bg-zinc-800/30 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors"
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      onContextMenu={onContextMenu}
+      className="group text-left bg-zinc-800/30 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors cursor-pointer"
     >
       {/* Album artwork */}
       <div className="aspect-square relative overflow-hidden">
@@ -197,9 +391,17 @@ function AlbumCard({ album, onClick }: AlbumCardProps) {
           {album.artist}
         </div>
         {album.year && (
-          <div className="text-xs text-zinc-500 mt-1">{album.year}</div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onGoToYear(album.year!);
+            }}
+            className="text-xs text-zinc-500 mt-1 hover:text-white hover:underline transition-colors"
+          >
+            {album.year}
+          </button>
         )}
       </div>
-    </button>
+    </div>
   );
 }

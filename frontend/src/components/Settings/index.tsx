@@ -12,6 +12,7 @@ import { AnalysisSettings } from './AnalysisSettings';
 import { PluginsSettings } from './PluginsSettings';
 import { InstallStatus } from '../PWA/InstallPrompt';
 import { DebugSettings } from './DebugSettings';
+import { AISettings } from './AISettings';
 
 export function SettingsPanel() {
   return (
@@ -40,6 +41,15 @@ export function SettingsPanel() {
             <LibrarySync />
             <MetadataSettings />
             <AnalysisSettings />
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-medium text-zinc-400 dark:text-zinc-400 light:text-zinc-500 uppercase tracking-wider mb-3">
+            AI Assistant
+          </h3>
+          <div className="space-y-4">
+            <AISettings />
           </div>
         </section>
 

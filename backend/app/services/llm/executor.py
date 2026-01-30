@@ -14,7 +14,6 @@ from app.db.models import (
     ChangeScope,
     ChangeSource,
     ChangeStatus,
-    ExternalTrack,
     ExternalTrackSource,
     Playlist,
     PlaylistTrack,
@@ -24,8 +23,8 @@ from app.db.models import (
     Track,
     TrackAnalysis,
 )
-from app.services.external_track_matcher import ExternalTrackMatcher
 from app.services.app_settings import get_app_settings_service
+from app.services.external_track_matcher import ExternalTrackMatcher
 from app.services.metadata_lookup import get_metadata_lookup_service
 
 logger = logging.getLogger(__name__)
@@ -90,6 +89,9 @@ class ToolExecutor:
             # Web page reading tools
             "fetch_webpage": self._fetch_webpage,
             "create_playlist_from_items": self._create_playlist_from_items,
+            # Track identification tools
+            "identify_track": self._identify_track,
+            "get_similar_tracks_external": self._get_similar_tracks_external,
         }
 
         handler = handlers.get(tool_name)
@@ -599,15 +601,29 @@ Respond with ONLY the playlist name, nothing else."""
         }
 
     async def _queue_tracks(
-        self, track_ids: list[str], clear_existing: bool = False
+        self,
+        track_ids: list[str],
+        clear_existing: bool = False,
+        suggested_tracks: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Queue tracks for playback and auto-save as playlist."""
-        logger.info(f"_queue_tracks called with {len(track_ids)} tracks")
+        """Queue tracks for playback and auto-save as playlist.
+
+        Args:
+            track_ids: List of local track UUIDs to queue for playback
+            clear_existing: Whether to clear the current queue
+            suggested_tracks: External tracks to suggest (only added if discovery mode is 'suggest_missing')
+        """
+        logger.info(f"_queue_tracks called with {len(track_ids)} tracks, {len(suggested_tracks or [])} suggested")
+
+        # Get local tracks for playback queue
         stmt = select(Track).where(Track.id.in_([UUID(tid) for tid in track_ids]))
         result = await self.db.execute(stmt)
         tracks = result.scalars().all()
 
         self._queued_tracks = [self._track_to_dict(t) for t in tracks]
+
+        suggested_added = 0
+        suggested_tracks_info: list[dict[str, Any]] = []
 
         if tracks and self.profile_id:
             playlist_name = await self._generate_playlist_name_llm(self._queued_tracks)
@@ -617,11 +633,82 @@ Respond with ONLY the playlist name, nothing else."""
                 description=self.user_message,
             )
 
-        return {
+            # Handle suggested_tracks if discovery mode allows
+            if suggested_tracks and self._auto_saved_playlist.get("saved"):
+                settings = get_app_settings_service().get()
+                discovery_mode = settings.playlist_discovery_mode
+
+                if discovery_mode == "suggest_missing":
+                    playlist_id_str = self._auto_saved_playlist.get("playlist_id")
+                    if playlist_id_str:
+                        playlist_id = UUID(playlist_id_str)
+                        matcher = ExternalTrackMatcher(self.db)
+
+                        # Get current position count
+                        position = len(track_ids)
+
+                        for suggested in suggested_tracks:
+                            title = suggested.get("title", "").strip()
+                            artist = suggested.get("artist", "").strip()
+                            album = suggested.get("album", "").strip() if suggested.get("album") else None
+                            reason = suggested.get("reason", "")
+
+                            if not title or not artist:
+                                continue
+
+                            # Create external track
+                            external_track = await matcher.create_external_track(
+                                title=title,
+                                artist=artist,
+                                album=album,
+                                source=ExternalTrackSource.LLM_RECOMMENDATION,
+                                external_data={
+                                    "reason": reason,
+                                    "user_request": self.user_message,
+                                },
+                                source_playlist_id=playlist_id,
+                                try_match=True,  # Try to match to local library
+                            )
+
+                            # Check if matcher found a local match
+                            if external_track.matched_track_id:
+                                # Use the matched local track instead
+                                playlist_track = PlaylistTrack(
+                                    playlist_id=playlist_id,
+                                    track_id=external_track.matched_track_id,
+                                    position=position,
+                                )
+                            else:
+                                # Add as external/missing track
+                                playlist_track = PlaylistTrack(
+                                    playlist_id=playlist_id,
+                                    external_track_id=external_track.id,
+                                    position=position,
+                                )
+                                suggested_added += 1
+                                suggested_tracks_info.append({
+                                    "title": title,
+                                    "artist": artist,
+                                    "album": album,
+                                })
+
+                            self.db.add(playlist_track)
+                            position += 1
+
+                        await self.db.commit()
+
+        response: dict[str, Any] = {
             "queued": len(tracks),
             "clear_existing": clear_existing,
             "tracks": self._queued_tracks,
         }
+
+        if suggested_added > 0:
+            response["suggested_tracks_added"] = suggested_added
+            response["suggested_tracks"] = suggested_tracks_info
+            response["note"] = f"Added {suggested_added} suggested tracks to the saved playlist. These appear in the playlist as 'missing tracks' you might want to acquire."
+
+        return response
 
     async def _control_playback(self, action: str) -> dict[str, Any]:
         """Control playback."""
@@ -1458,6 +1545,196 @@ Respond with ONLY the playlist name, nothing else."""
             "count": len(artists_in_library),
             "bandcamp_search_url": f"https://bandcamp.com/search?q={artist.replace(' ', '+')}" if not requested_artist_in_library else None,
             "note": f"Found {len(artists_in_library)} similar artists in your library. Search for their tracks to build a playlist." if artists_in_library else "No similar artists found in library.",
+        }
+
+    # --- Track identification tools ---
+
+    async def _identify_track(
+        self,
+        title: str,
+        artist: str,
+    ) -> dict[str, Any]:
+        """Identify a track by title and artist.
+
+        Returns track info if found in library, or external info if not.
+        Use this when user says "based on [song] by [artist]" to determine
+        whether to use find_similar_tracks or external discovery tools.
+        """
+        from rapidfuzz import fuzz
+
+        title = title.strip()
+        artist = artist.strip()
+
+        if not title or not artist:
+            return {"error": "Both title and artist are required"}
+
+        # Search local library for exact match first
+        stmt = select(Track).where(
+            func.lower(Track.title) == title.lower(),
+            func.lower(Track.artist) == artist.lower(),
+        ).limit(1)
+        result = await self.db.execute(stmt)
+        track = result.scalar_one_or_none()
+
+        if track:
+            return {
+                "in_library": True,
+                "track_id": str(track.id),
+                "title": track.title,
+                "artist": track.artist,
+                "album": track.album,
+                "note": "Track found in library. Use find_similar_tracks with this track_id.",
+            }
+
+        # Try fuzzy match on local library
+        stmt = select(Track).where(
+            func.lower(Track.artist).contains(artist.lower()),
+        ).limit(200)
+        result = await self.db.execute(stmt)
+        candidates = list(result.scalars().all())
+
+        best_match = None
+        best_score = 0.0
+        title_lower = title.lower()
+
+        for t in candidates:
+            if t.title:
+                score = fuzz.ratio(title_lower, t.title.lower())
+                if score > best_score and score >= 85:
+                    best_score = score
+                    best_match = t
+
+        if best_match:
+            return {
+                "in_library": True,
+                "track_id": str(best_match.id),
+                "title": best_match.title,
+                "artist": best_match.artist,
+                "album": best_match.album,
+                "match_score": round(best_score, 1),
+                "note": "Track found in library (fuzzy match). Use find_similar_tracks with this track_id.",
+            }
+
+        # Not in library - try to get external info from Spotify if configured
+        external_info: dict[str, Any] = {
+            "title": title,
+            "artist": artist,
+        }
+
+        if self.profile_id:
+            from app.services.spotify import SpotifyService
+
+            spotify_service = SpotifyService()
+            if spotify_service.is_configured():
+                client = await spotify_service.get_client(self.db, self.profile_id)
+                if client:
+                    try:
+                        results = client.search(
+                            q=f"track:{title} artist:{artist}",
+                            type="track",
+                            limit=1,
+                        )
+                        items = results.get("tracks", {}).get("items", [])
+                        if items:
+                            spotify_track = items[0]
+                            external_info.update({
+                                "album": spotify_track.get("album", {}).get("name"),
+                                "spotify_id": spotify_track.get("id"),
+                                "preview_url": spotify_track.get("preview_url"),
+                                "spotify_url": spotify_track.get("external_urls", {}).get("spotify"),
+                            })
+                    except Exception as e:
+                        logger.warning(f"Spotify search failed for identify_track: {e}")
+
+        return {
+            "in_library": False,
+            "external_info": external_info,
+            "note": "Track not found in library. Use get_similar_artists_in_library and get_similar_tracks_external to build a similar playlist.",
+            "bandcamp_search_url": f"https://bandcamp.com/search?q={artist.replace(' ', '+')}+{title.replace(' ', '+')}",
+        }
+
+    async def _get_similar_tracks_external(
+        self,
+        artist: str,
+        track: str,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Get similar tracks from Last.fm.
+
+        Returns tracks that may not be in the library.
+        Use when building discovery playlists or when reference track isn't in library.
+        """
+        from app.services.lastfm import get_lastfm_service
+
+        try:
+            limit = int(float(limit)) if limit else 10
+        except (ValueError, TypeError):
+            limit = 10
+
+        lastfm = get_lastfm_service()
+
+        if not lastfm.is_configured():
+            return {
+                "tracks": [],
+                "count": 0,
+                "error": "Last.fm API not configured. Add Last.fm API key in Settings.",
+            }
+
+        # Get similar tracks from Last.fm
+        similar_tracks = await lastfm.get_similar_tracks(artist, track, limit=limit * 2)
+
+        if not similar_tracks:
+            return {
+                "reference_track": {"artist": artist, "track": track},
+                "tracks": [],
+                "count": 0,
+                "note": "No similar tracks found via Last.fm.",
+            }
+
+        # Check which similar tracks are in the local library
+        tracks_with_status: list[dict[str, Any]] = []
+
+        for similar in similar_tracks[:limit]:
+            similar_name = similar.get("name", "")
+            similar_artist_data = similar.get("artist", {})
+            similar_artist = similar_artist_data.get("name", "") if isinstance(similar_artist_data, dict) else str(similar_artist_data)
+
+            if not similar_name or not similar_artist:
+                continue
+
+            # Check if in local library
+            stmt = select(Track).where(
+                func.lower(Track.title) == similar_name.lower(),
+                func.lower(Track.artist) == similar_artist.lower(),
+            ).limit(1)
+            result = await self.db.execute(stmt)
+            local_track = result.scalar_one_or_none()
+
+            track_info: dict[str, Any] = {
+                "title": similar_name,
+                "artist": similar_artist,
+                "match_score": round(float(similar.get("match", 0)), 2),
+                "lastfm_url": similar.get("url"),
+            }
+
+            if local_track:
+                track_info["in_library"] = True
+                track_info["local_track_id"] = str(local_track.id)
+                track_info["album"] = local_track.album
+            else:
+                track_info["in_library"] = False
+
+            tracks_with_status.append(track_info)
+
+        in_library_count = sum(1 for t in tracks_with_status if t.get("in_library"))
+
+        return {
+            "reference_track": {"artist": artist, "track": track},
+            "tracks": tracks_with_status,
+            "count": len(tracks_with_status),
+            "in_library": in_library_count,
+            "missing": len(tracks_with_status) - in_library_count,
+            "note": f"Found {len(tracks_with_status)} similar tracks ({in_library_count} in library, {len(tracks_with_status) - in_library_count} not in library).",
         }
 
     # --- Spotify playlist tools ---

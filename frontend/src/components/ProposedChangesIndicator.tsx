@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { FileEdit } from 'lucide-react';
 import { proposedChangesApi } from '../api/client';
+import { useAppNavigation } from '../hooks/useAppNavigation';
 
 export function ProposedChangesIndicator() {
+  const { navigateToLibrary } = useAppNavigation();
+
   // Fetch pending changes count
   const { data: stats } = useQuery({
     queryKey: ['proposed-changes-stats'],
@@ -18,18 +21,8 @@ export function ProposedChangesIndicator() {
   }
 
   const handleClick = () => {
-    // Navigate to the proposed-changes view in the library
-    // Update URL to switch to proposed-changes view
-    const url = new URL(window.location.href);
-    url.hash = 'library';
-    url.searchParams.set('view', 'proposed-changes');
-    // Clear any existing filters
-    url.searchParams.delete('artist');
-    url.searchParams.delete('album');
-    url.searchParams.delete('artistDetail');
-    window.history.pushState(null, '', url.toString());
-    // Trigger a navigation event so React Router picks it up
-    window.dispatchEvent(new PopStateEvent('popstate'));
+    // Navigate to the proposed-changes view in the library using React Router
+    navigateToLibrary({ browser: 'proposed-changes' });
   };
 
   return (

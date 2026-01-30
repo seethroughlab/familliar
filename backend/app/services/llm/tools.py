@@ -113,14 +113,28 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "queue_tracks",
-        "description": "Add tracks to the playback queue. Use after finding tracks the user wants to play.",
+        "description": "Add tracks to the playback queue. Can include both local tracks and suggested external tracks (if discovery mode allows). Use after finding tracks the user wants to play.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "track_ids": {
                     "type": "array",
                     "items": {"type": "string"},
-                    "description": "List of track UUIDs to queue"
+                    "description": "List of local track UUIDs to queue"
+                },
+                "suggested_tracks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "description": "Track title"},
+                            "artist": {"type": "string", "description": "Artist name"},
+                            "album": {"type": "string", "description": "Album name (optional)"},
+                            "reason": {"type": "string", "description": "Why this track is suggested"}
+                        },
+                        "required": ["title", "artist"]
+                    },
+                    "description": "External tracks to suggest (only added if discovery_mode is 'suggest_missing')"
                 },
                 "clear_existing": {
                     "type": "boolean",
@@ -501,6 +515,48 @@ MUSIC_TOOLS: list[dict[str, Any]] = [
             "required": ["spotify_playlist_id"]
         }
     },
+    # Track identification tools
+    {
+        "name": "identify_track",
+        "description": "Identify a specific track by title and artist. Use this FIRST when user says 'based on [song title] by [artist]' to get the track_id for find_similar_tracks. Returns the track if found in library, or external info if not.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {
+                    "type": "string",
+                    "description": "Track title"
+                },
+                "artist": {
+                    "type": "string",
+                    "description": "Artist name"
+                }
+            },
+            "required": ["title", "artist"]
+        }
+    },
+    {
+        "name": "get_similar_tracks_external",
+        "description": "Get similar tracks from Last.fm for a reference track. Returns tracks that may not be in the library. Use when building discovery playlists or when the reference track isn't in library.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "artist": {
+                    "type": "string",
+                    "description": "Artist name"
+                },
+                "track": {
+                    "type": "string",
+                    "description": "Track name"
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max similar tracks to return (default 10)",
+                    "default": 10
+                }
+            },
+            "required": ["artist", "track"]
+        }
+    },
     # Web page reading tools
     {
         "name": "fetch_webpage",
@@ -578,6 +634,27 @@ You MUST follow this exact workflow:
 
 DO NOT keep searching repeatedly. If your first search returns tracks, USE THEM.
 
+## Handling "Based on [track/album]" Requests
+
+When user says "make a playlist based on [title] by [artist]":
+1. Use identify_track(title, artist) FIRST to determine if it's in the library
+2. If in library: Use find_similar_tracks(track_id) to find similar local tracks
+3. If NOT in library:
+   - Use get_similar_artists_in_library to find related artists the user has
+   - Use get_similar_tracks_external to find what tracks would be similar
+   - Build playlist from local similar artists
+   - If discovery mode allows, include suggested_tracks in queue_tracks
+
+## Discovery Mode
+
+The user's playlist_discovery_mode setting controls behavior:
+- "library_only": Only use local tracks, never suggest external tracks
+- "suggest_missing": Include local tracks AND suggest tracks they might want to acquire
+
+When discovery mode is "suggest_missing", include a few relevant external tracks
+in your queue_tracks call using the suggested_tracks parameter. These will appear
+in the playlist as "missing tracks" the user can preview and potentially purchase.
+
 ## How to Handle Requests
 
 **"Play [artist]"** or **"Songs like [artist]"**:
@@ -599,6 +676,12 @@ DO NOT keep searching repeatedly. If your first search returns tracks, USE THEM.
 **"More like this"**:
 1. find_similar_tracks
 2. queue_tracks immediately
+
+**"Based on [track/album] by [artist]"**:
+1. identify_track to check if it's in library
+2. If in library: find_similar_tracks
+3. If not: get_similar_artists_in_library + get_similar_tracks_external
+4. queue_tracks with local tracks and (if discovery mode allows) suggested_tracks
 
 ## STOP CONDITIONS (queue and respond after ANY of these):
 - You found 5+ tracks → STOP, queue them

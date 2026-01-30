@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   Play,
@@ -20,6 +19,7 @@ import {
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useAudioEngine } from '../../hooks/useAudioEngine';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { tracksApi, playlistsApi, type LyricLine } from '../../api/client';
 import { AudioVisualizer, VisualizerPicker } from '../Visualizer';
 import { LyricsDisplay } from './LyricsDisplay';
@@ -172,7 +172,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
   const [imageError, setImageError] = useState(false);
   const [lyrics, setLyrics] = useState<LyricLine[] | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
 
   const {
     currentTrack,
@@ -358,8 +358,7 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
             discoverData={discoverData}
             loading={discoverLoading}
             onGoToArtist={(artistName) => {
-              setSearchParams({ artistDetail: artistName });
-              window.location.hash = 'library';
+              navigateToArtist(artistName);
               onClose();
             }}
             onPlayTrack={(item) => {
@@ -536,17 +535,13 @@ export function FullPlayer({ onClose }: FullPlayerProps) {
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
               onClose();
-              // Navigate to artist via URL params
-              setSearchParams({ artist: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
               onClose();
-              // Navigate to album via URL params
-              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {

@@ -1,10 +1,10 @@
 import { useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Download, Music, Trash2, HardDrive } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Download, Music, Trash2, HardDrive, X } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useDownloadedTracks } from '../../hooks/useDownloadedTracks';
-import { removeOfflineTrack } from '../../services/offlineService';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
+import { removeOfflineTrack, clearAllOfflineTracks } from '../../services/offlineService';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
@@ -17,8 +17,15 @@ interface Props {
 export function DownloadsDetail({ onBack }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { tracks, total, totalSizeFormatted, refresh } = useDownloadedTracks();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
+
+  // Clear all confirmation state
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+
+  // Selection state for bulk delete
+  const [selectedTrackIds, setSelectedTrackIds] = useState<Set<string>>(new Set());
+  const [lastClickedId, setLastClickedId] = useState<string | null>(null);
 
   // Context menu handlers
   const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
@@ -35,7 +42,7 @@ export function DownloadsDetail({ onBack }: Props) {
     setContextMenu(initialContextMenuState);
   }, []);
 
-  const handlePlay = (startIndex = 0) => {
+  const handlePlay = useCallback((startIndex = 0) => {
     if (tracks.length === 0) return;
 
     // If clicking on the currently playing track, toggle play/pause
@@ -62,7 +69,7 @@ export function DownloadsDetail({ onBack }: Props) {
       analysis_version: 0,
     }));
     setQueue(queueTracks, startIndex);
-  };
+  }, [tracks, currentTrack?.id, isPlaying, setIsPlaying, setQueue]);
 
   const handleRemoveFromDownloads = async (trackId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -73,6 +80,71 @@ export function DownloadsDetail({ onBack }: Props) {
       console.error('Failed to remove track from downloads:', error);
     }
   };
+
+  // Clear all downloads handler
+  const handleClearAll = async () => {
+    try {
+      await clearAllOfflineTracks();
+      await refresh();
+      setShowClearConfirm(false);
+      setSelectedTrackIds(new Set());
+    } catch (error) {
+      console.error('Failed to clear downloads:', error);
+    }
+  };
+
+  // Selection handlers
+  const handleTrackClick = useCallback((trackId: string, idx: number, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedId) {
+      // Shift-click: select range
+      const lastIdx = tracks.findIndex(t => t.id === lastClickedId);
+      const currentIdx = idx;
+      const [start, end] = [Math.min(lastIdx, currentIdx), Math.max(lastIdx, currentIdx)];
+      const rangeIds = tracks.slice(start, end + 1).map(t => t.id);
+      setSelectedTrackIds(new Set([...selectedTrackIds, ...rangeIds]));
+    } else if (e.metaKey || e.ctrlKey) {
+      // Cmd/Ctrl-click: toggle single selection
+      const newSet = new Set(selectedTrackIds);
+      if (newSet.has(trackId)) {
+        newSet.delete(trackId);
+      } else {
+        newSet.add(trackId);
+      }
+      setSelectedTrackIds(newSet);
+      setLastClickedId(trackId);
+    } else {
+      // Normal click: play track
+      handlePlay(idx);
+      setSelectedTrackIds(new Set());
+      setLastClickedId(trackId);
+    }
+  }, [tracks, lastClickedId, selectedTrackIds, handlePlay]);
+
+  // Bulk delete handler
+  const handleBulkDelete = async () => {
+    try {
+      for (const trackId of selectedTrackIds) {
+        await removeOfflineTrack(trackId);
+      }
+      await refresh();
+      setSelectedTrackIds(new Set());
+    } catch (error) {
+      console.error('Failed to remove selected tracks:', error);
+    }
+  };
+
+  // Checkbox click handler (separate from row click)
+  const handleCheckboxClick = useCallback((trackId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newSet = new Set(selectedTrackIds);
+    if (newSet.has(trackId)) {
+      newSet.delete(trackId);
+    } else {
+      newSet.add(trackId);
+    }
+    setSelectedTrackIds(newSet);
+    setLastClickedId(trackId);
+  }, [selectedTrackIds]);
 
   return (
     <div className="space-y-4">
@@ -100,15 +172,51 @@ export function DownloadsDetail({ onBack }: Props) {
           </div>
         </div>
 
-        <button
-          onClick={() => handlePlay()}
-          disabled={tracks.length === 0}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
-        >
-          <Play className="w-4 h-4" fill="currentColor" />
-          Play
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handlePlay()}
+            disabled={tracks.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-50 disabled:hover:bg-green-600 rounded-full transition-colors"
+          >
+            <Play className="w-4 h-4" fill="currentColor" />
+            Play
+          </button>
+
+          <button
+            onClick={() => setShowClearConfirm(true)}
+            disabled={tracks.length === 0}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 disabled:opacity-50 disabled:hover:bg-red-600/20 rounded-full transition-colors"
+            title="Clear all downloads"
+          >
+            <Trash2 className="w-4 h-4" />
+            Clear All
+          </button>
+        </div>
       </div>
+
+      {/* Bulk action toolbar */}
+      {selectedTrackIds.size > 0 && (
+        <div className="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur-sm p-3 rounded-lg flex items-center gap-3 border border-zinc-700">
+          <span className="text-sm text-zinc-300 font-medium">
+            {selectedTrackIds.size} track{selectedTrackIds.size !== 1 ? 's' : ''} selected
+          </span>
+          <div className="flex-1" />
+          <button
+            onClick={handleBulkDelete}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/30 text-red-400 rounded-md text-sm transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            Remove from Downloads
+          </button>
+          <button
+            onClick={() => setSelectedTrackIds(new Set())}
+            className="p-1.5 hover:bg-zinc-700 rounded-md transition-colors"
+            title="Clear selection"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Track list */}
       {tracks.length > 0 ? (
@@ -131,15 +239,31 @@ export function DownloadsDetail({ onBack }: Props) {
               format: null,
               analysis_version: 0,
             };
+            const isSelected = selectedTrackIds.has(track.id);
             return (
               <div
                 key={track.id}
-                onClick={() => handlePlay(idx)}
+                onClick={(e) => handleTrackClick(track.id, idx, e)}
                 onContextMenu={(e) => handleContextMenu(fullTrack, e)}
                 className={`group flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/50 cursor-pointer transition-colors ${
                   currentTrack?.id === track.id ? 'bg-zinc-800/30' : ''
-                }`}
+                } ${isSelected ? 'bg-green-900/30 ring-1 ring-green-500/50' : ''}`}
               >
+                {/* Checkbox */}
+                <div
+                  onClick={(e) => handleCheckboxClick(track.id, e)}
+                  className={`w-5 h-5 flex-shrink-0 rounded border cursor-pointer transition-colors ${
+                    isSelected
+                      ? 'bg-green-500 border-green-500'
+                      : 'border-zinc-600 hover:border-zinc-500'
+                  }`}
+                >
+                  {isSelected && (
+                    <svg className="w-5 h-5 text-white" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                </div>
                 {/* Track number / Play button */}
                 <div className="w-8 text-center">
                   {currentTrack?.id === track.id && isPlaying ? (
@@ -229,14 +353,12 @@ export function DownloadsDetail({ onBack }: Props) {
           }}
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
-              setSearchParams({ artist: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
-              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {
@@ -257,7 +379,44 @@ export function DownloadsDetail({ onBack }: Props) {
               useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
             }
           }}
+          onRemoveFromDownloads={async () => {
+            if (contextMenu.track) {
+              try {
+                await removeOfflineTrack(contextMenu.track.id);
+                await refresh();
+              } catch (error) {
+                console.error('Failed to remove track from downloads:', error);
+              }
+            }
+          }}
         />
+      )}
+
+      {/* Clear all confirmation modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-zinc-800 rounded-lg p-6 max-w-md mx-4 shadow-xl border border-zinc-700">
+            <h3 className="text-lg font-semibold mb-2">Clear All Downloads?</h3>
+            <p className="text-zinc-400 mb-4">
+              This will remove {total} track{total !== 1 ? 's' : ''} ({totalSizeFormatted}) from your device.
+              You can re-download them later.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="px-4 py-2 text-zinc-300 hover:bg-zinc-700 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearAll}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

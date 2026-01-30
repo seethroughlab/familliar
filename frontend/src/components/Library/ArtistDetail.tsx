@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Play,
@@ -23,9 +22,13 @@ import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useOfflineTrack } from '../../hooks/useOfflineTrack';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { TrackContextMenu } from './TrackContextMenu';
-import type { ContextMenuState } from './types';
-import { initialContextMenuState } from './types';
+import { AlbumContextMenu } from './AlbumContextMenu';
+import type { ContextMenuState, AlbumContextMenuState } from './types';
+import { initialContextMenuState, initialAlbumContextMenuState } from './types';
+import { useDownloadStore, getAlbumJobId } from '../../stores/downloadStore';
+import { getOfflineTrackIds, removeOfflineTrack } from '../../services/offlineService';
 import type { Track } from '../../types';
 import { DiscoveryPanel, useArtistDiscovery, type DiscoveryItem } from '../Discovery';
 
@@ -156,6 +159,8 @@ interface Props {
   artistName: string;
   onBack: () => void;
   onGoToAlbum?: (artistName: string, albumName: string) => void;
+  onGoToGenre?: (genre: string) => void;
+  onGoToYear?: (year: number) => void;
 }
 
 // Threshold for using lazy queue mode vs loading all tracks
@@ -163,15 +168,23 @@ const LAZY_QUEUE_THRESHOLD = 50;
 // Number of tracks to show before collapsing
 const COLLAPSED_TRACK_COUNT = 15;
 
-export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
+export function ArtistDetail({ artistName, onBack, onGoToAlbum, onGoToGenre, onGoToYear }: Props) {
   const { currentTrack, isPlaying, shuffle, setQueue, addToQueue, setIsPlaying, setLazyQueue } = usePlayerStore();
+  const { startDownload } = useDownloadStore();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
   const [showFullBio, setShowFullBio] = useState(false);
   const [showAllTracks, setShowAllTracks] = useState(false);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
+  const [albumContextMenu, setAlbumContextMenu] = useState<AlbumContextMenuState>(initialAlbumContextMenuState);
+  const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
 
   // Track which artists we've already triggered enrichment for
   const enrichedArtistsRef = useRef<Set<string>>(new Set());
+
+  // Load offline track IDs on mount
+  useEffect(() => {
+    getOfflineTrackIds().then((ids) => setOfflineTrackIds(new Set(ids)));
+  }, []);
 
   // Context menu handlers
   const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
@@ -186,6 +199,32 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
 
   const closeContextMenu = useCallback(() => {
     setContextMenu(initialContextMenuState);
+  }, []);
+
+  // Album context menu handlers
+  const handleAlbumContextMenu = useCallback(
+    (
+      album: { name: string; year: number | null; track_count: number; first_track_id: string },
+      e: React.MouseEvent
+    ) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setAlbumContextMenu({
+        isOpen: true,
+        album: {
+          name: album.name,
+          artist: artistName,
+          year: album.year,
+          first_track_id: album.first_track_id,
+        },
+        position: { x: e.clientX, y: e.clientY },
+      });
+    },
+    [artistName]
+  );
+
+  const closeAlbumContextMenu = useCallback(() => {
+    setAlbumContextMenu(initialAlbumContextMenuState);
   }, []);
 
   const {
@@ -430,12 +469,13 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
             {artist.tags.length > 0 && (
               <div className="flex flex-wrap justify-center sm:justify-start gap-1 mt-2">
                 {artist.tags.slice(0, 5).map((tag) => (
-                  <span
+                  <button
                     key={tag}
-                    className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 rounded"
+                    onClick={() => onGoToGenre?.(tag)}
+                    className="px-2 py-0.5 text-xs bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded transition-colors"
                   >
                     {tag}
-                  </span>
+                  </button>
                 ))}
               </div>
             )}
@@ -549,6 +589,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
                 key={album.name}
                 className="group bg-zinc-800/50 rounded-lg overflow-hidden hover:bg-zinc-800 transition-colors cursor-pointer"
                 onClick={() => onGoToAlbum?.(artist.name, album.name)}
+                onContextMenu={(e) => handleAlbumContextMenu(album, e)}
               >
                 <div className="aspect-square relative overflow-hidden">
                   <AlbumArtwork
@@ -572,7 +613,18 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
                 <div className="p-3">
                   <div className="font-medium truncate">{album.name}</div>
                   <div className="text-xs text-zinc-400">
-                    {album.year && <span>{album.year} · </span>}
+                    {album.year && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onGoToYear?.(album.year!);
+                        }}
+                        className="hover:text-white hover:underline transition-colors"
+                      >
+                        {album.year}
+                      </button>
+                    )}
+                    {album.year && ' · '}
                     {album.track_count} tracks
                   </div>
                 </div>
@@ -698,7 +750,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
       {/* Similar artists */}
       <ArtistDiscoverySection
         artist={artist}
-        onGoToArtist={(artistName) => setSearchParams({ artistDetail: artistName })}
+        onGoToArtist={(name) => navigateToArtist(name)}
       />
 
       {/* Context menu */}
@@ -722,9 +774,7 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.album) {
-              setSearchParams({ artist: artistName, album: contextMenu.track.album });
-              window.location.hash = 'library';
-              onBack();
+              navigateToAlbum(artistName, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {
@@ -744,6 +794,129 @@ export function ArtistDetail({ artistName, onBack, onGoToAlbum }: Props) {
           onEditMetadata={() => {
             if (contextMenu.track) {
               useSelectionStore.getState().setEditingTrackId(contextMenu.track.id);
+            }
+          }}
+        />
+      )}
+
+      {/* Album context menu */}
+      {albumContextMenu.isOpen && albumContextMenu.album && (
+        <AlbumContextMenu
+          album={albumContextMenu.album}
+          position={albumContextMenu.position}
+          onClose={closeAlbumContextMenu}
+          onPlay={() => {
+            if (albumContextMenu.album && artist) {
+              handlePlayAlbum(albumContextMenu.album.name);
+            }
+          }}
+          onShuffle={() => {
+            if (albumContextMenu.album && artist) {
+              const albumTracks = artist.tracks.filter(
+                (t) => t.album === albumContextMenu.album!.name
+              );
+              if (albumTracks.length === 0) return;
+
+              // Shuffle the tracks before setting queue
+              const queueTracks = albumTracks
+                .map((t) => ({
+                  id: t.id,
+                  file_path: '',
+                  title: t.title || 'Unknown',
+                  artist: artist.name,
+                  album: t.album || null,
+                  album_artist: null,
+                  album_type: 'album' as const,
+                  track_number: t.track_number,
+                  disc_number: null,
+                  year: t.year,
+                  genre: null,
+                  duration_seconds: t.duration_seconds || null,
+                  format: null,
+                  analysis_version: 0,
+                }))
+                .sort(() => Math.random() - 0.5);
+              setQueue(queueTracks, 0);
+            }
+          }}
+          onQueue={() => {
+            if (albumContextMenu.album && artist) {
+              const albumTracks = artist.tracks.filter(
+                (t) => t.album === albumContextMenu.album!.name
+              );
+              for (const t of albumTracks) {
+                addToQueue({
+                  id: t.id,
+                  file_path: '',
+                  title: t.title || 'Unknown',
+                  artist: artist.name,
+                  album: t.album || null,
+                  album_artist: null,
+                  album_type: 'album',
+                  track_number: t.track_number,
+                  disc_number: null,
+                  year: t.year,
+                  genre: null,
+                  duration_seconds: t.duration_seconds || null,
+                  format: null,
+                  analysis_version: 0,
+                });
+              }
+            }
+          }}
+          onGoToArtist={() => {
+            // Already on this artist's page
+          }}
+          onGoToAlbum={() => {
+            if (albumContextMenu.album) {
+              onGoToAlbum?.(albumContextMenu.album.artist, albumContextMenu.album.name);
+            }
+          }}
+          onDownload={() => {
+            if (albumContextMenu.album && artist) {
+              const albumTracks = artist.tracks.filter(
+                (t) => t.album === albumContextMenu.album!.name
+              );
+              const trackIds = albumTracks.map((t) => t.id);
+              const jobId = getAlbumJobId(artist.name, albumContextMenu.album.name);
+              startDownload(
+                jobId,
+                'album',
+                `${artist.name} - ${albumContextMenu.album.name}`,
+                trackIds
+              );
+            }
+          }}
+          onRemoveDownload={async () => {
+            if (albumContextMenu.album && artist) {
+              const albumTracks = artist.tracks.filter(
+                (t) => t.album === albumContextMenu.album!.name
+              );
+              for (const t of albumTracks) {
+                if (offlineTrackIds.has(t.id)) {
+                  await removeOfflineTrack(t.id);
+                }
+              }
+              // Refresh offline IDs
+              const ids = await getOfflineTrackIds();
+              setOfflineTrackIds(new Set(ids));
+            }
+          }}
+          hasDownloadedTracks={(() => {
+            if (!albumContextMenu.album || !artist) return false;
+            const albumTracks = artist.tracks.filter(
+              (t) => t.album === albumContextMenu.album!.name
+            );
+            return albumTracks.some((t) => offlineTrackIds.has(t.id));
+          })()}
+          onAddToPlaylist={() => {
+            // TODO: Open playlist picker modal
+          }}
+          onMakePlaylist={() => {
+            if (albumContextMenu.album) {
+              const album = albumContextMenu.album;
+              const message = `Make me a playlist based on the album "${album.name}" by ${album.artist}`;
+              window.dispatchEvent(new CustomEvent('trigger-chat', { detail: { message } }));
             }
           }}
         />

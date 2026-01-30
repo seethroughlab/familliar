@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Loader2, Music, Zap, Clock, Download, Check, WifiOff, Heart, RefreshCw, CloudOff } from 'lucide-react';
 import { smartPlaylistsApi, tracksApi, playlistsApi } from '../../api/client';
 import type { SmartPlaylist } from '../../api/client';
@@ -9,6 +8,7 @@ import { useSelectionStore } from '../../stores/selectionStore';
 import { useDownloadStore, getSmartPlaylistJobId } from '../../stores/downloadStore';
 import { useFavorites } from '../../hooks/useFavorites';
 import { useOfflineStatus } from '../../hooks/useOfflineStatus';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import * as offlineService from '../../services/offlineService';
 import * as playlistCache from '../../services/playlistCache';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
@@ -99,9 +99,9 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { isFavorite, toggle: toggleFavorite } = useFavorites();
   const { isOffline } = useOfflineStatus();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
   const [offlineTrackIds, setOfflineTrackIds] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
   const [usingCachedData, setUsingCachedData] = useState(false);
   const [showDownloadedOnly, setShowDownloadedOnly] = useState(false);
 
@@ -576,8 +576,7 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
           hasDiscovery={hasDiscovery}
           loading={discoverLoading}
           onGoToArtist={(artistName) => {
-            setSearchParams({ artistDetail: artistName });
-            window.location.hash = 'library';
+            navigateToArtist(artistName);
           }}
           onPlayTrack={(item) => {
             if (item.id) {
@@ -625,14 +624,12 @@ export function SmartPlaylistDetail({ playlist, onBack }: Props) {
           }}
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
-              setSearchParams({ artist: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
-              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {}}

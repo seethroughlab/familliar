@@ -343,7 +343,7 @@ export function TrackListBrowser({
     (artistName: string) => {
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
-        next.set('view', 'ego-music-map');
+        next.set('browser', 'ego-music-map');
         next.set('center', artistName);
         return next;
       });

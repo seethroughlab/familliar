@@ -1,9 +1,9 @@
 import { useState, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Heart, Clock, Music } from 'lucide-react';
 import { usePlayerStore } from '../../stores/playerStore';
 import { useSelectionStore } from '../../stores/selectionStore';
 import { useFavorites } from '../../hooks/useFavorites';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { TrackContextMenu } from '../Library/TrackContextMenu';
 import type { ContextMenuState } from '../Library/types';
 import { initialContextMenuState } from '../Library/types';
@@ -16,8 +16,8 @@ interface Props {
 export function FavoritesDetail({ onBack }: Props) {
   const { currentTrack, isPlaying, setQueue, addToQueue, setIsPlaying } = usePlayerStore();
   const { favorites, total, toggle } = useFavorites();
+  const { navigateToArtist, navigateToAlbum } = useAppNavigation();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(initialContextMenuState);
-  const [, setSearchParams] = useSearchParams();
 
   // Context menu handlers
   const handleContextMenu = useCallback((track: Track, e: React.MouseEvent) => {
@@ -233,14 +233,12 @@ export function FavoritesDetail({ onBack }: Props) {
           }}
           onGoToArtist={() => {
             if (contextMenu.track?.artist) {
-              setSearchParams({ artist: contextMenu.track.artist });
-              window.location.hash = 'library';
+              navigateToArtist(contextMenu.track.artist);
             }
           }}
           onGoToAlbum={() => {
             if (contextMenu.track?.artist && contextMenu.track?.album) {
-              setSearchParams({ artist: contextMenu.track.artist, album: contextMenu.track.album });
-              window.location.hash = 'library';
+              navigateToAlbum(contextMenu.track.artist, contextMenu.track.album);
             }
           }}
           onToggleSelect={() => {

@@ -556,6 +556,8 @@ export interface AppSettingsResponse {
   // Analysis settings
   clap_embeddings_enabled: boolean | null;
   clap_status: ClapStatus;
+  // Playlist generation
+  playlist_discovery_mode: string;
 }
 
 export interface AppSettingsUpdate {
@@ -569,6 +571,8 @@ export interface AppSettingsUpdate {
   enrich_overwrite_existing?: boolean;
   // Analysis settings
   clap_embeddings_enabled?: boolean | null;
+  // Playlist generation
+  playlist_discovery_mode?: string;
 }
 
 export const appSettingsApi = {

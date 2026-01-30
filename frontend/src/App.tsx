@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { TAB_PARAM_WHITELIST, type AppTab } from './utils/urlParams';
 import { Search, Library, Settings, Zap, Activity, MessageSquare, X, Loader2 } from 'lucide-react';
 import { isVisualizerAvailable } from './hooks/useAudioEngine';
 import { logger } from './utils/logger';
@@ -57,12 +58,13 @@ const queryClient = new QueryClient({
   },
 });
 
-type RightPanelTab = 'library' | 'playlists' | 'visualizer' | 'settings';
+type RightPanelTab = AppTab;
 
 function AppContent() {
   const [search, setSearch] = useState('');
   const [importFiles, setImportFiles] = useState<File[] | null>(null);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // Triple-tap recovery mechanism for mobile (closes all overlays)
   const tapCountRef = useRef(0);
@@ -110,6 +112,19 @@ function AppContent() {
     if (path === '/settings') return 'settings';
     if (path === '/playlists') return 'playlists';
     if (path === '/visualizer' && isVisualizerAvailable()) return 'visualizer';
+
+    // Check for playlist-specific view params (downloads, favorites)
+    // These belong to the playlists tab even without the hash
+    const searchParams = new URLSearchParams(window.location.search);
+    const view = searchParams.get('view');
+    if (view === 'downloads' || view === 'favorites') {
+      return 'playlists';
+    }
+    // Also check for playlist or smartPlaylist params
+    if (searchParams.get('playlist') || searchParams.get('smartPlaylist')) {
+      return 'playlists';
+    }
+
     return 'library';
   };
 
@@ -123,17 +138,9 @@ function AppContent() {
   const setRightPanelTab = useCallback((tab: RightPanelTab) => {
     setRightPanelTabState(tab);
 
-    // Define which search params belong to which tab
-    const tabParams: Record<RightPanelTab, string[]> = {
-      library: ['view', 'search', 'artist', 'album', 'genre', 'yearFrom', 'yearTo', 'artistDetail', 'albumDetailArtist', 'albumDetailAlbum'],
-      playlists: ['playlist', 'smartPlaylist', 'view'],
-      visualizer: ['type'],
-      settings: [],
-    };
-
-    // Clear params that don't belong to the new tab
+    // Clear params that don't belong to the new tab using centralized whitelist
     const currentParams = new URLSearchParams(window.location.search);
-    const allowedParams = new Set(tabParams[tab]);
+    const allowedParams = new Set(TAB_PARAM_WHITELIST[tab]);
 
     for (const key of Array.from(currentParams.keys())) {
       if (!allowedParams.has(key)) {
@@ -141,11 +148,11 @@ function AppContent() {
       }
     }
 
-    // Build new URL with hash and cleaned params
+    // Build new URL with hash and cleaned params using React Router
     const paramString = currentParams.toString();
     const newUrl = paramString ? `?${paramString}#${tab}` : `#${tab}`;
-    window.history.replaceState(null, '', newUrl);
-  }, []);
+    navigate(newUrl, { replace: true });
+  }, [navigate]);
 
   // Listen for hash changes (back/forward navigation)
   useEffect(() => {

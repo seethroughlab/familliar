@@ -68,6 +68,11 @@ class AppSettings(BaseModel):
     community_cache_contribute: bool = False  # Contribute computed embeddings (opt-in)
     community_cache_url: str = "https://familiar-cache.fly.dev"  # Cache server URL
 
+    # Playlist generation mode
+    # "library_only" - Only use local tracks (legacy behavior)
+    # "suggest_missing" - Include local + suggest missing tracks user might acquire (DEFAULT)
+    playlist_discovery_mode: str = "suggest_missing"
+
 
 class AppSettingsService:
     """Service for managing user-configurable app settings."""

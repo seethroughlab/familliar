@@ -11,6 +11,49 @@ import {
 import { computeAlbumHash } from '../utils/albumHash';
 
 /**
+ * Fetch and cache track metadata from the API.
+ * This ensures downloaded tracks have their metadata available for display.
+ */
+async function ensureTrackMetadataCached(trackId: string): Promise<CachedTrack | null> {
+  // Check if already cached
+  const existing = await db.cachedTracks.get(trackId);
+  if (existing) {
+    return existing;
+  }
+
+  // Fetch metadata from API
+  try {
+    const response = await fetch(`/api/v1/tracks/${trackId}`);
+    if (!response.ok) {
+      console.warn('[Offline] Could not fetch track metadata:', trackId);
+      return null;
+    }
+
+    const track = await response.json();
+    const cachedTrack: CachedTrack = {
+      id: track.id,
+      title: track.title || '',
+      artist: track.artist || '',
+      album: track.album || '',
+      albumArtist: track.album_artist || null,
+      genre: track.genre || null,
+      year: track.year || null,
+      durationSeconds: track.duration_seconds || null,
+      trackNumber: track.track_number || null,
+      discNumber: track.disc_number || null,
+      cachedAt: new Date(),
+    };
+
+    await db.cachedTracks.put(cachedTrack);
+    console.log('[Offline] Cached track metadata:', trackId);
+    return cachedTrack;
+  } catch (error) {
+    console.warn('[Offline] Failed to cache track metadata:', trackId, error);
+    return null;
+  }
+}
+
+/**
  * Progress callback type for download tracking.
  */
 export type DownloadProgressCallback = (progress: {
@@ -176,8 +219,10 @@ export async function downloadTrackForOffline(
   await clearPartialDownload(trackId);
   console.log('[Offline] Track stored successfully:', trackId);
 
+  // Ensure track metadata is cached for display in Downloads view
+  const trackInfo = await ensureTrackMetadataCached(trackId);
+
   // Also download artwork if we have track metadata
-  const trackInfo = await db.cachedTracks.get(trackId);
   if (trackInfo?.artist && trackInfo?.album) {
     // Best-effort artwork download - don't fail if artwork unavailable
     try {
@@ -401,6 +446,23 @@ export async function getOfflineTracksWithInfo(): Promise<OfflineTrackInfo[]> {
   // Create a map for fast lookup
   const trackInfoMap = new Map<string, CachedTrack>();
   cachedTracks.forEach((t) => trackInfoMap.set(t.id, t));
+
+  // Find tracks missing metadata and try to fetch it (best-effort)
+  const missingIds = offlineTracks
+    .filter((t) => !trackInfoMap.has(t.id))
+    .map((t) => t.id);
+
+  if (missingIds.length > 0) {
+    console.log('[Offline] Fetching missing metadata for', missingIds.length, 'tracks');
+    // Fetch metadata in parallel (limit concurrency to avoid overwhelming the API)
+    const fetchPromises = missingIds.slice(0, 10).map(async (id) => {
+      const info = await ensureTrackMetadataCached(id);
+      if (info) {
+        trackInfoMap.set(id, info);
+      }
+    });
+    await Promise.allSettled(fetchPromises);
+  }
 
   return offlineTracks.map((track) => {
     const info = trackInfoMap.get(track.id);

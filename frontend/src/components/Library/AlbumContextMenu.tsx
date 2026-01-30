@@ -1,38 +1,34 @@
 /**
- * Context menu for track actions.
+ * Context menu for album actions.
  *
- * Shows on right-click with options like Play, Queue, Go to Artist, etc.
+ * Shows on right-click with options like Play, Shuffle, Queue, Go to Artist, etc.
  */
 import { useEffect, useRef } from 'react';
 import {
   Play,
+  Shuffle,
   ListPlus,
   User,
   Disc,
-  CheckSquare,
-  Square,
-  Sparkles,
-  Edit3,
-  Map,
+  Download,
   Trash2,
+  Sparkles,
 } from 'lucide-react';
-import type { Track } from '../../types';
 
-interface TrackContextMenuProps {
-  track: Track;
+interface AlbumContextMenuProps {
+  album: { name: string; artist: string; year: number | null; first_track_id: string };
   position: { x: number; y: number };
-  isSelected: boolean;
   onClose: () => void;
   onPlay: () => void;
+  onShuffle: () => void;
   onQueue: () => void;
   onGoToArtist: () => void;
   onGoToAlbum: () => void;
-  onExploreSimilarArtists?: () => void;
-  onToggleSelect: () => void;
+  onDownload: () => void;
+  onRemoveDownload: () => void;
+  hasDownloadedTracks: boolean;
   onAddToPlaylist: () => void;
   onMakePlaylist: () => void;
-  onEditMetadata?: () => void;
-  onRemoveFromDownloads?: () => void;
 }
 
 interface MenuItemProps {
@@ -59,22 +55,21 @@ function MenuDivider() {
   return <div className="my-1 border-t border-zinc-700" />;
 }
 
-export function TrackContextMenu({
-  track,
+export function AlbumContextMenu({
+  album,
   position,
-  isSelected,
   onClose,
   onPlay,
+  onShuffle,
   onQueue,
   onGoToArtist,
   onGoToAlbum,
-  onExploreSimilarArtists,
-  onToggleSelect,
+  onDownload,
+  onRemoveDownload,
+  hasDownloadedTracks,
   onAddToPlaylist,
   onMakePlaylist,
-  onEditMetadata,
-  onRemoveFromDownloads,
-}: TrackContextMenuProps) {
+}: AlbumContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close on click outside
@@ -133,21 +128,27 @@ export function TrackContextMenu({
         top: position.y,
       }}
     >
-      {/* Track info header */}
+      {/* Album info header */}
       <div className="px-3 py-2 border-b border-zinc-700">
         <div className="text-sm font-medium text-white truncate">
-          {track.title || 'Unknown'}
+          {album.name}
         </div>
         <div className="text-xs text-zinc-400 truncate">
-          {track.artist || 'Unknown Artist'}
+          {album.artist}
+          {album.year && ` · ${album.year}`}
         </div>
       </div>
 
       {/* Playback actions */}
       <MenuItem
         icon={<Play className="w-4 h-4" />}
-        label="Play"
+        label="Play Album"
         onClick={() => handleAction(onPlay)}
+      />
+      <MenuItem
+        icon={<Shuffle className="w-4 h-4" />}
+        label="Shuffle Album"
+        onClick={() => handleAction(onShuffle)}
       />
       <MenuItem
         icon={<ListPlus className="w-4 h-4" />}
@@ -162,47 +163,26 @@ export function TrackContextMenu({
         icon={<User className="w-4 h-4" />}
         label="Go to Artist"
         onClick={() => handleAction(onGoToArtist)}
-        disabled={!track.artist}
       />
       <MenuItem
         icon={<Disc className="w-4 h-4" />}
         label="Go to Album"
         onClick={() => handleAction(onGoToAlbum)}
-        disabled={!track.album}
       />
-      {onExploreSimilarArtists && (
-        <MenuItem
-          icon={<Map className="w-4 h-4" />}
-          label="Explore Similar Artists"
-          onClick={() => handleAction(onExploreSimilarArtists)}
-          disabled={!track.artist}
-        />
-      )}
 
       <MenuDivider />
 
-      {/* Selection */}
+      {/* Downloads */}
       <MenuItem
-        icon={isSelected ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-        label={isSelected ? 'Deselect' : 'Select'}
-        onClick={() => handleAction(onToggleSelect)}
+        icon={<Download className="w-4 h-4" />}
+        label="Download Album"
+        onClick={() => handleAction(onDownload)}
       />
-
-      {/* Edit Metadata */}
-      {onEditMetadata && (
-        <MenuItem
-          icon={<Edit3 className="w-4 h-4" />}
-          label="Edit Metadata..."
-          onClick={() => handleAction(onEditMetadata)}
-        />
-      )}
-
-      {/* Remove from Downloads */}
-      {onRemoveFromDownloads && (
+      {hasDownloadedTracks && (
         <MenuItem
           icon={<Trash2 className="w-4 h-4" />}
-          label="Remove from Downloads"
-          onClick={() => handleAction(onRemoveFromDownloads)}
+          label="Remove Downloaded"
+          onClick={() => handleAction(onRemoveDownload)}
         />
       )}
 
@@ -224,4 +204,3 @@ export function TrackContextMenu({
     </div>
   );
 }
-
