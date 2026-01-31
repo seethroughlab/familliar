@@ -117,12 +117,11 @@ async def export_diagnostics(db: DbSession) -> DiagnosticsExport:
         recent_logs = [{"error": str(e)}]
 
     # Get non-sensitive settings summary
+    settings_summary: dict[str, Any]
     try:
         settings_service = get_app_settings_service()
         app_settings = settings_service.get()
         settings_summary = {
-            "llm_provider": app_settings.llm_provider,
-            "ollama_model": app_settings.ollama_model,
             "has_anthropic_key": bool(app_settings.anthropic_api_key),
             "has_spotify_credentials": bool(app_settings.spotify_client_id),
             "has_lastfm_key": bool(app_settings.lastfm_api_key),

@@ -560,7 +560,7 @@ class ImportService:
                 method_counts[method] = method_counts.get(method, 0) + 1
 
         # Get sample unmatched tracks
-        unmatched_samples = []
+        unmatched_samples: list[dict[str, Any]] = []
         for ref, track, _, _ in match_results:
             if track is None and len(unmatched_samples) < 10:
                 unmatched_samples.append({
