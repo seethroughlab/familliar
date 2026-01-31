@@ -53,44 +53,55 @@ test.describe('Admin Panel', () => {
     await expect(adminTitle).toBeVisible({ timeout: 5000 });
   });
 
-  test('Claude API key field exists', async ({ page }) => {
-    // Look for the Claude API section heading
-    const claudeHeading = page.getByRole('heading', { name: /Claude API/i });
-    await expect(claudeHeading).toBeVisible({ timeout: 5000 });
-
-    // There should be an input field for the API key
-    const apiKeyInput = page.locator('input').first();
-    await expect(apiKeyInput).toBeVisible({ timeout: 5000 });
+  test('service status section exists', async ({ page }) => {
+    // Look for the Service Status section heading
+    const statusHeading = page.locator('text=Service Status');
+    await expect(statusHeading).toBeVisible({ timeout: 5000 });
   });
 
-  test('per-section save buttons exist', async ({ page }) => {
-    // Each settings section should have its own save button
-    const saveButtons = page.locator('button:has-text("Save")');
-    const count = await saveButtons.count();
-
-    // Should have multiple save buttons (one per section)
-    expect(count).toBeGreaterThanOrEqual(1);
+  test('Claude API status card exists', async ({ page }) => {
+    // Look for Claude API in the status grid
+    const claudeCard = page.locator('text=Claude API');
+    await expect(claudeCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('Spotify section exists', async ({ page }) => {
-    const spotifySection = page.locator('text=Spotify API');
-    await expect(spotifySection).toBeVisible({ timeout: 5000 });
+  test('Spotify status card exists', async ({ page }) => {
+    const spotifyCard = page.locator('text=Spotify');
+    await expect(spotifyCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('Last.fm section exists', async ({ page }) => {
-    const lastfmSection = page.getByRole('heading', { name: 'Last.fm API' });
-    await expect(lastfmSection).toBeVisible({ timeout: 5000 });
+  test('Last.fm status card exists', async ({ page }) => {
+    const lastfmCard = page.locator('text=Last.fm');
+    await expect(lastfmCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('AI Provider section exists', async ({ page }) => {
-    const aiSection = page.locator('text=AI Provider');
-    await expect(aiSection).toBeVisible({ timeout: 5000 });
+  test('AcoustID status card exists', async ({ page }) => {
+    const acoustidCard = page.locator('text=AcoustID');
+    await expect(acoustidCard).toBeVisible({ timeout: 5000 });
+  });
 
-    // Should have Claude and Ollama options
-    const claudeOption = page.locator('button:has-text("Claude")');
-    const ollamaOption = page.locator('button:has-text("Ollama")');
-    await expect(claudeOption).toBeVisible();
-    await expect(ollamaOption).toBeVisible();
+  test('community cache section exists', async ({ page }) => {
+    const cacheSection = page.locator('text=Community Cache');
+    await expect(cacheSection).toBeVisible({ timeout: 5000 });
+  });
+
+  test('community cache toggles work', async ({ page }) => {
+    // Find the "Use community cache" toggle
+    const useCacheToggle = page.locator('text=Use community cache').locator('..').locator('..').locator('input[type="checkbox"]');
+    await expect(useCacheToggle).toBeVisible({ timeout: 5000 });
+
+    // Toggle should be clickable
+    const initialState = await useCacheToggle.isChecked();
+    await useCacheToggle.click();
+    await page.waitForTimeout(500);
+
+    // State should change
+    const newState = await useCacheToggle.isChecked();
+    expect(newState).toBe(!initialState);
+
+    // Toggle back
+    await useCacheToggle.click();
+    await page.waitForTimeout(500);
   });
 });
 

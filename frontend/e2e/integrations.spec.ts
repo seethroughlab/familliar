@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 
-// These tests require environment variables for API credentials
-// Run with: SPOTIFY_CLIENT_ID=xxx SPOTIFY_CLIENT_SECRET=xxx LASTFM_API_KEY=xxx LASTFM_API_SECRET=xxx npm run test:e2e -- e2e/integrations.spec.ts
+// These tests verify integration status display in the Admin panel.
+// API keys are now configured via environment variables (docker/.env),
+// so these tests verify the status indicators rather than input fields.
 
 const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
@@ -9,129 +10,75 @@ const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
 const LASTFM_API_SECRET = process.env.LASTFM_API_SECRET;
 
 test.describe('Spotify Integration', () => {
-  test.skip(!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET, 'Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET');
-
-  test('add Spotify client ID/secret in Admin panel', async ({ page }) => {
+  test('Spotify status card shows in Admin panel', async ({ page }) => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Find the Spotify API section
-    const spotifyHeading = page.getByRole('heading', { name: /Spotify API/i });
-    await expect(spotifyHeading).toBeVisible({ timeout: 5000 });
-
-    // Find the Spotify inputs - there should be two (client ID and secret)
-    const spotifySection = page.locator('section, div').filter({ has: spotifyHeading });
-    const inputs = spotifySection.locator('input');
-
-    // Fill client ID (first input)
-    await inputs.first().fill(SPOTIFY_CLIENT_ID!);
-
-    // Fill client secret (second input)
-    await inputs.nth(1).fill(SPOTIFY_CLIENT_SECRET!);
-
-    // Save - use exact match to avoid matching "Save Provider Settings" etc.
-    const saveButton = spotifySection.getByRole('button', { name: 'Save', exact: true }).first();
-    await saveButton.click();
-
-    await page.waitForTimeout(1000);
-
-    // Should show configured or save confirmation
-    const isConfigured = await page.locator('text=Configured').nth(1).isVisible({ timeout: 2000 }).catch(() => false);
-    const savedToast = await page.locator('text=saved').isVisible({ timeout: 1000 }).catch(() => false);
-
-    expect(isConfigured || savedToast).toBe(true);
+    // Find the Spotify status card
+    const spotifyCard = page.locator('text=Spotify');
+    await expect(spotifyCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('"Connect to Spotify" button appears after saving credentials', async ({ page }) => {
-    // First save credentials
+  test('Spotify shows configured status when env vars are set', async ({ page }) => {
+    test.skip(!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET, 'Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET env vars');
+
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    const spotifyHeading = page.getByRole('heading', { name: /Spotify API/i });
-    const spotifySection = page.locator('section, div').filter({ has: spotifyHeading });
-    const inputs = spotifySection.locator('input');
+    // Find the Spotify card and check for configured status (green checkmark)
+    const spotifySection = page.locator('.bg-zinc-800').filter({ hasText: 'Spotify' });
+    await expect(spotifySection).toBeVisible({ timeout: 5000 });
 
-    await inputs.first().fill(SPOTIFY_CLIENT_ID!);
-    await inputs.nth(1).fill(SPOTIFY_CLIENT_SECRET!);
-    await spotifySection.getByRole('button', { name: 'Save', exact: true }).first().click();
-
-    // Wait for save to complete
-    await page.waitForTimeout(2000);
-
-    // Look for Connect button (various possible texts)
-    const connectButton = page.locator('button, a').filter({ hasText: /connect.*spotify|spotify.*connect/i });
-    const hasConnectButton = await connectButton.first().isVisible({ timeout: 5000 }).catch(() => false);
-
-    // Or check for "Configured" status
-    const isConfigured = await spotifySection.locator('text=/configured/i').isVisible({ timeout: 2000 }).catch(() => false);
-
-    // Or check for a success toast
-    const hasSavedToast = await page.locator('text=/saved|success/i').isVisible({ timeout: 1000 }).catch(() => false);
-
-    expect(hasConnectButton || isConfigured || hasSavedToast).toBe(true);
+    // Should have a green checkmark indicating configured
+    const checkIcon = spotifySection.locator('.text-green-400');
+    await expect(checkIcon).toBeVisible({ timeout: 5000 });
   });
 });
 
 test.describe('Last.fm Integration', () => {
-  test.skip(!LASTFM_API_KEY || !LASTFM_API_SECRET, 'Requires LASTFM_API_KEY and LASTFM_API_SECRET');
-
-  test('add Last.fm API key/secret in Admin panel', async ({ page }) => {
+  test('Last.fm status card shows in Admin panel', async ({ page }) => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Find the Last.fm API section
-    const lastfmHeading = page.getByRole('heading', { name: /Last\.fm API/i });
-    await expect(lastfmHeading).toBeVisible({ timeout: 5000 });
-
-    // Find the Last.fm inputs
-    const lastfmSection = page.locator('section, div').filter({ has: lastfmHeading });
-    const inputs = lastfmSection.locator('input');
-
-    // Fill API key (first input)
-    await inputs.first().fill(LASTFM_API_KEY!);
-
-    // Fill API secret (second input)
-    await inputs.nth(1).fill(LASTFM_API_SECRET!);
-
-    // Save - use exact match to avoid matching "Save Provider Settings" etc.
-    const saveButton = lastfmSection.getByRole('button', { name: 'Save', exact: true }).first();
-    await saveButton.click();
-
-    await page.waitForTimeout(1000);
-
-    // Should show configured or save confirmation
-    const isConfigured = await lastfmSection.locator('text=Configured').isVisible({ timeout: 2000 }).catch(() => false);
-    const savedToast = await page.locator('text=saved').isVisible({ timeout: 1000 }).catch(() => false);
-
-    expect(isConfigured || savedToast).toBe(true);
+    // Find the Last.fm status card
+    const lastfmCard = page.locator('text=Last.fm');
+    await expect(lastfmCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('"Connect Last.fm" button appears after saving credentials', async ({ page }) => {
-    // First save credentials
+  test('Last.fm shows configured status when env vars are set', async ({ page }) => {
+    test.skip(!LASTFM_API_KEY || !LASTFM_API_SECRET, 'Requires LASTFM_API_KEY and LASTFM_API_SECRET env vars');
+
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    const lastfmHeading = page.getByRole('heading', { name: /Last\.fm API/i });
-    const lastfmSection = page.locator('section, div').filter({ has: lastfmHeading });
-    const inputs = lastfmSection.locator('input');
+    // Find the Last.fm card and check for configured status (green checkmark)
+    const lastfmSection = page.locator('.bg-zinc-800').filter({ hasText: 'Last.fm' });
+    await expect(lastfmSection).toBeVisible({ timeout: 5000 });
 
-    await inputs.first().fill(LASTFM_API_KEY!);
-    await inputs.nth(1).fill(LASTFM_API_SECRET!);
-    await lastfmSection.getByRole('button', { name: 'Save', exact: true }).first().click();
+    // Should have a green checkmark indicating configured
+    const checkIcon = lastfmSection.locator('.text-green-400');
+    await expect(checkIcon).toBeVisible({ timeout: 5000 });
+  });
+});
 
-    // Wait for save to complete - look for any success indicator
-    await page.waitForTimeout(2000);
+test.describe('Claude API Integration', () => {
+  test('Claude API status card shows in Admin panel', async ({ page }) => {
+    await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
 
-    // Look for Connect button (various possible texts)
-    const connectButton = page.locator('button, a').filter({ hasText: /connect.*last\.?fm|last\.?fm.*connect/i });
-    const hasConnectButton = await connectButton.first().isVisible({ timeout: 5000 }).catch(() => false);
+    // Find the Claude API status card
+    const claudeCard = page.locator('text=Claude API');
+    await expect(claudeCard).toBeVisible({ timeout: 5000 });
+  });
+});
 
-    // Or check for "Configured" status anywhere on the page in the Last.fm area
-    const isConfigured = await lastfmSection.locator('text=/configured/i').isVisible({ timeout: 2000 }).catch(() => false);
+test.describe('AcoustID Integration', () => {
+  test('AcoustID status card shows in Admin panel', async ({ page }) => {
+    await page.goto('/admin');
+    await page.waitForLoadState('networkidle');
 
-    // Or check for a success toast
-    const hasSavedToast = await page.locator('text=/saved|success/i').isVisible({ timeout: 1000 }).catch(() => false);
-
-    expect(hasConnectButton || isConfigured || hasSavedToast).toBe(true);
+    // Find the AcoustID status card
+    const acoustidCard = page.locator('text=AcoustID');
+    await expect(acoustidCard).toBeVisible({ timeout: 5000 });
   });
 });
