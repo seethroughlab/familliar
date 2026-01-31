@@ -49,58 +49,63 @@ test.describe('Admin Panel', () => {
 
   test('admin page loads', async ({ page }) => {
     // Look for the Admin Setup title
-    const adminTitle = page.locator('text=Admin Setup');
+    const adminTitle = page.getByText('Admin Setup', { exact: true });
     await expect(adminTitle).toBeVisible({ timeout: 5000 });
   });
 
   test('service status section exists', async ({ page }) => {
     // Look for the Service Status section heading
-    const statusHeading = page.locator('text=Service Status');
+    const statusHeading = page.getByText('Service Status', { exact: true });
     await expect(statusHeading).toBeVisible({ timeout: 5000 });
   });
 
   test('Claude API status card exists', async ({ page }) => {
     // Look for Claude API in the status grid
-    const claudeCard = page.locator('text=Claude API');
+    const claudeCard = page.getByText('Claude API', { exact: true });
     await expect(claudeCard).toBeVisible({ timeout: 5000 });
   });
 
   test('Spotify status card exists', async ({ page }) => {
-    const spotifyCard = page.locator('text=Spotify');
+    const spotifyCard = page.getByText('Spotify', { exact: true });
     await expect(spotifyCard).toBeVisible({ timeout: 5000 });
   });
 
   test('Last.fm status card exists', async ({ page }) => {
-    const lastfmCard = page.locator('text=Last.fm');
+    const lastfmCard = page.getByText('Last.fm', { exact: true });
     await expect(lastfmCard).toBeVisible({ timeout: 5000 });
   });
 
   test('AcoustID status card exists', async ({ page }) => {
-    const acoustidCard = page.locator('text=AcoustID');
+    const acoustidCard = page.getByText('AcoustID', { exact: true });
     await expect(acoustidCard).toBeVisible({ timeout: 5000 });
   });
 
   test('community cache section exists', async ({ page }) => {
-    const cacheSection = page.locator('text=Community Cache');
+    const cacheSection = page.getByText('Community Cache', { exact: true });
     await expect(cacheSection).toBeVisible({ timeout: 5000 });
   });
 
   test('community cache toggles work', async ({ page }) => {
-    // Find the "Use community cache" toggle
-    const useCacheToggle = page.locator('text=Use community cache').locator('..').locator('..').locator('input[type="checkbox"]');
-    await expect(useCacheToggle).toBeVisible({ timeout: 5000 });
+    // Find the "Use community cache" text and then locate the toggle nearby
+    const useCacheLabel = page.getByText('Use community cache', { exact: true });
+    await expect(useCacheLabel).toBeVisible({ timeout: 5000 });
+
+    // Find the toggle input - it's a sibling's descendant
+    const toggleContainer = useCacheLabel.locator('..').locator('..').locator('..');
+    const toggle = toggleContainer.locator('input[type="checkbox"]');
+    await expect(toggle).toBeVisible({ timeout: 5000 });
 
     // Toggle should be clickable
-    const initialState = await useCacheToggle.isChecked();
-    await useCacheToggle.click();
+    const initialState = await toggle.isChecked();
+    await toggle.click({ force: true });
     await page.waitForTimeout(500);
 
     // State should change
-    const newState = await useCacheToggle.isChecked();
+    const newState = await toggle.isChecked();
     expect(newState).toBe(!initialState);
 
     // Toggle back
-    await useCacheToggle.click();
+    await toggle.click({ force: true });
     await page.waitForTimeout(500);
   });
 });
@@ -116,7 +121,7 @@ test.describe('Visualizer', () => {
 
     // Without a track playing, visualizer shows placeholder
     // Either shows "No track playing" or a canvas if track is playing
-    const noTrack = page.locator('text=No track playing');
+    const noTrack = page.getByText('No track playing');
     const canvas = page.locator('canvas');
 
     const hasNoTrack = await noTrack.isVisible({ timeout: 3000 }).catch(() => false);
@@ -130,7 +135,7 @@ test.describe('Visualizer', () => {
     await navigateToTab(page, 'Visualizer');
 
     // If no track is playing, there's no fullscreen button (just placeholder)
-    const noTrack = page.locator('text=No track playing');
+    const noTrack = page.getByText('No track playing');
     if (await noTrack.isVisible({ timeout: 2000 }).catch(() => false)) {
       test.skip(true, 'No track playing - fullscreen button only shows with track');
       return;

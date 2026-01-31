@@ -14,8 +14,8 @@ test.describe('Spotify Integration', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Find the Spotify status card
-    const spotifyCard = page.locator('text=Spotify');
+    // Find the Spotify status card using exact text match
+    const spotifyCard = page.getByText('Spotify', { exact: true });
     await expect(spotifyCard).toBeVisible({ timeout: 5000 });
   });
 
@@ -26,7 +26,7 @@ test.describe('Spotify Integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Find the Spotify card and check for configured status (green checkmark)
-    const spotifySection = page.locator('.bg-zinc-800').filter({ hasText: 'Spotify' });
+    const spotifySection = page.locator('.bg-zinc-800').filter({ hasText: /^Spotify/ });
     await expect(spotifySection).toBeVisible({ timeout: 5000 });
 
     // Should have a green checkmark indicating configured
@@ -40,8 +40,8 @@ test.describe('Last.fm Integration', () => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
 
-    // Find the Last.fm status card
-    const lastfmCard = page.locator('text=Last.fm');
+    // Find the Last.fm status card using exact text match
+    const lastfmCard = page.getByText('Last.fm', { exact: true });
     await expect(lastfmCard).toBeVisible({ timeout: 5000 });
   });
 
@@ -52,7 +52,7 @@ test.describe('Last.fm Integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Find the Last.fm card and check for configured status (green checkmark)
-    const lastfmSection = page.locator('.bg-zinc-800').filter({ hasText: 'Last.fm' });
+    const lastfmSection = page.locator('.bg-zinc-800').filter({ hasText: /^Last\.fm/ });
     await expect(lastfmSection).toBeVisible({ timeout: 5000 });
 
     // Should have a green checkmark indicating configured
@@ -67,7 +67,7 @@ test.describe('Claude API Integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Find the Claude API status card
-    const claudeCard = page.locator('text=Claude API');
+    const claudeCard = page.getByText('Claude API', { exact: true });
     await expect(claudeCard).toBeVisible({ timeout: 5000 });
   });
 });
@@ -78,7 +78,7 @@ test.describe('AcoustID Integration', () => {
     await page.waitForLoadState('networkidle');
 
     // Find the AcoustID status card
-    const acoustidCard = page.locator('text=AcoustID');
+    const acoustidCard = page.getByText('AcoustID', { exact: true });
     await expect(acoustidCard).toBeVisible({ timeout: 5000 });
   });
 });
