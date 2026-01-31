@@ -74,9 +74,11 @@ export const tracksApi = {
   /**
    * Get all track IDs matching filters (lightweight for shuffle-all).
    * Use shuffle=true to get randomized order.
+   * Use start_with to ensure a specific track appears first.
    */
   getIds: async (params?: {
     shuffle?: boolean;
+    start_with?: string;
     search?: string;
     artist?: string;
     album?: string;
@@ -2215,6 +2217,137 @@ export const pluginsApi = {
     const { data } = await api.post(`/plugins/${pluginId}/report-error`, {
       error,
     });
+    return data;
+  },
+};
+
+// Export/Import API
+export interface ExportRequest {
+  include_play_history?: boolean;
+  include_favorites?: boolean;
+  include_playlists?: boolean;
+  include_smart_playlists?: boolean;
+  include_proposed_changes?: boolean;
+  include_external_tracks?: boolean;
+  chat_history?: Array<Record<string, unknown>>;
+}
+
+export interface ImportPreviewSummary {
+  play_history_count: number;
+  favorites_count: number;
+  playlists_count: number;
+  smart_playlists_count: number;
+  proposed_changes_count: number;
+  user_overrides_count: number;
+  external_tracks_count: number;
+  chat_history_count: number;
+}
+
+export interface ImportPreviewMatching {
+  total: number;
+  matched: number;
+  unmatched: number;
+  by_method: Record<string, number>;
+  unmatched_samples: Array<{
+    title: string | null;
+    artist: string | null;
+    album: string | null;
+  }>;
+}
+
+export interface ImportPreviewResponse {
+  session_id: string;
+  summary: ImportPreviewSummary;
+  matching: ImportPreviewMatching;
+  warnings: string[];
+  exported_at: string | null;
+  familiar_version: string | null;
+  profile_name: string | null;
+}
+
+export interface ImportExecuteRequest {
+  session_id: string;
+  mode: 'merge' | 'overwrite';
+  import_play_history?: boolean;
+  import_favorites?: boolean;
+  import_playlists?: boolean;
+  import_smart_playlists?: boolean;
+  import_proposed_changes?: boolean;
+  import_user_overrides?: boolean;
+  import_external_tracks?: boolean;
+}
+
+export interface ImportResultCategory {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface ImportExecuteResponse {
+  status: string;
+  results: {
+    play_history: ImportResultCategory;
+    favorites: ImportResultCategory;
+    playlists: ImportResultCategory;
+    smart_playlists: ImportResultCategory;
+    proposed_changes: ImportResultCategory;
+    user_overrides: ImportResultCategory;
+    external_tracks: ImportResultCategory;
+    chat_history: Array<Record<string, unknown>>;
+  };
+}
+
+export const exportImportApi = {
+  /**
+   * Export profile data as JSON.
+   * Returns the export data directly (caller should trigger download).
+   */
+  export: async (request: ExportRequest = {}): Promise<Record<string, unknown>> => {
+    const { data } = await api.post('/export-import/export', request);
+    return data;
+  },
+
+  /**
+   * Download export as a file.
+   * Creates a blob and triggers download in browser.
+   */
+  downloadExport: async (request: ExportRequest = {}): Promise<void> => {
+    const data = await exportImportApi.export(request);
+
+    // Generate filename
+    const date = new Date().toISOString().split('T')[0].replace(/-/g, '');
+    const filename = `familiar-export-${date}.json`;
+
+    // Create blob and trigger download
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  /**
+   * Preview an import file.
+   * Returns matching statistics and a session_id for execution.
+   */
+  previewImport: async (file: File): Promise<ImportPreviewResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await api.post('/export-import/import/preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return data;
+  },
+
+  /**
+   * Execute an import from a previewed session.
+   */
+  executeImport: async (request: ImportExecuteRequest): Promise<ImportExecuteResponse> => {
+    const { data } = await api.post('/export-import/import/execute', request);
     return data;
   },
 };

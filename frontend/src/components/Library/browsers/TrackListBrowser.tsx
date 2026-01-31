@@ -528,15 +528,59 @@ export function TrackListBrowser({
     }
   }, [allTracks, prefetchArtworkBatch]);
 
+  // Threshold for using lazy queue mode vs loading all tracks
+  const LAZY_QUEUE_THRESHOLD = 200;
+
+  // Build filters object for queue source tracking
+  const queueFilters = useMemo(() => ({
+    search: filters.search,
+    artist: filters.artist,
+    album: filters.album,
+    year_from: filters.yearFrom,
+    year_to: filters.yearTo,
+    energy_min: filters.energyMin,
+    energy_max: filters.energyMax,
+    valence_min: filters.valenceMin,
+    valence_max: filters.valenceMax,
+  }), [filters]);
+
   const handlePlayTrack = useCallback(
-    (track: Track, index: number) => {
+    async (track: Track, index: number) => {
       if (currentTrack?.id === track.id) {
         setIsPlaying(!isPlaying);
-      } else if (allTracks.length > 0) {
+        return;
+      }
+
+      // For large libraries (Tracks view), always use lazy queue mode
+      // This ensures shuffle considers ALL tracks, not just loaded ones
+      if (total >= LAZY_QUEUE_THRESHOLD) {
+        setIsLoadingPlayAll(true);
+        try {
+          const response = await tracksApi.getIds({
+            shuffle: shuffle,
+            start_with: track.id,  // Clicked track plays first
+            ...queueFilters,
+          });
+          if (response.ids.length > 0) {
+            await setLazyQueue(response.ids, {
+              type: 'library',
+              filters: queueFilters,
+            });
+          }
+        } catch (error) {
+          console.error('Failed to play track:', error);
+        } finally {
+          setIsLoadingPlayAll(false);
+        }
+        return;
+      }
+
+      // For smaller result sets, use regular queue
+      if (allTracks.length > 0) {
         setQueue(allTracks, index);
       }
     },
-    [currentTrack, isPlaying, setIsPlaying, allTracks, setQueue]
+    [currentTrack, isPlaying, setIsPlaying, allTracks, setQueue, total, shuffle, queueFilters, setLazyQueue]
   );
 
   const handleRowClick = useCallback(
@@ -576,9 +620,6 @@ export function TrackListBrowser({
     setContextMenu(initialContextMenuState);
   }, []);
 
-  // Threshold for using lazy queue mode vs loading all tracks
-  const LAZY_QUEUE_THRESHOLD = 200;
-
   // Track loading state for play all (must be before early returns)
   const [isLoadingPlayAll, setIsLoadingPlayAll] = useState(false);
 
@@ -592,18 +633,13 @@ export function TrackListBrowser({
       try {
         const response = await tracksApi.getIds({
           shuffle: shuffle,
-          search: filters.search,
-          artist: filters.artist,
-          album: filters.album,
-          year_from: filters.yearFrom,
-          year_to: filters.yearTo,
-          energy_min: filters.energyMin,
-          energy_max: filters.energyMax,
-          valence_min: filters.valenceMin,
-          valence_max: filters.valenceMax,
+          ...queueFilters,
         });
         if (response.ids.length > 0) {
-          await setLazyQueue(response.ids);
+          await setLazyQueue(response.ids, {
+            type: 'library',
+            filters: queueFilters,
+          });
         }
       } catch (error) {
         console.error('Failed to play all tracks:', error);
@@ -618,7 +654,7 @@ export function TrackListBrowser({
     if (allTracks.length > 0) {
       setQueue(allTracks, 0);
     }
-  }, [total, shuffle, filters, setLazyQueue, allTracks, setQueue]);
+  }, [total, shuffle, queueFilters, setLazyQueue, allTracks, setQueue]);
 
   // Check if currently playing from lazy queue
   const isInLazyQueueMode = lazyQueueIds !== null && lazyQueueIds.length > 0;

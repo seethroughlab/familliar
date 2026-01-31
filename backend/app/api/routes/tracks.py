@@ -79,6 +79,7 @@ class TrackIdsResponse(BaseModel):
 async def list_track_ids(
     db: DbSession,
     shuffle: bool = Query(False, description="Randomize the order of IDs"),
+    start_with: str | None = Query(None, description="Track ID to place first in results"),
     search: str | None = None,
     artist: str | None = None,
     album: str | None = None,
@@ -94,6 +95,7 @@ async def list_track_ids(
 
     Returns only IDs (lightweight) for shuffle-all functionality.
     Use shuffle=true to get randomized order via ORDER BY random().
+    Use start_with to ensure a specific track appears first (useful when shuffle=true).
     """
     query = select(Track.id)
 
@@ -170,6 +172,11 @@ async def list_track_ids(
 
     result = await db.execute(query)
     track_ids = [str(row[0]) for row in result.all()]
+
+    # If start_with is provided, move that track to the front
+    if start_with and start_with in track_ids:
+        track_ids.remove(start_with)
+        track_ids.insert(0, start_with)
 
     return TrackIdsResponse(ids=track_ids, total=total)
 

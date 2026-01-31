@@ -11,6 +11,27 @@ import { tracksApi } from '../api/client';
 type RepeatMode = 'off' | 'all' | 'one';
 type CrossfadeState = 'idle' | 'preloading' | 'crossfading';
 
+// Queue source tracking - where the current queue originated from
+export type QueueSourceType = 'library' | 'album' | 'playlist' | 'artist' | 'other';
+
+export interface LibraryFilters {
+  search?: string;
+  artist?: string;
+  album?: string;
+  genre?: string;
+  year_from?: number;
+  year_to?: number;
+  energy_min?: number;
+  energy_max?: number;
+  valence_min?: number;
+  valence_max?: number;
+}
+
+export interface QueueSource {
+  type: QueueSourceType;
+  filters?: LibraryFilters;  // For library context, to re-fetch with new shuffle state
+}
+
 // Preview track for external/missing tracks
 export interface PreviewTrack {
   id: string;
@@ -50,6 +71,9 @@ interface PlayerState {
   prefetchedTracks: Map<string, Track>;  // Cache of fetched track metadata
   isFetchingTrack: boolean;       // Loading state for track fetches
 
+  // Queue source tracking
+  queueSource: QueueSource | null;  // Where the current queue originated from
+
   // Crossfade state
   crossfadeState: CrossfadeState;
   nextTrackPreloaded: boolean;
@@ -63,7 +87,7 @@ interface PlayerState {
   setCurrentTime: (time: number) => void;
   setDuration: (duration: number) => void;
   setVolume: (volume: number) => void;
-  toggleShuffle: () => void;
+  toggleShuffle: () => void | Promise<void>;
   toggleRepeat: () => void;
 
   // Queue actions
@@ -76,7 +100,7 @@ interface PlayerState {
   setQueue: (tracks: Track[], startIndex?: number) => void;
 
   // Lazy queue actions
-  setLazyQueue: (ids: string[]) => Promise<void>;
+  setLazyQueue: (ids: string[], source?: QueueSource) => Promise<void>;
   exitLazyMode: () => void;
 
   // Crossfade actions
@@ -177,6 +201,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   lazyQueueIndex: -1,
   prefetchedTracks: new Map(),
   isFetchingTrack: false,
+  queueSource: null,
   crossfadeState: 'idle',
   nextTrackPreloaded: false,
   isHydrated: false,
@@ -195,9 +220,43 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ volume: Math.max(0, Math.min(1, volume)) });
     persistState();
   },
-  toggleShuffle: () => {
-    const { shuffle, queue, queueIndex } = get();
-    if (!shuffle && queue.length > 1) {
+  toggleShuffle: async () => {
+    const { shuffle, queue, queueIndex, lazyQueueIds, queueSource, currentTrack } = get();
+    const newShuffle = !shuffle;
+
+    // Handle lazy queue mode with library source - re-fetch IDs from server
+    if (lazyQueueIds && lazyQueueIds.length > 0 && queueSource?.type === 'library') {
+      set({ shuffle: newShuffle });
+
+      try {
+        // Re-fetch IDs with new shuffle state, keeping current track first
+        const response = await tracksApi.getIds({
+          shuffle: newShuffle,
+          start_with: currentTrack?.id,
+          ...queueSource.filters,
+        });
+
+        if (response.ids.length > 0) {
+          // Find current track's position in new order (should be 0 due to start_with)
+          const newIndex = currentTrack
+            ? response.ids.findIndex(id => id === currentTrack.id)
+            : 0;
+
+          set({
+            lazyQueueIds: response.ids,
+            lazyQueueIndex: newIndex >= 0 ? newIndex : 0,
+          });
+        }
+      } catch (error) {
+        console.error('Failed to refresh lazy queue with new shuffle state:', error);
+      }
+
+      persistState();
+      return;
+    }
+
+    // Standard queue mode
+    if (newShuffle && queue.length > 1) {
       // Enabling shuffle: generate order starting from current track
       const shuffleOrder = generateShuffleOrder(queue.length, queueIndex);
       set({ shuffle: true, shuffleOrder, shuffleIndex: 0 });
@@ -427,12 +486,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       lazyQueueIds: null,
       lazyQueueIndex: -1,
       prefetchedTracks: new Map(),
+      queueSource: null,  // Clear source when using regular queue
     });
     persistState();
   },
 
   // Lazy queue actions (for shuffle-all with large libraries)
-  setLazyQueue: async (ids: string[]) => {
+  setLazyQueue: async (ids: string[], source?: QueueSource) => {
     if (ids.length === 0) return;
 
     // Clear regular queue state and enter lazy mode
@@ -445,6 +505,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       lazyQueueIndex: 0,
       prefetchedTracks: new Map(),
       isFetchingTrack: true,
+      queueSource: source || null,
     });
 
     // Fetch the first track and start playback
@@ -489,6 +550,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       lazyQueueIndex: -1,
       prefetchedTracks: new Map(),
       isFetchingTrack: false,
+      queueSource: null,
     });
   },
 
@@ -635,6 +697,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       lazyQueueIndex: -1,
       prefetchedTracks: new Map(),
       isFetchingTrack: false,
+      queueSource: null,
       crossfadeState: 'idle',
       nextTrackPreloaded: false,
       isHydrated: false,
