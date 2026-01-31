@@ -1898,8 +1898,9 @@ Respond with ONLY the playlist name, nothing else."""
         Uses curl_cffi for TLS fingerprint impersonation to bypass bot detection
         on sites like Discogs, Pitchfork, RateYourMusic that block httpx.
         """
-        import trafilatura
         from urllib.parse import urlparse
+
+        import trafilatura
         from curl_cffi.requests import AsyncSession
 
         # Validate URL
