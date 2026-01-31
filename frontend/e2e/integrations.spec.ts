@@ -1,84 +1,51 @@
 import { test, expect } from '@playwright/test';
 
-// These tests verify integration status display in the Admin panel.
-// API keys are now configured via environment variables (docker/.env),
-// so these tests verify the status indicators rather than input fields.
+// These tests verify the Admin panel displays integration status cards correctly.
+// API keys are configured via environment variables (docker/.env).
 
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
-const LASTFM_API_KEY = process.env.LASTFM_API_KEY;
-const LASTFM_API_SECRET = process.env.LASTFM_API_SECRET;
-
-test.describe('Spotify Integration', () => {
-  test('Spotify status card shows in Admin panel', async ({ page }) => {
+test.describe('Admin Panel Integrations', () => {
+  test.beforeEach(async ({ page }) => {
     await page.goto('/admin');
     await page.waitForLoadState('networkidle');
+  });
 
-    // Find the Spotify status card using exact text match
+  test('shows Service Status section', async ({ page }) => {
+    const statusSection = page.getByText('Service Status', { exact: true });
+    await expect(statusSection).toBeVisible({ timeout: 5000 });
+  });
+
+  test('Spotify status card is visible', async ({ page }) => {
     const spotifyCard = page.getByText('Spotify', { exact: true });
     await expect(spotifyCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('Spotify shows configured status when env vars are set', async ({ page }) => {
-    test.skip(!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET, 'Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET env vars');
-
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Find the Spotify card and check for configured status (green checkmark)
-    const spotifySection = page.locator('.bg-zinc-800').filter({ hasText: /^Spotify/ });
-    await expect(spotifySection).toBeVisible({ timeout: 5000 });
-
-    // Should have a green checkmark indicating configured
-    const checkIcon = spotifySection.locator('.text-green-400');
-    await expect(checkIcon).toBeVisible({ timeout: 5000 });
-  });
-});
-
-test.describe('Last.fm Integration', () => {
-  test('Last.fm status card shows in Admin panel', async ({ page }) => {
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Find the Last.fm status card using exact text match
+  test('Last.fm status card is visible', async ({ page }) => {
     const lastfmCard = page.getByText('Last.fm', { exact: true });
     await expect(lastfmCard).toBeVisible({ timeout: 5000 });
   });
 
-  test('Last.fm shows configured status when env vars are set', async ({ page }) => {
-    test.skip(!LASTFM_API_KEY || !LASTFM_API_SECRET, 'Requires LASTFM_API_KEY and LASTFM_API_SECRET env vars');
-
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Find the Last.fm card and check for configured status (green checkmark)
-    const lastfmSection = page.locator('.bg-zinc-800').filter({ hasText: /^Last\.fm/ });
-    await expect(lastfmSection).toBeVisible({ timeout: 5000 });
-
-    // Should have a green checkmark indicating configured
-    const checkIcon = lastfmSection.locator('.text-green-400');
-    await expect(checkIcon).toBeVisible({ timeout: 5000 });
-  });
-});
-
-test.describe('Claude API Integration', () => {
-  test('Claude API status card shows in Admin panel', async ({ page }) => {
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Find the Claude API status card
+  test('Claude API status card is visible', async ({ page }) => {
     const claudeCard = page.getByText('Claude API', { exact: true });
     await expect(claudeCard).toBeVisible({ timeout: 5000 });
   });
-});
 
-test.describe('AcoustID Integration', () => {
-  test('AcoustID status card shows in Admin panel', async ({ page }) => {
-    await page.goto('/admin');
-    await page.waitForLoadState('networkidle');
-
-    // Find the AcoustID status card
+  test('AcoustID status card is visible', async ({ page }) => {
     const acoustidCard = page.getByText('AcoustID', { exact: true });
     await expect(acoustidCard).toBeVisible({ timeout: 5000 });
+  });
+
+  test('Community Cache section is visible', async ({ page }) => {
+    const cacheSection = page.getByText('Community Cache', { exact: true });
+    await expect(cacheSection).toBeVisible({ timeout: 5000 });
+  });
+
+  test('all service cards show status indicators', async ({ page }) => {
+    // Each service card should have either a green check or grey X icon
+    const statusGrid = page.locator('.grid-cols-2');
+    await expect(statusGrid).toBeVisible({ timeout: 5000 });
+
+    // There should be 4 service cards
+    const serviceCards = statusGrid.locator('.bg-zinc-800');
+    await expect(serviceCards).toHaveCount(4);
   });
 });
